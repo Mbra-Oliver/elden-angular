@@ -1,0 +1,20 @@
+<div class="death-background">
+<div class="death-container">
+
+    <div class="blood-overlay"></div>
+  <div class="death-content">
+    <div class="death-text-container">
+      <div class="death-text">VOUS ETES MORT</div>
+
+    </div>
+
+    <nav class="death-options">
+      @for (item of menusItems; track item.label; let i = $index) {
+        <button class="menu-item" >
+          <span class="menu-label" >{{ item.label }}</span>
+        </button>
+      }
+    </nav>
+  </div>
+</div>
+</div>
