@@ -1,1 +1,5 @@
-<app-death-menu/>
+@if (gameMode() === "start") {
+  <app-main-menu />
+} @else {
+  <app-death-menu />
+}

@@ -1,32 +1,25 @@
 import { Component } from '@angular/core';
-
-
-interface MenuItem{
-  label: string;
-  action:()=>void
-}
+import { MenuItem } from '../../lib/interfaces/MenuItem';
 
 @Component({
   selector: 'app-death-menu',
   imports: [],
   templateUrl: './death-menu.component.html',
-  styleUrl: './death-menu.component.css'
+  styleUrl: './death-menu.component.css',
 })
 export class DeathMenuComponent {
-
-  menusItems = [
+  menusItems: MenuItem[] = [
     {
       label: 'REESSAYER',
-      action:()=>{}
+      action: () => {},
     },
     {
       label: 'ALLER AU MENU',
-      action:()=>{}
+      action: () => {},
     },
     {
       label: 'QUITTER',
-      action:()=>{}
-    }
-  ]
-
+      action: () => {},
+    },
+  ];
 }

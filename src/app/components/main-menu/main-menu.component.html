@@ -1,0 +1,50 @@
+<div class="menu-container">
+  <div class="menu-content">
+    <!-- <div class="text-white">
+      {{ braises | json }}
+    </div> -->
+
+    <div class="embers">
+      @for (ember of embers; track ember.id) {
+        <div
+          class="ember"
+          [style.left.%]="ember.x"
+          [style.animation-delay]="ember.delay + 's'"
+          [style.animation-duration]="ember.duration + 's'"
+        ></div>
+      }
+    </div>
+
+    <!-- Titre du jeu -->
+
+    <div class="title-container">
+      <div class="game-title">ELDEN ANGULAR {{ selectedIndex() }}</div>
+      <div class="game-subtitle">
+        Découvrez autrement un RPG, dans votre navigateur.
+      </div>
+    </div>
+
+    <!-- Options -->
+
+    <nav class="menu-options">
+      @for (item of menuItems; track item.label; let i = $index) {
+        <button class="menu-item" (mouseenter)="selectedIndex.set(i)">
+          <lucide-angular
+            [img]="ChevronRightIcon"
+            class="menu-arrow"
+            [class.visible]="selectedIndex() === i"
+          ></lucide-angular>
+
+          <span class="menu-label">{{ item.label }}</span>
+        </button>
+      }
+    </nav>
+
+    <!-- Blocs d'instructions -->
+  </div>
+
+  <!-- <div class="instructions">
+    <span> Utilisez les fleches du clavier pour vous deplacer </span>
+    <span>Entrer / Espace pour interagir</span>
+  </div> -->
+</div>

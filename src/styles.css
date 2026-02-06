@@ -1,6 +1,6 @@
 /* You can add global styles to this file, and also import other style files */
 
-body{
+body {
   margin: 0;
   padding: 0;
   background: #0f0f1a;
@@ -9,4 +9,9 @@ body{
   align-items: center;
   min-height: 100vh;
   overflow: hidden;
+  font-family: "Times New Roman", Times, serif;
+}
+
+.text-white {
+  color: white;
 }

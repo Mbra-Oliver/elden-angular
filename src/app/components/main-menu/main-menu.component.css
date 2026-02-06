@@ -1,0 +1,178 @@
+:host {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.menu-container {
+  position: relative;
+  width: 800px;
+  height: 600px;
+  background: linear-gradient(180deg, #0a0a0f 0%, #1a1a1a 50%, #0d0d15 100%);
+  overflow: hidden;
+}
+
+.menu-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  padding: 40px;
+}
+
+.title-container {
+  text-align: center;
+  margin-bottom: 80px;
+}
+
+.game-title {
+  font-size: 72px;
+  font-weight: normal;
+  letter-spacing: 12px;
+  color: #c4a35a;
+  text-shadow:
+    0 0 10px rgba(196, 163, 90, 0.5),
+    0 0 20px rgba(196, 163, 90, 0.3),
+    0 0 10px rgba(196, 163, 90, 02),
+    0 2px 4px rgba(0, 0, 0, 0.8);
+  margin: 0;
+  animation: titleGlow 1s ease-in-out infinite;
+}
+
+@keyframes titleGlow {
+  0%,
+  100% {
+    text-shadow:
+      0 0 10px rgba(196, 163, 90, 0.5),
+      0 0 20px rgba(196, 163, 90, 0.3),
+      0 0 10px rgba(196, 163, 90, 0.2),
+      0 2px 4px rgba(0, 0, 0, 0.8);
+  }
+  50% {
+    text-shadow:
+      0 0 18px rgba(196, 163, 90, 0.7),
+      0 0 35px rgba(196, 163, 90, 0.5),
+      0 0 55px rgba(196, 163, 90, 0.3),
+      0 3px 6px rgba(0, 0, 0, 0.9);
+  }
+}
+
+.game-subtitle {
+  font-size: 18px;
+  font-weight: normal;
+  letter-spacing: 8px;
+  color: #8a7a5a;
+  margin: 16px 0 0;
+  text-transform: uppercase;
+}
+
+/* Styliser le menu avec les options */
+
+.menu-options {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Styliser chaque action */
+.menu-item {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 12px 32px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.menu-arrow {
+  font-size: 14px;
+  color: #c4a35a;
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: all 0.2s ease;
+}
+
+.menu-arrow.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.menu-label {
+  font-size: 16;
+  letter-spacing: 4px;
+  color: #6a6a7a;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+}
+
+.menu-item:hover .menu-label {
+  color: #c4a35a;
+}
+
+.instructions {
+  position: absolute;
+  bottom: 40px;
+  display: flex;
+  gap: 32px;
+
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #4a4a5a;
+  text-transform: uppercase;
+}
+
+/* Effet de Braise */
+
+.embers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ember {
+  position: absolute;
+  width: 4px;
+  height: 10px;
+  bottom: -20px;
+  border-radius: 50%;
+
+  background: radial-gradient(
+    circle,
+    #fff3c4 0%,
+    #ffd27a 30%,
+    #ff6b45 55%,
+    #ff4500 75%,
+    #8b1a00 100%
+  );
+
+  filter: blur(0.5px);
+
+  box-shadow:
+    0 0 6px #ff7a00,
+    0 0 12px #ff4500,
+    0 0 18px #ff8c42;
+
+  animation: rise linear infinite;
+  opacity: 0;
+}
+
+@keyframes rise {
+  0% {
+    opacity: 0;
+    translate: translateY(0) scale(1);
+  }
+  10% {
+    opacity: 0.8;
+  }
+  90% {
+    opacity: 0.3;
+  }
+  100% {
+    transform: translateY(-650px) scale(0.3);
+  }
+}
