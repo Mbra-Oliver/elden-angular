@@ -1,7 +1,8 @@
-import { Component, signal } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { DeathMenuComponent } from './components/death-menu/death-menu.component';
 import { MainMenuComponent } from './components/main-menu/main-menu.component';
+import { GameStateService } from './lib/services/game-state.service';
 
 @Component({
   selector: 'app-root',
@@ -11,6 +12,5 @@ import { MainMenuComponent } from './components/main-menu/main-menu.component';
 })
 export class AppComponent {
   title = 'elden-angular';
-
-  gameMode = signal<'start' | 'death'>('start');
+  gameState = inject(GameStateService);
 }

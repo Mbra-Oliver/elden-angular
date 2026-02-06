@@ -1,5 +1,14 @@
-@if (gameMode() === "start") {
-  <app-main-menu />
-} @else {
-  <app-death-menu />
+<div class="text-white">GAME STATE: {{ gameState.currentScreen() }}</div>
+
+@switch (gameState.currentScreen()) {
+  @case ("main-menu") {
+    <app-main-menu />
+  }
+
+  @case ("playing") {
+    <p>playing</p>
+  }
+  @case ("death") {
+    <app-death-menu />
+  }
 }

@@ -1,7 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ChevronRight, LucideAngularModule } from 'lucide-angular';
 import { MenuItem } from '../../lib/interfaces/MenuItem';
+import { GameStateService } from '../../lib/services/game-state.service';
 @Component({
   selector: 'app-main-menu',
   imports: [LucideAngularModule, CommonModule],
@@ -10,13 +11,14 @@ import { MenuItem } from '../../lib/interfaces/MenuItem';
 })
 export class MainMenuComponent implements OnInit, OnDestroy {
   readonly ChevronRightIcon = ChevronRight;
+
+  private gameState = inject(GameStateService);
+
   //Menus du jeu
   menuItems: MenuItem[] = [
     {
       label: 'Jouer',
-      action: () => {
-        alert(`Jouer au jeu`);
-      },
+      action: () => this.gameState.startGame(),
     },
     {
       label: 'Continuer',
@@ -32,9 +34,7 @@ export class MainMenuComponent implements OnInit, OnDestroy {
     },
     {
       label: 'Quitter',
-      action: () => {
-        alert(`Quitter le jeu`);
-      },
+      action: () => this.gameState.death(),
     },
   ];
 
@@ -84,6 +84,10 @@ export class MainMenuComponent implements OnInit, OnDestroy {
         this.menuItems[this.selectedIndex()].action();
         break;
     }
+  }
+
+  executeItem(index: number) {
+    this.menuItems[index].action();
   }
 
   generateEmbers(totalElement: number) {

@@ -18,7 +18,7 @@
     <!-- Titre du jeu -->
 
     <div class="title-container">
-      <div class="game-title">ELDEN ANGULAR {{ selectedIndex() }}</div>
+      <div class="game-title">ELDEN ANGULAR</div>
       <div class="game-subtitle">
         Découvrez autrement un RPG, dans votre navigateur.
       </div>
@@ -28,7 +28,11 @@
 
     <nav class="menu-options">
       @for (item of menuItems; track item.label; let i = $index) {
-        <button class="menu-item" (mouseenter)="selectedIndex.set(i)">
+        <button
+          class="menu-item"
+          (mouseenter)="selectedIndex.set(i)"
+          (click)="executeItem(i)"
+        >
           <lucide-angular
             [img]="ChevronRightIcon"
             class="menu-arrow"

@@ -1,5 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { MenuItem } from '../../lib/interfaces/MenuItem';
+import { GameStateService } from '../../lib/services/game-state.service';
 
 @Component({
   selector: 'app-death-menu',
@@ -8,6 +9,7 @@ import { MenuItem } from '../../lib/interfaces/MenuItem';
   styleUrl: './death-menu.component.css',
 })
 export class DeathMenuComponent {
+  gameService = inject(GameStateService);
   menusItems: MenuItem[] = [
     {
       label: 'REESSAYER',
@@ -15,11 +17,15 @@ export class DeathMenuComponent {
     },
     {
       label: 'ALLER AU MENU',
-      action: () => {},
+      action: () => this.gameService.returnToMainMenu(),
     },
     {
       label: 'QUITTER',
       action: () => {},
     },
   ];
+
+  executeItem(i: number) {
+    this.menusItems[i].action();
+  }
 }
