@@ -1,5 +1,6 @@
 <div class="text-white">GAME STATE: {{ gameState.currentScreen() }}</div>
 
+<button (click)="gameState.returnToMainMenu()">Retour au menu</button>
 @switch (gameState.currentScreen()) {
   @case ("main-menu") {
     <app-main-menu />
