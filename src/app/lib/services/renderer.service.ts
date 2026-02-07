@@ -130,6 +130,13 @@ export class RendererService {
     }
   }
 
+  drawText(title: string, x: number, y: number, color: string) {
+    if (!this.ctx) return;
+    this.ctx.font = `10px Arial`;
+    this.ctx.fillStyle = color;
+    this.ctx.fillText(title, x, y);
+  }
+
   /**
    *  DECLENCHER UN TREMBLEMENT D'ECRAN
    * Utile quand on va frapper l'ennemi pour donner de l'impact.
