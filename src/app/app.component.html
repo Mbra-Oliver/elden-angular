@@ -1,6 +1,12 @@
-<div class="text-white">GAME STATE: {{ gameState.currentScreen() }}</div>
+<div class="flex items-center">
+  <div class="text-white">GAME STATE: {{ gameState.currentScreen() }}</div>
 
-<button (click)="gameState.returnToMainMenu()">Retour au menu</button>
+  <button (click)="gameState.returnToMainMenu()">Retour au menu</button>
+  <button (click)="startTest()">Démarrer la boucle</button>
+  <button (click)="stopTest()">Fermer la boucle</button>
+  <div class="text-white">FRAME: {{ frameCount }}</div>
+</div>
+
 @switch (gameState.currentScreen()) {
   @case ("main-menu") {
     <app-main-menu />

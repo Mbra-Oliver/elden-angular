@@ -28,5 +28,10 @@ export class GameCanvaComponent implements AfterViewInit, OnInit {
     console.log(`COMPOSANTE EST MONTE`);
     // this.gameLoop.start();
   }
-  ngAfterViewInit(): void {}
+  ngAfterViewInit(): void {
+    // setInterval(() => {
+    //   this.gameLoop.stop();
+    //   console.log(`BOUCLE DE JEU ARRET...`);
+    // }, 300);
+  }
 }

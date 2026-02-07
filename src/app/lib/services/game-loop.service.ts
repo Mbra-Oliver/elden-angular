@@ -39,11 +39,22 @@ export class GameLoopService {
 
     this.gameStore.start();
 
-    this.loop();
+    //Demarrer la boucle
+    //Je veux pas que Angular gere la boucle, je vais la gerer moi-meme
+    this.ngZone.runOutsideAngular(() => {
+      this.loop();
+    });
   }
 
   stop() {
     this.gameStore.stop();
+
+    //Annuler la prochaine image
+
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
   }
 
   //GameLoop -> Chaque jeu est une boucle infinie qui tourne en executant des actions
@@ -115,5 +126,38 @@ export class GameLoopService {
     //===========
 
     this.animationFrameId = requestAnimationFrame(() => this.loop());
+  }
+
+  //Les entités appelle une fonction pour se mettre à jour a chaque frame pour par exemple bouger, sauter, tomber.
+
+  //S'inscrivent pour recevoir les updates
+
+  onUpdate(callback: (deltaTime: number) => void) {
+    this.updateCallbacks.push(callback);
+  }
+
+  //S'iscrire pour recevoir les données a chaque frame.
+
+  onRender(callback: () => void) {
+    this.renderCallbacks.push(callback);
+  }
+
+  //Si le joueur meurt, si un enemi meurt, ou si une composante est détruite. Appeler cette fonction pour se desinscrire
+
+  offUpdate(callback: (deltaTime: number) => void) {
+    const index = this.updateCallbacks.indexOf(callback);
+    if (index !== -1) {
+      this.updateCallbacks.splice(index, 1);
+    }
+  }
+
+  /**
+   * SE DESINSCRE des renders
+   */
+  offRender(callback: () => void) {
+    const index = this.renderCallbacks.indexOf(callback);
+    if (index !== -1) {
+      this.renderCallbacks.splice(index, 1);
+    }
   }
 }
