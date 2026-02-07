@@ -6,7 +6,7 @@ import { computed, Injectable, signal } from '@angular/core';
   providedIn: 'root',
 })
 export class GameStateService {
-  private _currentScreen = signal<GameScreen>('main-menu');
+  private _currentScreen = signal<GameScreen>('playing');
 
   currentScreen = computed(() => this._currentScreen());
 
