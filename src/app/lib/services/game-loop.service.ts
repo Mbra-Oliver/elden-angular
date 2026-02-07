@@ -33,7 +33,6 @@ export class GameLoopService {
   constructor() {}
 
   start() {
-    console.log(`APPELLER DEPUIS GAMELOOP SERVICE...`);
     //Si isRunning est en cours alors le jeu a deja demarrer
     if (this.gameStore.isRunning()) return;
 
@@ -68,7 +67,7 @@ export class GameLoopService {
   //Elle s'appelle elle même en boucle
 
   private loop() {
-    console.error(`BOUCLE DE JEU EN COURS...`);
+    // console.error(`BOUCLE DE JEU EN COURS...`);
     //Utilisateur a bien demarrer le jeu
     if (!this.gameStore.isRunning()) return;
 

@@ -181,4 +181,20 @@ export class RendererService {
     this.ctx.restore();
     this.shakeActive = true;
   }
+
+  //Dessiner un contour de rectangle
+
+  strokeRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    color: string,
+    lineWidth: number,
+  ) {
+    if (!this.ctx) return;
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = lineWidth;
+    this.ctx.strokeRect(x, y, w, h);
+  }
 }
