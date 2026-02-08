@@ -213,7 +213,7 @@ export class PlayerEntity {
 
     //Gerer les deplacement
 
-    const length = Math.sqrt(data.facingX ** 2 + data.vy ** 2);
+    const length = Math.sqrt(data.facingX ** 2 + data.facingY ** 2);
     const normX = length > 0 ? data.facingX / length : 1;
     const normY = length > 0 ? data.facingY / length : 0;
 
