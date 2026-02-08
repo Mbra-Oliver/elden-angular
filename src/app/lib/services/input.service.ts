@@ -16,8 +16,6 @@ export class InputService {
     window.addEventListener('keyup', (e) => {
       this.keys.set(e.key, false);
     });
-
-    console.log(`INPUT SERVICE INITIALIZED`);
   }
 
   //Methode pour ecouter si une touche est actuellement presser

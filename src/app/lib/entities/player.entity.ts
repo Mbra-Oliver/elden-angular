@@ -24,12 +24,10 @@ export class PlayerEntity {
    */
 
   //Temps avant que la stamina se regenere
-
   private staminaRegenCooldown = 0;
 
   update(deltaTime: number) {
     const data = this.store.getData();
-    console.log(`DATA`, data.state);
     //Si le joueur est mort on ne fait rien.
 
     if (data.state === 'dead') return;
@@ -126,8 +124,6 @@ export class PlayerEntity {
       this.enterLightAttack();
       return;
     }
-
-    //Gerer les attaques lourdes => TOUCHE E
 
     if (
       this.input.heavyAttack() &&
@@ -361,59 +357,59 @@ export class PlayerEntity {
         hitBoxColor,
         2,
       );
+    }
 
-      //Barre de HPT
+    //Barre de HPT
 
-      this.renderer.drawBar(
-        data.x,
-        data.y - 12,
-        size,
-        5,
-        data.hp,
-        data.maxHp,
-        '#ff3333',
-      );
+    this.renderer.drawBar(
+      data.x,
+      data.y - 12,
+      size,
+      5,
+      data.hp,
+      data.maxHp,
+      '#ff3333',
+    );
 
-      //Barre de stamina
+    //Barre de stamina
 
-      const staminaRatio = data.stamina / data.maxStamina;
-      let staminaColor = '#45e9a0';
-      if (staminaRatio < PLAYER_CONFIG.staminaLowThreshold) {
-        staminaColor =
-          Math.floor(Date.now() / 200) % 2 === 0 ? '#ff3333' : '#45e9a0';
-      }
+    const staminaRatio = data.stamina / data.maxStamina;
+    let staminaColor = '#45e9a0';
+    if (staminaRatio < PLAYER_CONFIG.staminaLowThreshold) {
+      staminaColor =
+        Math.floor(Date.now() / 200) % 2 === 0 ? '#ff3333' : '#45e9a0';
+    }
 
-      this.renderer.drawBar(
-        data.x,
-        data.y - 7,
-        size,
-        3,
-        data.stamina,
-        data.maxStamina,
-        staminaColor,
-      );
+    this.renderer.drawBar(
+      data.x,
+      data.y - 7,
+      size,
+      3,
+      data.stamina,
+      data.maxStamina,
+      staminaColor,
+    );
 
-      //SI on fais des combo. Je veux les affichers.
+    //SI on fais des combo. Je veux les affichers.
 
-      if (data.comboTimer > 0 && data.comboCount > 0) {
-        this.renderer.drawText(
-          `COMBO x${data.comboCount}`,
-          data.x,
-          data.y - 22,
-          '#ffe66d',
-        );
-      }
-
-      //Ramener mon label d'etat
-
-      const yOffset = data.comboTimer > 0 ? 30 : 18;
+    if (data.comboTimer > 0 && data.comboCount > 0) {
       this.renderer.drawText(
-        data.state.toUpperCase(),
+        `COMBO x${data.comboCount}`,
         data.x,
-        data.y - yOffset,
-        '#88888',
+        data.y - 22,
+        '#ffe66d',
       );
     }
+
+    //Ramener mon label d'etat
+
+    const yOffset = data.comboTimer > 0 ? 30 : 18;
+    this.renderer.drawText(
+      data.state.toUpperCase(),
+      data.x,
+      data.y - yOffset,
+      '#88888',
+    );
 
     //Indicateur de debug
 
