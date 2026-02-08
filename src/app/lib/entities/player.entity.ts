@@ -195,6 +195,7 @@ export class PlayerEntity {
         comboCount: openCombo ? data.comboCount : 0,
       });
 
+      //Vérifier si on est pas épuisé
       if (this.store.getData().stamina <= 0) {
         this.enterExhausted();
       }
