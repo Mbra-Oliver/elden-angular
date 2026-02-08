@@ -8,7 +8,7 @@ import {
   ViewChild,
 } from '@angular/core';
 import { TERRAIN_INFO } from '../../lib/constants/terrain-constant';
-import { PlayerEntity } from '../../lib/entities/player.entity';
+import { PlayerEntity } from '../../lib/entities/player/player.entity';
 import { GameLoopService } from '../../lib/services/game-loop.service';
 import { RendererService } from '../../lib/services/renderer.service';
 import { GameStore } from '../../lib/store/game.store';

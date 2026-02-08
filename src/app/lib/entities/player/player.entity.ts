@@ -3,11 +3,11 @@ import {
   HEAVY_ATTACK,
   LIGHT_COMBO,
   PLAYER_CONFIG,
-} from '../constants/player.config-constant';
-import { PlayerData } from '../interfaces/PlayerData';
-import { InputService } from '../services/input.service';
-import { RendererService } from '../services/renderer.service';
-import { PlayerStore } from './player/player.store';
+} from '../../constants/player.config-constant';
+import { PlayerData } from '../../interfaces/PlayerData';
+import { InputService } from '../../services/input.service';
+import { RendererService } from '../../services/renderer.service';
+import { PlayerStore } from './player.store';
 
 @Injectable({
   providedIn: 'root',
