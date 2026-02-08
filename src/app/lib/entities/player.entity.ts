@@ -42,6 +42,10 @@ export class PlayerEntity {
         this.handleAttacking(deltaTime);
         break;
 
+      case 'rolling':
+        this.handleRolling(deltaTime);
+        break;
+
       case 'exhausted':
         this.handleExhausted(deltaTime);
         break;
@@ -132,6 +136,13 @@ export class PlayerEntity {
       this.enterHeavyAttack();
       return;
     }
+
+    //Gerer le cas de roulade.
+
+    if (this.input.dodge() && currentData.stamina >= PLAYER_CONFIG.rollCost) {
+      this.enterRoll();
+      return;
+    }
   }
 
   private getCurrentLightAttack(comboIndex: number) {
@@ -175,6 +186,65 @@ export class PlayerEntity {
 
     this.staminaRegenCooldown = PLAYER_CONFIG.staminaRegenDelay;
   }
+
+  //Pour rentrer dans le mode roulade.
+
+  private enterRoll() {
+    const data = this.store.getData();
+
+    this.store.update({
+      state: 'rolling',
+      stateTimer: PLAYER_CONFIG.rollDuration,
+      comboTimer: 0,
+      comboCount: 0,
+      stamina: data.stamina - PLAYER_CONFIG.rollCost,
+      invicible: true,
+      attackType: 'none',
+    });
+
+    this.staminaRegenCooldown = PLAYER_CONFIG.staminaRegenDelay;
+  }
+
+  //Gerer le roll (Roulade)
+
+  private handleRolling(deltaTime: number) {
+    const data = this.store.getData();
+    const newTimer = data.stateTimer - deltaTime * 1000; //Pour convertir en MilliSeconde
+
+    //Gerer les deplacement
+
+    const length = Math.sqrt(data.facingX ** 2 + data.vy ** 2);
+    const normX = length > 0 ? data.facingX / length : 1;
+    const normY = length > 0 ? data.facingY / length : 0;
+
+    const rollSpeed = PLAYER_CONFIG.rollSpeed; // 300px par secondes
+
+    const newX = data.x + normX * rollSpeed * deltaTime;
+    const newY = data.y + normY * rollSpeed * deltaTime;
+
+    if (newTimer <= 0) {
+      this.store.update({
+        state: 'idle',
+        stateTimer: 0,
+        vx: 0,
+        vy: 0,
+        x: newX,
+        y: newY,
+        invicible: false, //Si l'animation fini il n'est plus invincible
+      });
+
+      if (this.store.getData().stamina <= 0) {
+        this.enterExhausted();
+      }
+    } else {
+      this.store.update({
+        stateTimer: newTimer,
+        x: newX,
+        y: newY,
+      });
+    }
+  }
+
   //Pouvoir gerer les attaques
 
   private handleAttacking(deltaTime: number) {
@@ -240,7 +310,7 @@ export class PlayerEntity {
   private updateStamina(delatTime: number) {
     const data = this.store.getData();
 
-    if (data.state === 'attacking') return;
+    if (data.state === 'attacking' || data.state === 'rolling') return;
 
     //Petit délai avat de regenerer le souffle.
 
@@ -303,6 +373,8 @@ export class PlayerEntity {
       case 'exhausted':
         color = '#3313a8ff';
         break;
+      case 'rolling':
+        color = '#e7fb0bff';
     }
 
     // if (data.state === 'moving') {
