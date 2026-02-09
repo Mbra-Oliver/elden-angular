@@ -8,6 +8,7 @@ import {
   ViewChild,
 } from '@angular/core';
 import { TERRAIN_INFO } from '../../lib/constants/terrain-constant';
+import { BossEntity } from '../../lib/entities/bosses/boss.entity';
 import { PlayerEntity } from '../../lib/entities/player/player.entity';
 import { GameLoopService } from '../../lib/services/game-loop.service';
 import { RendererService } from '../../lib/services/renderer.service';
@@ -28,7 +29,7 @@ export class GameCanvaComponent implements AfterViewInit, OnInit, OnDestroy {
   renderer = inject(RendererService);
   gameLoop = inject(GameLoopService);
   private player = inject(PlayerEntity);
-
+  private boss = inject(BossEntity);
   private updateCallback = this.update.bind(this);
   private renderCallback = this.render.bind(this);
 
@@ -58,6 +59,7 @@ export class GameCanvaComponent implements AfterViewInit, OnInit, OnDestroy {
 
   private update(deltaTime: number) {
     this.player.update(deltaTime);
+    this.boss.update(deltaTime);
   }
 
   private render() {
@@ -66,7 +68,7 @@ export class GameCanvaComponent implements AfterViewInit, OnInit, OnDestroy {
     this.renderer.clear('#0f0f23');
 
     //2. Dessiner le terrain
-
+    this.boss.render();
     this.player.render();
   }
 }

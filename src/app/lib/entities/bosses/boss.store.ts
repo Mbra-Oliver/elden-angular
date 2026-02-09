@@ -30,6 +30,19 @@ export class BossStore {
     return d.hp / d.maxHp <= BOSS_CONFIG.phase2Threshold ? 2 : 1;
   });
 
+  getData(): BossData {
+    return this.data();
+  }
+
+  //Mettre a jour les donnees
+
+  update(partial: Partial<BossData>) {
+    this.data.update((data) => ({
+      ...data,
+      ...partial,
+    }));
+  }
+
   reset() {
     //Reset les stats du Boss
   }
