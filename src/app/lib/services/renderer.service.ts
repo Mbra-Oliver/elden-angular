@@ -1,110 +1,238 @@
+import { GROUND_Y_SCALE } from '../constants/terrain-constant';
 import { Injectable } from '@angular/core';
+import { SourceRect } from '../engine/sprite';
 
 /**
- * CE SERVICE s'occupe de la gestion des rendus (UNIQUEMENT)
+ * Service de rendu bas niveau.
  *
- * INITIALISER LE CANVAS
- * Fournir des methodes de dessins (Rectangle, textes, cercles...)
- * Gerer les effets visuels (screenShake, particules...)
+ * - Initialise le canvas.
+ * - Fournit un repère MONDE (beginWorld/endWorld) qui applique la caméra et le
+ *   screen-shake, et un repère ÉCRAN (par défaut) pour l'UI.
+ * - Méthodes de dessin : sprites (drawImage), formes, barres, texte.
  */
-
-@Injectable({
-  providedIn: 'root',
-})
+@Injectable({ providedIn: 'root' })
 export class RendererService {
   private ctx: CanvasRenderingContext2D | null = null;
-
-  /*
-   *DIMENSION du canvas
-   */
-
   private canvaWidth = 0;
   private canvaHeight = 0;
+  private focusShade?: CanvasGradient;
 
-  /*
-   * Gerer le tremblement d'écran
-   */
+  // Screen shake
+  private shakeIntensity = 0;
+  private shakeDecay = 0.86;
+  private shakeX = 0;
+  private shakeY = 0;
 
-  private shakeActive = false;
-  private shakeDecay = 0.85; // Vitesse de décroissance pour retourner a l'etat normal
-  private shakeIntensity = 0; //Intensité du tremblement
-
-  //Initialiser le service avec CANVA html
   init(canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d');
-
     this.canvaWidth = canvas.width;
     this.canvaHeight = canvas.height;
-
-    console.log(`CANVAS INITIALISER A ${this.canvaWidth}x${this.canvaHeight}`);
+    this.focusShade = undefined;
+    if (this.ctx) this.ctx.imageSmoothingEnabled = true;
   }
 
   get width() {
     return this.canvaWidth;
   }
-
   get height() {
     return this.canvaHeight;
   }
-
   get context(): CanvasRenderingContext2D | null {
     return this.ctx;
   }
 
-  //======================
-  //METHODE DE DESSIN
-  //=======================
+  // ====================================================================
+  // FRAME / CAMÉRA / SHAKE
+  // ====================================================================
 
-  //Dans le cas de la boucle supprimer les anciennes images avant de poser la nouvelle pour eviter la superposition.
-  clear(color = '#0f0f23') {
+  /** Efface l'écran et peint le fond. À appeler en début de frame. */
+  clear(color: string | null = '#04060a') {
     if (!this.ctx) return;
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.clearRect(0, 0, this.canvaWidth, this.canvaHeight);
-    this.ctx.fillStyle = color;
-    this.ctx.fillRect(0, 0, this.canvaWidth, this.canvaHeight);
+    if (color) {
+      this.ctx.fillStyle = color;
+      this.ctx.fillRect(0, 0, this.canvaWidth, this.canvaHeight);
+    }
   }
 
-  /*
-   *DESSINER UN RECTANGE Plein
-   * @param x - Position X en pixel
-   * @param y - Position Y en pixel
-   * @param width - Largeur en pixel
-   * @param height - Hauteur en pixel
-   * @param color - Couleur du rectangle
-   */
+  /** Décroît le shake d'une frame. À appeler une fois par frame. */
+  tickShake() {
+    if (this.shakeIntensity > 0.4) {
+      this.shakeX = (Math.random() * 2 - 1) * this.shakeIntensity;
+      this.shakeY = (Math.random() * 2 - 1) * this.shakeIntensity;
+      this.shakeIntensity *= this.shakeDecay;
+    } else {
+      this.shakeIntensity = 0;
+      this.shakeX = 0;
+      this.shakeY = 0;
+    }
+  }
 
-  fillRect(x: number, y: number, h: number, w: number, color: string) {
+  /** Entre dans le repère MONDE (caméra + shake appliqués). */
+  beginWorld(camX: number, camY: number, zoom = 1) {
+    if (!this.ctx) return;
+    this.ctx.save();
+    this.ctx.translate(this.shakeX, this.shakeY);
+    this.ctx.scale(zoom, zoom * GROUND_Y_SCALE);
+    this.ctx.translate(-camX, -camY);
+  }
+
+  shadeCombatEdges(strength: number) {
+    if (!this.ctx || strength < 0.01) return;
+    if (!this.focusShade) {
+      const x = this.width / 2;
+      const y = this.height / 2;
+      this.focusShade = this.ctx.createRadialGradient(x, y, y * 0.85, x, y, Math.hypot(x, y));
+      this.focusShade.addColorStop(0, 'transparent');
+      this.focusShade.addColorStop(1, '#17100cca');
+    }
+    this.ctx.save();
+    this.ctx.globalAlpha = Math.min(1, strength);
+    this.ctx.fillStyle = this.focusShade;
+    this.ctx.fillRect(0, 0, this.width, this.height);
+    this.ctx.restore();
+  }
+
+  /** Sort du repère MONDE → retour au repère ÉCRAN. */
+  endWorld() {
+    if (!this.ctx) return;
+    this.ctx.restore();
+  }
+
+  shake(intensity: number) {
+    this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+  }
+
+  // ====================================================================
+  // SPRITES
+  // ====================================================================
+
+  /** Dessine une frame de sprite-sheet. flipX inverse horizontalement. */
+  drawSprite(
+    img: HTMLImageElement,
+    src: SourceRect,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+    flipX = false,
+  ) {
+    if (!this.ctx) return;
+    if (flipX) {
+      this.ctx.save();
+      this.ctx.translate(dx + dw, dy);
+      this.ctx.scale(-1, 1);
+      this.ctx.drawImage(img, src.sx, src.sy, src.sw, src.sh, 0, 0, dw, dh);
+      this.ctx.restore();
+    } else {
+      this.ctx.drawImage(img, src.sx, src.sy, src.sw, src.sh, dx, dy, dw, dh);
+    }
+  }
+
+  // ====================================================================
+  // FORMES
+  // ====================================================================
+
+  fillRect(x: number, y: number, w: number, h: number, color: string) {
     if (!this.ctx) return;
     this.ctx.fillStyle = color;
     this.ctx.fillRect(x, y, w, h);
   }
 
-  /**
-   * DESSINER UN CERCLE PLEIN
-   * @param x - Centre X
-   * @param y - Centre Y
-   * @param radius - Rayon du cercle
-   * @param color - Couleur de remplissage
-   */
   fillCircle(x: number, y: number, radius: number, color: string) {
     if (!this.ctx) return;
     this.ctx.beginPath();
-    // arc(x, y, radius, startAngle, endAngle)
     this.ctx.arc(x, y, radius, 0, Math.PI * 2);
     this.ctx.fillStyle = color;
     this.ctx.fill();
   }
 
+  strokeRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    color: string,
+    lineWidth = 1,
+  ) {
+    if (!this.ctx) return;
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = lineWidth;
+    this.ctx.strokeRect(x, y, w, h);
+  }
+
+  /** Ellipse douce, utile pour une ombre portée au sol. */
+  fillEllipse(x: number, y: number, rx: number, ry: number, color: string) {
+    if (!this.ctx) return;
+    this.ctx.beginPath();
+    this.ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    this.ctx.fillStyle = color;
+    this.ctx.fill();
+  }
+
   /**
-   * DESSINER UNE BARRE DE STATUT
-   * @param x - Position X
-   * @param y - Position Y
-   * @param w - Largeur totale
-   * @param h - Hauteur de la barre
-   * @param current - Valeur actuelle (ex: 50)
-   * @param max - Valeur max (ex: 100)
-   * @param fillColor - Couleur de la jauge
-   * @param bgColor - Couleur du fond (défaut noir)
+   * Coup de lame balayé : un arc lumineux qui pivote autour de (cx, cy) dans
+   * la direction `facing`, en fonction de `progress` (0 → 1). Donne une vraie
+   * sensation d'attaque même sans sprite.
    */
+  slash(
+    cx: number,
+    cy: number,
+    facing: number,
+    reach: number,
+    progress: number,
+    color: string,
+    spread = Math.PI * 0.85,
+  ) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const tip = facing - spread / 2 + spread * progress;
+    const length = Math.min(spread * 0.48, spread * progress);
+    if (length <= 0) return;
+    const tail = tip - length;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(tip);
+    const fade = ctx.createLinearGradient(0, -reach * 0.74, reach, 0);
+    fade.addColorStop(0, '#f7dbad00');
+    fade.addColorStop(0.48, color);
+    fade.addColorStop(1, '#fff1cea6');
+    ctx.fillStyle = fade;
+    ctx.globalAlpha = Math.sin(Math.PI * progress) * 0.72;
+    ctx.beginPath();
+    ctx.arc(0, 0, reach, tail - tip, 0);
+    ctx.quadraticCurveTo(reach * 0.8, -reach * 0.06, reach * 0.75, -reach * 0.16);
+    ctx.quadraticCurveTo(reach * 0.67, -reach * 0.31, Math.cos(length) * reach, -Math.sin(length) * reach);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /** Dessine un rectangle pivoté autour de son centre (roulade, etc.). */
+  fillRectRotated(
+    cx: number,
+    cy: number,
+    w: number,
+    h: number,
+    angle: number,
+    color: string,
+  ) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.fillStyle = color;
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+
+  // ====================================================================
+  // UI (repère ÉCRAN)
+  // ====================================================================
+
   drawBar(
     x: number,
     y: number,
@@ -113,88 +241,37 @@ export class RendererService {
     current: number,
     max: number,
     fillColor: string,
-    bgColor: string = '#222222',
+    bgColor = '#161616',
   ) {
     if (!this.ctx) return;
-
-    // 1. Dessiner le fond (barre vide)
-    this.fillRect(x, y, h, w, bgColor);
-
-    // 2. Calculer le ratio de remplissage (entre 0 et 1)
+    this.fillRect(x, y, w, h, bgColor);
     const ratio = Math.max(0, Math.min(current / max, 1));
     const fillWidth = w * ratio;
-
-    // 3. Dessiner la jauge par-dessus
-    if (fillWidth > 0) {
-      this.fillRect(x, y, h, fillWidth, fillColor);
-    }
+    if (fillWidth > 0) this.fillRect(x, y, fillWidth, h, fillColor);
   }
 
-  drawText(title: string, x: number, y: number, color: string) {
-    if (!this.ctx) return;
-    this.ctx.font = `10px Arial`;
-    this.ctx.fillStyle = color;
-    this.ctx.fillText(title, x, y);
-  }
-
-  /**
-   *  DECLENCHER UN TREMBLEMENT D'ECRAN
-   * Utile quand on va frapper l'ennemi pour donner de l'impact.
-   *  @param intensity - Intensité du tremblement (ex 8 = leger, 20 = fort)
-   */
-
-  shake(intenisity: number) {
-    this.shakeIntensity = intenisity;
-  }
-
-  applyShake() {
-    if (!this.ctx || this.shakeIntensity <= 0) return;
-
-    if (this.shakeIntensity > 0.8) {
-      // Calcul d'un décalage aléatoire entre -intensity et +intensity
-      const offsetX = (Math.random() * 2 - 1) * this.shakeIntensity;
-      const offsetY = (Math.random() * 2 - 1) * this.shakeIntensity;
-
-      //Reduire progressivement l'intensite
-
-      this.shakeIntensity *= this.shakeDecay;
-
-      // 1. On sauvegarde l'état intact du canvas (position 0,0)
-      this.ctx.save();
-
-      // 2. On déplace tout le repère de dessin
-      this.ctx.translate(offsetX, offsetY);
-
-      this.shakeActive = true;
-    } else {
-      //Tremblement est terminé
-
-      this.shakeIntensity = 0;
-      this.shakeActive = false;
-    }
-  }
-
-  //Remet le canva a sa positio normale
-
-  resetCanvas() {
-    if (!this.ctx) return;
-    this.ctx.restore();
-    this.shakeActive = true;
-  }
-
-  //Dessiner un contour de rectangle
-
-  strokeRect(
+  drawText(
+    text: string,
     x: number,
     y: number,
-    w: number,
-    h: number,
     color: string,
-    lineWidth: number,
+    options: {
+      size?: number;
+      align?: CanvasTextAlign;
+      font?: string;
+      shadow?: boolean;
+    } = {},
   ) {
     if (!this.ctx) return;
-    this.ctx.strokeStyle = color;
-    this.ctx.lineWidth = lineWidth;
-    this.ctx.strokeRect(x, y, w, h);
+    const { size = 12, align = 'left', font = 'Arial', shadow = false } = options;
+    this.ctx.font = `${size}px ${font}`;
+    this.ctx.textAlign = align;
+    if (shadow) {
+      this.ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      this.ctx.fillText(text, x + 1, y + 1);
+    }
+    this.ctx.fillStyle = color;
+    this.ctx.fillText(text, x, y);
+    this.ctx.textAlign = 'left';
   }
 }

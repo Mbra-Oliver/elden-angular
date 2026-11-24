@@ -1,14 +1,92 @@
 :host {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
 }
 
-.debug-info {
-  display: flex;
-  gap: 16px;
-  font-family: monospace;
-  font-size: 14px;
-  color: #aaa;
+.stage { position: relative; }
+
+.game-viewport {
+  position: relative;
+  display: block;
+  width: min(960px, 100vw, calc(100dvh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  background: #252d25;
+}
+
+.journal,
+.controls {
+  color: #fff0d1;
+  background: #211b14ed;
+  font-family: system-ui, sans-serif;
+}
+
+.journal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 14px;
+  border-bottom: 1px solid #b98454;
+  font-size: clamp(11px, 2vw, 14px);
+}
+
+.journal strong { color: #ffdc9a; }
+.journal p { margin: 3px 0 0; }
+
+.controls {
+  padding: 7px 12px;
+  text-align: center;
+  font-size: 11px;
+}
+
+.talk,
+.dialogue {
+  position: absolute;
+  bottom: 40px;
+}
+
+.talk {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.dialogue {
+  box-sizing: border-box;
+  inset-inline: 16px;
+  max-width: 660px;
+  margin-inline: auto;
+  max-height: min(330px, 70%);
+  overflow: auto;
+  padding: clamp(10px, 2.5vw, 22px);
+  background: #211b14fa;
+  color: #fff0d1;
+  border: 1px solid #b98454;
+  font: clamp(12px, 2vw, 16px)/1.45 system-ui, sans-serif;
+  box-shadow: 0 8px 25px #150d0b88;
+}
+
+.dialogue strong { color: #ffdc9a; }
+.dialogue p { margin: 6px 0 12px; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+
+button {
+  cursor: pointer;
+  border: 1px solid #f4ce90;
+  background: #edbb78;
+  color: #271911;
+  padding: 7px 12px;
+  font: 600 13px system-ui, sans-serif;
+}
+
+button:hover { background: #ffe0ab; }
+.choices kbd { margin-right: 4px; color: #674220; }
+
+
+.engine-message {
+  position: absolute;
+  inset: 45% 0 auto;
+  text-align: center;
+  color: #ffebc3;
+  font: 14px system-ui, sans-serif;
 }

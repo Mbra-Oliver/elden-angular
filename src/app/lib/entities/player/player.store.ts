@@ -55,8 +55,10 @@ export class PlayerStore {
 
   reset() {
     this.update({
-      x: 100,
-      y: 100,
+      x: 1000,
+      y: 875,
+      facingX: -1,
+      facingY: 0,
       vx: 0,
       vy: 0,
       hp: PLAYER_CONFIG.maxHp,

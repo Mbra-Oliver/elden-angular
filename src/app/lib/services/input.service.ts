@@ -12,6 +12,8 @@ export class InputService {
       this.keys.set(e.code, true);
     });
 
+    window.addEventListener('blur', () => this.keys.clear());
+
     window.addEventListener('keyup', (e) => {
       this.keys.set(e.code, false);
     });

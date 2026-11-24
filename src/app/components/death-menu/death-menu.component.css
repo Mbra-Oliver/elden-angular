@@ -121,3 +121,26 @@ background: transparent;
       transform:scale(1);
     }
 }
+
+.death-container {
+  width: min(800px, 100vw);
+  height: min(600px, 100dvh);
+}
+
+.death-content {
+  box-sizing: border-box;
+  position: relative;
+  background: transparent;
+  text-align: center;
+}
+
+.death-text-container { margin-bottom: 12px; }
+
+.epilogue {
+  max-width: 440px;
+  color: #f8dab0;
+  font: 16px/1.6 system-ui, sans-serif;
+}
+
+.death-content:has(.epilogue) .death-text { color: #ffda9a; }
+.menu-label { color: #f8dab0; }

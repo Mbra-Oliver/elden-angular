@@ -5,26 +5,27 @@ export const PLAYER_CONFIG = {
 
   //Stats
 
-  maxHp: 100,
+  maxHp: 120,
   maxStamina: 100,
 
   //Mouvement
 
-  speed: 150, // x pixel par seconde (pas par frame)
+  speed: 220, // x pixel par seconde (pas par frame)
 
   //Souffle stamina.
 
-  staminaRegen: 25, // Regenere 25 stamina par seconde
+  staminaRegen: 38, // Regenere 25 stamina par seconde
 
-  staminaRegenDelay: 800, // Temps en millisecondes avant de pouvoir regenerer de la stamina
+  staminaRegenDelay: 360, // Temps en millisecondes avant de pouvoir regenerer de la stamina
 
   staminaLowThreshold: 0.2, // Pourcentage de stamina basse pour l'effet de tremblement (20%)
 
   //Roulade
 
-  rollCost: 20, //Coût en stamina,
-  rollDuration: 400, //Durée (ms)
-  rollSpeed: 300, // Vitesse pendant le roll
+  rollCost: 10, //Coût en stamina,
+  rollDuration: 250, //Durée (ms)
+  rollSpeed: 520,
+  perfectDodgeWindow: 125, // Vitesse pendant le roll
 
   //Attaque
 
@@ -36,18 +37,22 @@ export const PLAYER_CONFIG = {
 
 //Attaque rapide
 export const LIGHT_COMBO: AttackData[] = [
-  { damage: 10, staminaCost: 15, duration: 300, range: 1.2 },
-  { damage: 12, staminaCost: 18, duration: 500, range: 1.3 },
-  { damage: 18, staminaCost: 22, duration: 350, range: 1.5 },
+  { damage: 10, staminaCost: 6, duration: 190, range: 1.2, windup: 52, active: 58 },
+  { damage: 12, staminaCost: 7, duration: 220, range: 1.3, windup: 61, active: 70 },
+  { damage: 18, staminaCost: 9, duration: 260, range: 1.5, windup: 77, active: 77 },
 ];
 
 //Attaque lourdes
 
 export const HEAVY_ATTACK: AttackData = {
   damage: 30,
-  staminaCost: 50,
-  duration: 600,
+  staminaCost: 24,
+  duration: 410,
   range: 1.8,
+  windup: 140,
+  active: 86,
 };
 
-export type AttackType = 'light' | 'heavy' | 'none';
+export const COUNTER_ATTACK: AttackData = { damage: 44, staminaCost: 0, duration: 290, range: 2.4, windup: 32, active: 145 };
+
+export type AttackType = 'light' | 'heavy' | 'counter' | 'none';

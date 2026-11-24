@@ -1,54 +1,25 @@
-<div class="menu-container">
-  <div class="menu-content">
-    <!-- <div class="text-white">
-      {{ braises | json }}
-    </div> -->
-
-    <div class="embers">
-      @for (ember of embers; track ember.id) {
-        <div
-          class="ember"
-          [style.left.%]="ember.x"
-          [style.animation-delay]="ember.delay + 's'"
-          [style.animation-duration]="ember.duration + 's'"
-        ></div>
-      }
-    </div>
-
-    <!-- Titre du jeu -->
-
-    <div class="title-container">
-      <div class="game-title">ELDEN ANGULAR</div>
-      <div class="game-subtitle">
-        Découvrez autrement un RPG, dans votre navigateur.
-      </div>
-    </div>
-
-    <!-- Options -->
-
-    <nav class="menu-options">
-      @for (item of menuItems; track item.label; let i = $index) {
-        <button
-          class="menu-item"
-          (mouseenter)="selectedIndex.set(i)"
-          (click)="executeItem(i)"
-        >
-          <lucide-angular
-            [img]="ChevronRightIcon"
-            class="menu-arrow"
-            [class.visible]="selectedIndex() === i"
-          ></lucide-angular>
-
-          <span class="menu-label">{{ item.label }}</span>
-        </button>
-      }
+<main class="title-screen" (keydown.escape)="controlsOpen.set(false)">
+  <img class="cover-image" src="assets/passage-de-l-ouest.jpg" alt="" fetchpriority="high">
+  <div class="backdrop" aria-hidden="true"></div>
+  <div class="title-content">
+    <h1>Les Sentiers<br><span>de Terre Rouge</span></h1>
+    <nav aria-label="Menu principal">
+      <button type="button" class="primary" (click)="start()">Nouvelle partie</button>
+      <button type="button" (click)="controlsOpen.set(!controlsOpen())" [attr.aria-expanded]="controlsOpen()">
+        Commandes
+      </button>
     </nav>
-
-    <!-- Blocs d'instructions -->
+    @if (controlsOpen()) {
+      <section class="bindings" aria-label="Commandes du jeu">
+        <dl>
+          <dt>Déplacement</dt><dd>Flèches ou ZQSD</dd>
+          <dt>Combo</dt><dd>Espace</dd>
+          <dt>Attaque lourde</dt><dd>E</dd>
+          <dt>Esquive</dt><dd>Maj</dd>
+          <dt>Interaction</dt><dd>F</dd>
+          <dt>Choix de dialogue</dt><dd>1 ou 2</dd>
+        </dl>
+      </section>
+    }
   </div>
-
-  <!-- <div class="instructions">
-    <span> Utilisez les fleches du clavier pour vous deplacer </span>
-    <span>Entrer / Espace pour interagir</span>
-  </div> -->
-</div>
+</main>

@@ -3,4 +3,6 @@ export interface AttackData {
   staminaCost: number;
   duration: number;
   range: number;
+  windup: number;
+  active: number;
 }

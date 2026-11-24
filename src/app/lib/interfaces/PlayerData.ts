@@ -1,3 +1,5 @@
+import type { AttackType } from '../constants/player.config-constant';
+
 export type PlayerState =
   | 'idle' // Le joueur ne produit aucune entrée et est immobile
   | 'moving' // Le joueur se déplace (une touche de direction est active)
@@ -38,7 +40,7 @@ export interface PlayerData {
   // ---- COMBAT
 
   invicible: boolean; // Indique si le joueur est invincible (Oui pendant le roll)
-  attackType: 'light' | 'heavy' | 'none';
+  attackType: AttackType;
   comboCount: number; //Index du combo
   comboTimer: number;
 }

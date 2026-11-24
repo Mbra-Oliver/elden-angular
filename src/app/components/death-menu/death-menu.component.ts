@@ -12,16 +12,12 @@ export class DeathMenuComponent {
   gameService = inject(GameStateService);
   menusItems: MenuItem[] = [
     {
-      label: 'REESSAYER',
-      action: () => {},
+      label: 'Réessayer',
+      action: () => this.gameService.retry(),
     },
     {
-      label: 'ALLER AU MENU',
+      label: 'Retour au village',
       action: () => this.gameService.returnToMainMenu(),
-    },
-    {
-      label: 'QUITTER',
-      action: () => {},
     },
   ];
 

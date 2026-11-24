@@ -1,14 +1,15 @@
 import { computed, Injectable, signal } from '@angular/core';
 import { BOSS_CONFIG } from '../../constants/boss.config-constant';
+import { CLEARING } from '../../constants/village';
 import { BossData } from '../../interfaces/BossData';
 
 @Injectable({
   providedIn: 'root',
 })
 export class BossStore {
-  private readonly data = signal<BossData>({
-    x: 600,
-    y: 250,
+  private readonly initialData: BossData = {
+    x: CLEARING.x - BOSS_CONFIG.size / 2,
+    y: CLEARING.y - BOSS_CONFIG.size / 2,
     vx: 0,
     vy: 0,
     facingX: -1,
@@ -21,7 +22,8 @@ export class BossStore {
     comboStep: 0,
     chargeTargetX: 0,
     chargeTargetY: 0,
-  });
+  };
+  private readonly data = signal<BossData>({ ...this.initialData });
 
   //Computed pour connaitre la phase dans laquelle le boss est.
 
@@ -44,6 +46,6 @@ export class BossStore {
   }
 
   reset() {
-    //Reset les stats du Boss
+    this.data.set({ ...this.initialData });
   }
 }

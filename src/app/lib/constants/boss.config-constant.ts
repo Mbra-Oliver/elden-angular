@@ -3,7 +3,7 @@ export const BOSS_CONFIG = {
   maxHp: 300,
   speed: 150,
   chaseRange: 600, //Porter de chasse
-  idlePauseDuration: 1000, //Temps de Idle la ou le boss bouge pas.
+  idlePauseDuration: 475, //Temps de Idle la ou le boss bouge pas.
   knockbarReduction: 0.3,
   hurtDuration: 200,
   phase2Threshold: 0.5, //Passe a la phase 2 quand hp/2 ,

@@ -3,9 +3,12 @@
     <div class="blood-overlay"></div>
     <div class="death-content">
       <div class="death-text-container">
-        <div class="death-text">VOUS ÊTES MORT</div>
+        <div class="death-text">{{ gameService.currentScreen() === 'victory' ? 'L’EAU REVIENT' : 'TU ES TOMBÉ' }}</div>
       </div>
 
+      @if (gameService.currentScreen() === 'victory') {
+        <p class="epilogue">{{ gameService.ending() }}</p>
+      }
       <nav class="death-options">
         @for (item of menusItems; track item.label; let i = $index) {
           <button class="menu-item" (click)="executeItem(i)">

@@ -1,9 +1,32 @@
-<canvas
-  #gameCanva
-  [width]="CANVAS_CONFIG.WIDTH"
-  [height]="CANVAS_CONFIG.HEIGHT"
-  style="display: block; border: 2px solid #333; background: #1a1a2e"
-></canvas>
-
-<!-- Partie instruction -->
-<div class="debug-info">FPS: {{ gameStore.fps() }}</div>
+<div class="stage">
+  <div #viewport class="game-viewport"></div>
+  @if (engineStatus() === 'loading') {
+    <p class="engine-message" role="status">Chargement du terrain…</p>
+  } @else if (engineStatus() === 'failed') {
+    <div class="engine-message" role="alert">
+      <p>Le moteur n’a pas pu démarrer.</p>
+      <button type="button" (click)="gameState.returnToMainMenu()">Retour au menu</button>
+    </div>
+  }
+  <div class="journal" aria-live="polite">
+    <strong>◆ {{ gameState.objective().name }}</strong>
+    <p>{{ gameState.story() }}</p>
+  </div>
+  @if (gameState.canTalk()) {
+    <button type="button" class="talk" (click)="gameState.talk()">Interagir · F</button>
+  }
+  @if (gameState.dialogue(); as line) {
+    <section class="dialogue" aria-label="Dialogue" aria-live="polite">
+      <strong>{{ line.speaker }}</strong>
+      <p>{{ line.text }}</p>
+      <div class="choices">
+        @for (choice of line.choices; track choice.label; let index = $index) {
+          <button type="button" (click)="gameState.choose(choice)"><kbd>{{ index + 1 }}</kbd> {{ choice.label }}</button>
+        }
+      </div>
+    </section>
+  }
+  <div class="controls">
+    Flèches / ZQSD / WASD · Espace combo · E attaque lourde · Maj esquive · F interagir · Glisser pour tourner hors combat
+  </div>
+</div>
