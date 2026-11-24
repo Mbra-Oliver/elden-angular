@@ -36,6 +36,7 @@ export class World3D {
   private readonly projection = new T.Vector3();
   private readonly cameraGoal = new T.Vector3();
   private readonly cameraLook = new T.Vector3();
+  private readonly lookGoal = new T.Vector3();
   private readonly cameraArmBase = new T.Vector3();
   private groundSource?: HTMLCanvasElement;
   private arena?: DuelArena;
@@ -48,6 +49,7 @@ export class World3D {
   private pitch = 0;
   private readonly controller = new AbortController();
   private readonly mistTexture: T.CanvasTexture;
+  private readonly mistMaterial: T.SpriteMaterial;
   private focus: Point | null = null;
 
   constructor(host: HTMLElement) {
@@ -92,6 +94,15 @@ export class World3D {
     this.duelist = this.makeFighter('#873f30', '#c2a176');
     this.makeVeille();
     this.mistTexture = this.makeMistTexture();
+    this.mistMaterial = new T.SpriteMaterial({
+      map: this.mistTexture, transparent: true, depthWrite: false, opacity: 0.62,
+    });
+    for (let i = 0; i < 44; i++) {
+      const sprite = new T.Sprite(this.mistMaterial);
+      sprite.scale.set(79, 92 + i % 7 * 8, 1);
+      this.mist.add(sprite);
+    }
+    this.mist.visible = false;
     this.scene.add(this.mist);
     this.marker = new T.Mesh(new T.OctahedronGeometry(5), new T.MeshBasicMaterial({ color: '#ffdb82' }));
     this.scene.add(this.marker);
@@ -236,20 +247,57 @@ export class World3D {
 
   private setArena(arena?: DuelArena) {
     if (arena === this.arena) return;
-    for (const sprite of this.mist.children as T.Sprite[]) sprite.material.dispose();
-    this.mist.clear();
     this.arena = arena;
+    this.mist.visible = !!arena;
     if (!arena) return;
-    for (let i = 0; i < 44; i++) {
+    // Sprites créés une seule fois (matériau partagé) : changer d'arène ne fait
+    // que les replacer, sans allocation ni compilation de shader en plein combat.
+    this.mist.children.forEach((sprite, i) => {
       const angle = i * Math.PI * 2 / 44;
-      const sprite = new T.Sprite(new T.SpriteMaterial({
-        map: this.mistTexture, transparent: true, depthWrite: false, opacity: 0.62,
-      }));
       sprite.position.set(Math.sin(angle) * arena.radius, 28 + i % 5 * 7, Math.cos(angle) * arena.radius);
-      sprite.scale.set(79, 92 + i % 7 * 8, 1);
-      this.mist.add(sprite);
-    }
+    });
     this.mist.position.set(arena.x, 0, arena.y);
+  }
+
+  /**
+   * Compile tous les shaders et envoie les textures au GPU avant la première
+   * image jouée. Sans ça, la première frame (et la première apparition de la
+   * Veille, de la vague ou de la brume) gèle le jeu pendant la compilation.
+   */
+  async warmUp(ground: HTMLCanvasElement) {
+    this.setGround(ground);
+    const hidden = [this.duelist.root, this.veille, this.mist, this.marker, this.wave].filter((o) => !o.visible);
+    hidden.forEach((object) => { object.visible = true; });
+    try {
+      await this.renderer.compileAsync(this.scene, this.camera);
+    } catch {
+      this.renderer.compile(this.scene, this.camera);
+    }
+    if (this.ground.material.map) this.renderer.initTexture(this.ground.material.map);
+    this.renderer.initTexture(this.mistTexture);
+    // Un rendu complet, sans culling, envoie aussi toutes les géométries au GPU
+    // et termine la liaison des programmes (l'écran de chargement le masque).
+    const culled: T.Object3D[] = [];
+    this.scene.traverse((object) => {
+      if (object.frustumCulled) {
+        object.frustumCulled = false;
+        culled.push(object);
+      }
+    });
+    this.renderer.render(this.scene, this.camera);
+    culled.forEach((object) => { object.frustumCulled = true; });
+    hidden.forEach((object) => { object.visible = false; });
+  }
+
+  private setGround(ground: HTMLCanvasElement) {
+    if (this.groundSource === ground) return;
+    this.groundSource = ground;
+    this.ground.material.map?.dispose();
+    const texture = new T.CanvasTexture(ground);
+    texture.colorSpace = T.SRGBColorSpace;
+    texture.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
+    this.ground.material.map = texture;
+    this.ground.material.needsUpdate = true;
   }
 
   private animate(fighter: Fighter, pose: Actor3D, dt: number) {
@@ -277,15 +325,7 @@ export class World3D {
     ground: HTMLCanvasElement, player: Actor3D, enemy: Actor3D | null, duelist: boolean,
     objective: Point | null, arena?: DuelArena,
   ) {
-    if (this.groundSource !== ground) {
-      this.groundSource = ground;
-      this.ground.material.map?.dispose();
-      const texture = new T.CanvasTexture(ground);
-      texture.colorSpace = T.SRGBColorSpace;
-      texture.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
-      this.ground.material.map = texture;
-      this.ground.material.needsUpdate = true;
-    }
+    this.setGround(ground);
     const now = performance.now();
     const dt = this.lastFrame ? Math.min(0.05, (now - this.lastFrame) / 1000) : 1 / 60;
     this.lastFrame = now;
@@ -328,12 +368,25 @@ export class World3D {
     } else {
       this.targetYaw = this.orbit;
     }
+    const distance = enemy ? Math.hypot(enemy.x - player.x, enemy.y - player.y) : 0;
     const difference = this.targetYaw - this.viewYaw;
-    this.viewYaw = this.initialized ? this.viewYaw +
-      Math.atan2(Math.sin(difference), Math.cos(difference)) * (1 - Math.exp(-6.6 * dt)) : this.targetYaw;
+    const turn = Math.atan2(Math.sin(difference), Math.cos(difference));
+    if (!this.initialized) {
+      this.viewYaw = this.targetYaw;
+    } else if (enemy) {
+      // Verrouillage : quand les combattants sont au contact, la ligne
+      // joueur→ennemi pivote très vite. On ralentit alors la caméra et on
+      // plafonne sa vitesse angulaire pour éviter les coups de fouet.
+      const closeness = T.MathUtils.smoothstep(distance, 22, 140);
+      const rate = T.MathUtils.lerp(1.4, 6, closeness);
+      const maxSpeed = T.MathUtils.lerp(1.6, 3.4, closeness);
+      const step = turn * (1 - Math.exp(-rate * dt));
+      this.viewYaw += T.MathUtils.clamp(step, -maxSpeed * dt, maxSpeed * dt);
+    } else {
+      this.viewYaw += turn * (1 - Math.exp(-6.6 * dt));
+    }
     const dx = Math.sin(this.viewYaw);
     const dy = Math.cos(this.viewYaw);
-    const distance = enemy ? Math.hypot(enemy.x - player.x, enemy.y - player.y) : 0;
     const boom = enemy ? 97 + Math.min(distance, 200) * 0.22 : 104;
     const shoulder = enemy ? 31 : 24;
     this.cameraGoal.set(player.x - dx * boom - dy * shoulder,
@@ -351,10 +404,17 @@ export class World3D {
         break;
       }
     }
-    if (this.initialized) this.camera.position.lerp(this.cameraGoal, 1 - Math.exp(-12 * dt));
-    else this.camera.position.copy(this.cameraGoal);
     const lead = enemy ? 35 + Math.min(distance, 160) * 0.24 : 36;
-    this.cameraLook.set(player.x + dx * lead, 27, player.y + dy * lead);
+    this.lookGoal.set(player.x + dx * lead, 27, player.y + dy * lead);
+    if (this.initialized) {
+      this.camera.position.lerp(this.cameraGoal, 1 - Math.exp(-10 * dt));
+      // Le point visé est lissé lui aussi : les reculs et roulades ne font
+      // plus sursauter le cadre.
+      this.cameraLook.lerp(this.lookGoal, 1 - Math.exp(-14 * dt));
+    } else {
+      this.camera.position.copy(this.cameraGoal);
+      this.cameraLook.copy(this.lookGoal);
+    }
     this.camera.lookAt(this.cameraLook);
     this.initialized = true;
   }
@@ -378,6 +438,7 @@ export class World3D {
       } else if (object instanceof T.Sprite) object.material.dispose();
     });
     this.ground.material.map?.dispose();
+    this.mistMaterial.dispose();
     this.mistTexture.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();

@@ -12,6 +12,9 @@ import {
 import type { Game } from 'phaser';
 import type { World3D } from '../../lib/engine/world-3d';
 import { VIEWPORT } from '../../lib/constants/terrain-constant';
+import { SPRITE_MANIFEST } from '../../lib/constants/sprite-config';
+import { AssetLoaderService } from '../../lib/engine/asset-loader.service';
+import { EnvironmentService } from '../../lib/engine/environment.service';
 import { GameLoopService } from '../../lib/services/game-loop.service';
 import { GameStateService } from '../../lib/services/game-state.service';
 import { RendererService } from '../../lib/services/renderer.service';
@@ -30,9 +33,12 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
   private readonly renderer = inject(RendererService);
   private readonly loop = inject(GameLoopService);
   private readonly zone = inject(NgZone);
+  private readonly assets = inject(AssetLoaderService);
+  private readonly environment = inject(EnvironmentService);
   private game?: Game;
   private world?: World3D;
   private destroyed = false;
+  private warming = false;
 
   @HostListener('window:keydown', ['$event'])
   onKeydown(event: KeyboardEvent) {
@@ -58,6 +64,9 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
       const [Phaser, { World3D }] = await Promise.all([
         import('phaser/dist/phaser.esm.js'),
         import('../../lib/engine/world-3d'),
+        // Les textures du sol doivent être prêtes avant la première image :
+        // sinon le terrain 2400×1600 est repeint et renvoyé au GPU en plein combat.
+        this.assets.load(SPRITE_MANIFEST),
       ]);
       if (this.destroyed) return;
 
@@ -74,7 +83,7 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
           callbacks: {
             preBoot: (game: Game) => {
               game.events.on(Phaser.Core.Events.POST_RENDER, () => {
-                if (!this.destroyed) this.loop.render();
+                if (!this.destroyed && !this.warming) this.loop.render();
               });
             },
             postBoot: (game: Game) => {
@@ -82,19 +91,31 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
               game.canvas.setAttribute('role', 'img');
               game.canvas.setAttribute('aria-label', 'Terrain de jeu vu du dessus');
               Object.assign(game.canvas.style, { width: '100%', height: '100%', display: 'block' });
+              let world: World3D | undefined;
               try {
-                this.world = new World3D(this.viewport.nativeElement);
-                this.gameState.setWorld3D(this.world);
+                world = new World3D(this.viewport.nativeElement);
                 game.canvas.setAttribute('aria-hidden', 'true');
                 Object.assign(game.canvas.style, { position: 'absolute', inset: '0', pointerEvents: 'none' });
               } catch (error) {
                 console.warn('WebGL indisponible, vue 2D utilisée.', error);
               }
               this.renderer.init(game.canvas);
-              this.engineStatus.set('ready');
+              if (!world) {
+                this.engineStatus.set('ready');
+                return;
+              }
+              this.world = world;
+              // Ni logique ni rendu tant que les shaders ne sont pas compilés.
+              this.warming = true;
+              void world.warmUp(this.environment.groundCanvas()).finally(() => {
+                if (this.destroyed) return;
+                this.gameState.setWorld3D(world);
+                this.warming = false;
+                this.zone.run(() => this.engineStatus.set('ready'));
+              });
             },
           },
-          scene: { update: (_time: number, delta: number) => this.loop.update(delta) },
+          scene: { update: (_time: number, delta: number) => { if (!this.warming) this.loop.update(delta); } },
         });
       });
     } catch (error) {
