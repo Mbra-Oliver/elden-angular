@@ -1,4 +1,4 @@
-export type BossAttackType = 'slash' | 'slam' | 'charge' | 'combo' | 'surge' | 'none';
+export type BossAttackType = 'slash' | 'slam' | 'charge' | 'combo' | 'surge' | 'sweep' | 'tide' | 'none';
 
 export const BOSS_COMBO_STEP = 3;
 
@@ -67,14 +67,72 @@ export const BOSS_ATTACKS: Record<
   },
 
   combo: {
-    damage: 15, // Dégâts faibles par coup, mais dangereux si tout touche
-    windupDuration: 400, // Très soudain
-    attackDuration: 2000, // Enchaînement de plusieurs coups
-    recoverDuration: 800,
+    damage: 14, // Dégâts faibles par coup, mais dangereux si tout touche
+    windupDuration: 520, // Soudain, mais lisible
+    attackDuration: 1140, // BOSS_COMBO_STEP coups de 380 ms
+    recoverDuration: 950,
     hitBoxType: 'directional',
-    range: 2.5,
+    range: 2.1,
+  },
+
+  // Moulinet / tourbillon : zone circulaire autour du boss, à fuir en roulant vers l'extérieur.
+  sweep: {
+    damage: 24,
+    windupDuration: 900,
+    attackDuration: 720,
+    recoverDuration: 1250,
+    hitBoxType: 'aoe',
+    range: 2.7,
+  },
+
+  // Double vague : deux anneaux décalés, deux esquives à rythmer.
+  tide: {
+    damage: 22,
+    windupDuration: 1150,
+    attackDuration: 1150,
+    recoverDuration: 1900,
+    hitBoxType: 'aoe',
+    range: 3.65,
   },
 };
+
+/** Avancement 0→1 de la phase active d'une attaque. */
+export function attackProgress(attack: Exclude<BossAttackType, 'none'>, remainingMs: number) {
+  return Math.max(0, Math.min(1, 1 - remainingMs / BOSS_ATTACKS[attack].attackDuration));
+}
+
+/** Indice du coup en cours dans un combo (0..BOSS_COMBO_STEP-1). */
+export function comboStepAt(progress: number) {
+  return Math.min(BOSS_COMBO_STEP - 1, Math.floor(progress * BOSS_COMBO_STEP));
+}
+
+/**
+ * Fenêtre où l'attaque blesse réellement. En dehors, l'arme est en
+ * mouvement d'armement ou de retour (anticipation / follow-through) et ne
+ * touche pas : l'animation et la hitbox racontent la même chose.
+ */
+export function isBossHitActive(attack: BossAttackType, progress: number) {
+  if (attack === 'combo') {
+    const local = (progress * BOSS_COMBO_STEP) % 1;
+    return local >= 0.18 && local <= 0.62;
+  }
+  if (attack === 'sweep') return progress >= 0.15 && progress <= 0.82;
+  if (attack === 'slash') return progress <= 0.72;
+  return true;
+}
+
+/** Rayons des anneaux d'eau encore actifs pendant une double vague. */
+export function tideRadii(size: number, remainingMs: number): number[] {
+  const tide = BOSS_ATTACKS.tide;
+  const progress = Math.max(0, Math.min(1, 1 - remainingMs / tide.attackDuration));
+  const ring = (t: number) => size * (0.45 + (tide.range - 0.45) * t);
+  const radii: number[] = [];
+  const first = progress / 0.62;
+  const second = (progress - 0.38) / 0.62;
+  if (first <= 1) radii.push(ring(first));
+  if (second >= 0 && second <= 1) radii.push(ring(second));
+  return radii;
+}
 
 
 export const SURGE_WIDTH = 23;

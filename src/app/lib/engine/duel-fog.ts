@@ -1,10 +1,12 @@
 import { WORLD } from '../constants/terrain-constant';
-import { BATTLE, CLEARING } from '../constants/village';
 
 export interface DuelArena { x: number; y: number; radius: number }
 
-export const FORD_DUEL: DuelArena = { x: BATTLE.x - 57, y: BATTLE.y, radius: 232 };
-export const SLUICE_DUEL: DuelArena = { x: CLEARING.x - 60, y: CLEARING.y, radius: 283 };
+// Arènes agrandies (rayons 232 → 290 et 283 → 345, soit ~1,5× la surface).
+// Centres choisis pour que la rivière, le bord du monde et les cases restent
+// hors du cercle (le gué) ou seulement en lisière (la retenue).
+export const FORD_DUEL: DuelArena = { x: 712, y: 305, radius: 290 };
+export const SLUICE_DUEL: DuelArena = { x: 1500, y: 800, radius: 345 };
 
 export class DuelFog {
   private lastArena?: DuelArena;

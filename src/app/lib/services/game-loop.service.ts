@@ -38,6 +38,11 @@ export class GameLoopService {
   onRender(callback: () => void) { this.renderCallbacks.add(callback); }
   offRender(callback: () => void) { this.renderCallbacks.delete(callback); }
 
+  /** Vrai pendant un gel d'impact (hitstop) : la logique est suspendue. */
+  get frozen() {
+    return this.freezeMilliseconds > 0;
+  }
+
   freeze(milliseconds: number) {
     this.freezeMilliseconds = Math.max(this.freezeMilliseconds, milliseconds);
   }

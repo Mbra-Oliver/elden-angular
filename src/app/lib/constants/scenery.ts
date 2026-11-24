@@ -1,4 +1,7 @@
 import { WORLD } from './terrain-constant';
+import { FORD_DUEL, SLUICE_DUEL } from '../engine/duel-fog';
+
+const ARENA_CLEARINGS = [FORD_DUEL, SLUICE_DUEL];
 
 export const HUTS = [[732, 640, 53], [909, 564, 48], [980, 650, 40],
   [1178, 507, 53], [1258, 618, 46], [886, 950, 48], [1168, 985, 51]] as const;
@@ -18,7 +21,9 @@ export const TREES = Array.from({ length: 330 }, (_, index) => ({
   seed: index + 713,
 })).filter(({ x, y }) =>
   !(x > 595 && x < 1720 && y > 365 && y < 1130) &&
-  !(x > 215 && x < 1000 && y > 100 && y < 540));
+  !(x > 215 && x < 1000 && y > 100 && y < 540) &&
+  // Aucun arbre dans les arènes de duel (agrandies) ni sur leur lisière.
+  !ARENA_CLEARINGS.some((arena) => (x - arena.x) ** 2 + (y - arena.y) ** 2 < (arena.radius + 40) ** 2));
 
 export const ROCKS = [[1390, 673], [1526, 688], [1556, 852], [1388, 902]] as const;
 

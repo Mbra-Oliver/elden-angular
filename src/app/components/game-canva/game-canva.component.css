@@ -90,3 +90,50 @@ button:hover { background: #ffe0ab; }
   color: #ffebc3;
   font: 14px system-ui, sans-serif;
 }
+
+/* --- Équipement (lance, arc, Bandji) --- */
+.loadout {
+  position: absolute;
+  left: 12px;
+  bottom: 40px;
+  display: grid;
+  gap: 4px;
+  min-width: 132px;
+  padding: 7px 9px;
+  color: #fff0d1;
+  background: #211b14d9;
+  border: 1px solid #b9845480;
+  font: 12px system-ui, sans-serif;
+  pointer-events: none;
+}
+
+.loadout .slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 5px;
+  border: 1px solid transparent;
+  opacity: 0.62;
+}
+
+.loadout .slot.active,
+.loadout .slot.bandji { opacity: 1; }
+.loadout .slot.active { border-color: #edbb78; background: #edbb7826; }
+.loadout .slot.empty .count { color: #ff8a6b; }
+.loadout .icon { width: 14px; text-align: center; color: #ffdc9a; }
+.loadout .count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.loadout .keys { margin: 2px 0 0; font-size: 10px; color: #d8c4a0; }
+
+.gear-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 4px 10px;
+  color: #fff0d1;
+  background: #211b14e6;
+  border: 1px solid #b98454;
+  font: 600 13px system-ui, sans-serif;
+  pointer-events: none;
+}

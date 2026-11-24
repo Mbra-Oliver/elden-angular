@@ -18,6 +18,7 @@ import { EnvironmentService } from '../../lib/engine/environment.service';
 import { GameLoopService } from '../../lib/services/game-loop.service';
 import { GameStateService } from '../../lib/services/game-state.service';
 import { RendererService } from '../../lib/services/renderer.service';
+import { EquipmentStore } from '../../lib/entities/player/equipment.store';
 
 @Component({
   selector: 'app-game-canva',
@@ -29,6 +30,7 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
   @ViewChild('viewport') viewport!: ElementRef<HTMLDivElement>;
 
   readonly gameState = inject(GameStateService);
+  readonly equipment = inject(EquipmentStore);
   readonly engineStatus = signal<'loading' | 'ready' | 'failed'>('loading');
   private readonly renderer = inject(RendererService);
   private readonly loop = inject(GameLoopService);

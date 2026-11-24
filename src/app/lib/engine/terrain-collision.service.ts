@@ -36,6 +36,13 @@ export class TerrainCollisionService {
     this.arena = arena;
   }
 
+  /** Obstacles mobiles ou destructibles (décor cassable), testés en plus du décor fixe. */
+  private dynamicBlocker: ((x: number, y: number, radius: number) => boolean) | null = null;
+
+  setDynamicBlocker(blocker: ((x: number, y: number, radius: number) => boolean) | null) {
+    this.dynamicBlocker = blocker;
+  }
+
   move(fromX: number, fromY: number, toX: number, toY: number, radius: number): Point {
     let x = fromX;
     let y = fromY;
@@ -62,6 +69,7 @@ export class TerrainCollisionService {
           (x - obstacle.x) ** 2 + (y - obstacle.y) ** 2 < (radius + obstacle.radius) ** 2)) return true;
       }
     }
+    if (this.dynamicBlocker?.(x, y, radius)) return true;
     return WATER.some((water) => {
       const edgeX = Math.max(water.x, Math.min(x, water.x + water.w));
       const edgeY = Math.max(water.y, Math.min(y, water.y + water.h));

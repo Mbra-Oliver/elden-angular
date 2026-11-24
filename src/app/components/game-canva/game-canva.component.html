@@ -12,6 +12,26 @@
     <strong>◆ {{ gameState.objective().name }}</strong>
     <p>{{ gameState.story() }}</p>
   </div>
+  @if (!gameState.dialogue()) {
+    @let gear = equipment.state();
+    <section class="loadout" aria-label="Équipement">
+      <div class="slot" [class.active]="gear.weapon === 'spear'">
+        <span class="icon" aria-hidden="true">⟋</span> Lance
+      </div>
+      <div class="slot" [class.active]="gear.weapon === 'bow'" [class.empty]="gear.arrows === 0">
+        <span class="icon" aria-hidden="true">➶</span> Arc
+        <span class="count" [attr.aria-label]="gear.arrows + ' flèches'">{{ gear.arrows }}/{{ gear.maxArrows }}</span>
+      </div>
+      <div class="slot bandji" [class.empty]="gear.bandji === 0">
+        <span class="icon" aria-hidden="true">⚱</span> Bandji
+        <span class="count" [attr.aria-label]="gear.bandji + ' gourdes'">{{ gear.bandji }}/{{ gear.maxBandji }}</span>
+      </div>
+      <p class="keys">R changer d’arme · B boire</p>
+    </section>
+    @if (equipment.notice(); as notice) {
+      <p class="gear-notice" role="status">{{ notice }}</p>
+    }
+  }
   @if (gameState.canTalk()) {
     <button type="button" class="talk" (click)="gameState.talk()">Interagir · F</button>
   }
@@ -27,6 +47,6 @@
     </section>
   }
   <div class="controls">
-    Flèches / ZQSD / WASD · Espace combo · E attaque lourde · Maj esquive · F interagir · Glisser pour tourner hors combat
+    Flèches / ZQSD / WASD · Espace combo / tir · E attaque lourde / tir bandé · R lance ↔ arc · B Bandji · Maj (appui bref) esquive, maintenue sprint · F interagir · Glisser pour tourner hors combat
   </div>
 </div>

@@ -18,6 +18,8 @@ export class BossStore {
     maxHp: BOSS_CONFIG.maxHp,
     state: 'idle',
     stateTimer: 2000,
+    stateLength: 2000,
+    phase: 1,
     currentAttack: 'none',
     comboStep: 0,
     chargeTargetX: 0,
@@ -27,10 +29,7 @@ export class BossStore {
 
   //Computed pour connaitre la phase dans laquelle le boss est.
 
-  readonly phase = computed(() => {
-    const d = this.data();
-    return d.hp / d.maxHp <= BOSS_CONFIG.phase2Threshold ? 2 : 1;
-  });
+  readonly phase = computed(() => this.data().phase);
 
   getData(): BossData {
     return this.data();

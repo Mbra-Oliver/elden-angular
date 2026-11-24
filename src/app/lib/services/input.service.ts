@@ -59,4 +59,14 @@ export class InputService {
     // e.code fait la distinction entre les deux Shift, donc on vérifie les deux
     return this.isPressed('ShiftLeft') || this.isPressed('ShiftRight');
   }
+
+  switchWeapon(): boolean {
+    // R : même position en AZERTY et QWERTY
+    return this.isPressed('KeyR');
+  }
+
+  drink(): boolean {
+    // B comme Bandji
+    return this.isPressed('KeyB');
+  }
 }

@@ -3,6 +3,11 @@ import { HUTS, ROCKS, TREES, WATER } from '../constants/scenery';
 import { VIEWPORT, WORLD } from '../constants/terrain-constant';
 import { CROSSING, GATE, VILLAGE_STOPS } from '../constants/village';
 import type { DuelArena } from './duel-fog';
+import { ArenaDressing } from './arena-3d';
+import { GuardianRig, animateDuelist } from './boss-rig-3d';
+import { Equipment3D } from './equipment-3d';
+import { PlayerAnimator } from './player-rig-3d';
+import type { WeaponId } from '../constants/equipment.config-constant';
 
 interface Point { x: number; y: number }
 export interface Actor3D extends Point {
@@ -11,6 +16,22 @@ export interface Actor3D extends Point {
   state: string;
   phase: number;
   waveRadius?: number;
+  /** Boss : anneaux d'eau actifs, attaque en cours, coup du combo, phase du combat. */
+  waveRadii?: number[];
+  attack?: string;
+  step?: number;
+  bossPhase?: number;
+  exposed?: boolean;
+  /** Gel d'impact en cours : l'animation se fige et tremble. */
+  hitstop?: boolean;
+  /** Vitesse de recul (joueur touché) : oriente la réaction au coup. */
+  knockX?: number;
+  knockY?: number;
+  /** Joueur : type d'esquive en cours et course. */
+  dodge?: 'roll' | 'backstep';
+  sprint?: boolean;
+  /** Invincibilité brève après un coup reçu : le corps clignote. */
+  guarded?: boolean;
 }
 
 interface Fighter {
@@ -27,9 +48,11 @@ export class World3D {
   private readonly camera = new T.PerspectiveCamera(54, VIEWPORT.WIDTH / VIEWPORT.HEIGHT, 2, 1240);
   private readonly ground: T.Mesh<T.PlaneGeometry, T.MeshStandardMaterial>;
   private readonly player: Fighter;
+  private readonly gear: Equipment3D;
+  private readonly playerAnim: PlayerAnimator;
   private readonly duelist: Fighter;
-  private readonly veille = new T.Group();
-  private readonly claws: T.Mesh[] = [];
+  private readonly guardian = new GuardianRig((color) => this.material(color));
+  private readonly veille = this.guardian.root;
   private readonly mist = new T.Group();
   private readonly marker: T.Mesh;
   private readonly wave: T.Mesh<T.RingGeometry, T.MeshBasicMaterial>;
@@ -51,6 +74,9 @@ export class World3D {
   private readonly mistTexture: T.CanvasTexture;
   private readonly mistMaterial: T.SpriteMaterial;
   private focus: Point | null = null;
+  private readonly arenaDressing: ArenaDressing;
+  /** Couches de scène ajoutées par d'autres systèmes (décor destructible…). */
+  private readonly layers: { update(dt: number): void; dispose(): void }[] = [];
 
   constructor(host: HTMLElement) {
     this.renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -91,6 +117,10 @@ export class World3D {
     this.scene.add(this.ground);
     this.makeScenery();
     this.player = this.makeFighter('#253c54', '#aa793f');
+    // La lance est la dernière pièce ajoutée au bras droit par makeFighter.
+    const spear = this.player.arms[1].children.at(-1);
+    this.gear = new Equipment3D(this.scene, this.player.torso, this.player.arms, spear);
+    this.playerAnim = new PlayerAnimator(this.scene, this.player, spear!);
     this.duelist = this.makeFighter('#873f30', '#c2a176');
     this.makeVeille();
     this.mistTexture = this.makeMistTexture();
@@ -110,10 +140,15 @@ export class World3D {
       new T.MeshBasicMaterial({ color: '#9bd7c6', transparent: true, depthWrite: false, opacity: 0.55 }));
     this.wave.rotation.x = -Math.PI / 2;
     this.scene.add(this.wave);
+    this.arenaDressing = new ArenaDressing(this.scene, this.renderer, this.camera);
 
   }
 
   get heading() { return this.viewYaw; }
+
+  addLayer(create: (scene: T.Scene) => { update(dt: number): void; dispose(): void }) {
+    this.layers.push(create(this.scene));
+  }
 
   private material(color: string) {
     return new T.MeshStandardMaterial({ color, roughness: 0.92, flatShading: true });
@@ -167,23 +202,8 @@ export class World3D {
   }
 
   private makeVeille() {
-    const stone = this.material('#56645a');
-    const shell = this.part(this.veille, new T.IcosahedronGeometry(22, 1), stone, 0, 12, -4);
-    shell.scale.set(0.95, 0.57, 1.23);
-    const core = this.part(this.veille, new T.IcosahedronGeometry(10, 0),
-      new T.MeshStandardMaterial({ color: '#6cd3ba', emissive: '#27756c' }), 0, 9, 7);
-    core.scale.set(0.74, 0.65, 1.25);
-    for (const side of [-1, 1]) {
-      for (let leg = 0; leg < 3; leg++) {
-        const mesh = this.part(this.veille, new T.DodecahedronGeometry(7, 0), stone, side * 18, 5, leg * 11 - 13);
-        mesh.scale.set(1.48, 0.59, 0.78);
-        this.claws.push(mesh);
-      }
-      const claw = this.part(this.veille, new T.ConeGeometry(6, 19, 5), this.material('#9c9c75'), side * 10, 8, 21);
-      claw.rotation.x = Math.PI / 2;
-      claw.rotation.z = side * 0.18;
-    }
-    this.scene.add(this.veille);
+    this.guardian.hide();
+    this.scene.add(this.veille, this.guardian.rings);
   }
 
   private makeScenery() {
@@ -330,18 +350,22 @@ export class World3D {
     const dt = this.lastFrame ? Math.min(0.05, (now - this.lastFrame) / 1000) : 1 / 60;
     this.lastFrame = now;
     this.setArena(arena);
+    this.arenaDressing.update(arena, now, dt);
+    for (const layer of this.layers) layer.update(dt);
     this.mist.rotation.y = now * 0.000046;
-    this.animate(this.player, player, dt);
+    this.playerAnim.update(player, dt, now, !!enemy);
+    this.gear.applyPose(player);
+    // L'arc et la gourde posent les bras directement : l'animateur repart de
+    // cette pose ensuite, pour un fondu sans à-coup.
+    this.playerAnim.capture();
     this.duelist.root.visible = !!enemy && duelist;
     this.veille.visible = !!enemy && !duelist;
-    if (enemy && duelist) this.animate(this.duelist, enemy, dt);
-    if (enemy && !duelist) {
-      this.veille.position.set(enemy.x, 0, enemy.y);
-      this.veille.rotation.y = Math.atan2(enemy.facingX, enemy.facingY);
-      this.claws.forEach((leg, i) => {
-        leg.rotation.y = Math.sin(now * 0.022 + i * 2.3) * (enemy.state === 'chase' ? 0.38 : 0.10);
-      });
+    if (enemy && duelist) {
+      this.animate(this.duelist, enemy, dt);
+      animateDuelist(this.duelist, enemy, now);
     }
+    if (enemy && !duelist) this.guardian.update(enemy, now);
+    else this.guardian.hide();
     this.wave.visible = enemy?.waveRadius !== undefined;
     if (enemy?.waveRadius !== undefined) {
       this.wave.position.set(enemy.x, 1.5, enemy.y);
@@ -419,6 +443,12 @@ export class World3D {
     this.initialized = true;
   }
 
+  /** Arme en main et flèches (en vol ou au sol), mises à jour avant render(). */
+  setEquipment(weapon: WeaponId, arrows: readonly { x: number; y: number; dirX: number; dirY: number; grounded: boolean }[]) {
+    this.gear.setWeapon(weapon);
+    this.gear.setArrows(arrows);
+  }
+
   objectiveOnScreen() {
     if (!this.focus) return null;
     this.projection.set(this.focus.x, 26, this.focus.y).project(this.camera);
@@ -430,6 +460,8 @@ export class World3D {
 
   dispose() {
     this.controller.abort();
+    this.arenaDressing.dispose();
+    this.layers.forEach((layer) => layer.dispose());
     this.scene.traverse((object) => {
       if (object instanceof T.Mesh) {
         object.geometry.dispose();

@@ -19,6 +19,17 @@ import { PlayerData } from '../../interfaces/PlayerData';
 import { InputService } from '../../services/input.service';
 import { RendererService } from '../../services/renderer.service';
 import { PlayerStore } from './player.store';
+import { EquipmentStore } from './equipment.store';
+import { ArrowService } from '../projectiles/arrow.service';
+import {
+  BOW_POWER_SHOT,
+  BOW_QUICK_SHOT,
+  BowShotData,
+  EQUIPMENT_CONFIG,
+} from '../../constants/equipment.config-constant';
+import { approachVelocity, DodgeKind, dodgeProfile, dodgeSpeed, ShiftGesture } from './locomotion';
+
+type BufferedAction = 'light' | 'heavy' | 'dodge';
 
 @Injectable({
   providedIn: 'root',
@@ -30,6 +41,15 @@ export class PlayerEntity {
   private readonly terrain = inject(TerrainCollisionService);
   private renderer = inject(RendererService);
   private assets = inject(AssetLoaderService);
+  readonly equipment = inject(EquipmentStore);
+  private readonly arrows = inject(ArrowService);
+
+  // --- Équipement : tir à l'arc et Bandji
+  private shot: BowShotData = BOW_QUICK_SHOT;
+  private arrowReleased = false;
+  private bandjiHealed = false;
+  private switchHeld = false;
+  private drinkHeld = false;
 
   private animator = new Animator(PLAYER_SHEET, PLAYER_CLIPS, 'idle');
 
@@ -47,14 +67,52 @@ export class PlayerEntity {
     this.cameraHeading = heading;
   }
 
+  // --- Tampon d'entrée : un appui reste mémorisé PLAYER_CONFIG.inputBuffer ms
+  // et part à la première fenêtre possible (fin d'impact, récupération…).
   private dodgeHeld = false;
-  private dodgeQueued = false;
+  private attackHeld = false;
+  private heavyHeld = false;
+  private buffered: BufferedAction | null = null;
+  private bufferTime = 0;
+
+  // --- Locomotion : Shift bref = esquive, maintenu = sprint (voir locomotion.ts)
+  private readonly shift = new ShiftGesture();
+  /** Esquive en cours (lu par l'animateur 3D quand state === 'rolling'). */
+  dodgeKind: DodgeKind = 'roll';
+  /** Vrai pendant un sprint (state === 'moving'). */
+  sprinting = false;
+  /** Invincibilité restante après un coup reçu (ms). */
+  private hurtIFrames = 0;
+  private lockTarget: { x: number; y: number } | undefined;
+
+  /** Durée de l'esquive en cours (ms), pour calculer sa phase d'animation. */
+  get dodgeDuration() {
+    return dodgeProfile(this.dodgeKind).duration;
+  }
+
+  /** Début d'esquive : un coup évité ici ouvre la riposte. */
+  inPerfectDodge(data = this.store.getData()) {
+    return data.state === 'rolling' &&
+      this.dodgeDuration - data.stateTimer <= PLAYER_CONFIG.perfectDodgeWindow;
+  }
 
   resetCombat() {
     this.staminaRegenCooldown = 0;
     this.motion.reset();
     this.dodgeHeld = false;
-    this.dodgeQueued = false;
+    this.attackHeld = false;
+    this.heavyHeld = false;
+    this.buffered = null;
+    this.bufferTime = 0;
+    this.shift.reset();
+    this.dodgeKind = 'roll';
+    this.sprinting = false;
+    this.hurtIFrames = 0;
+    this.lockTarget = undefined;
+    this.arrowReleased = false;
+    this.bandjiHealed = false;
+    this.switchHeld = false;
+    this.drinkHeld = false;
   }
 
   tryCounter(targetX: number, targetY: number): boolean {
@@ -77,6 +135,9 @@ export class PlayerEntity {
       invicible: true,
       comboCount: 0, comboTimer: 0,
     });
+    // L'appui qui déclenche la riposte ne doit pas relancer une attaque ensuite.
+    this.attackHeld = true;
+    this.buffered = null;
     return true;
   }
 
@@ -86,27 +147,23 @@ export class PlayerEntity {
 
     if (data.state === 'dead') return;
 
-    const dodgeDown = this.input.dodge();
-    const dodgePressed = dodgeDown && !this.dodgeHeld;
-    this.dodgeHeld = dodgeDown;
-    if (dodgePressed && data.state === 'attacking' && data.stateTimer <= 100) {
-      this.dodgeQueued = true;
-    }
-    const queuedDodge = this.dodgeQueued && (data.state === 'idle' || data.state === 'moving');
-    if (data.state !== 'attacking') this.dodgeQueued = false;
+    this.lockTarget = this.cameraHeading !== null ? target : undefined;
+    this.tickHurtIFrames(deltaTime);
+    this.readActions(deltaTime);
+    const dodgePressed = this.buffered === 'dodge';
 
     switch (data.state) {
       case 'idle':
       case 'moving':
         //Pour le moment on va juste rester sur idle, moving
-        this.handleMovement(deltaTime, dodgePressed || queuedDodge, target);
+        this.handleMovement(deltaTime, dodgePressed, target);
         break;
       case 'attacking':
-        this.handleAttacking(deltaTime);
+        this.handleAttacking(deltaTime, target);
         break;
 
       case 'rolling':
-        this.handleRolling(deltaTime);
+        this.handleRolling(deltaTime, target);
         break;
 
       case 'exhausted':
@@ -116,8 +173,17 @@ export class PlayerEntity {
       case 'hurt':
         this.handleHurt(deltaTime);
         break;
+
+      case 'shooting':
+        this.handleShooting(deltaTime, dodgePressed);
+        break;
+
+      case 'drinking':
+        this.handleDrinking(deltaTime);
+        break;
     }
 
+    if (this.store.getData().state !== 'moving') this.sprinting = false;
     this.updateStamina(deltaTime);
     this.resolveMovement(data.x, data.y);
     const resolved = this.store.getData();
@@ -130,6 +196,45 @@ export class PlayerEntity {
     const data = this.store.getData();
     this.animator.play(playerStateToClip(data.state, data.attackType));
     this.animator.update(deltaTime);
+  }
+
+  /** Détecte les appuis (fronts montants) et les garde en mémoire un court instant. */
+  private readActions(deltaTime: number) {
+    const attack = this.input.attack();
+    const heavy = this.input.heavyAttack();
+    const dodge = this.input.dodge();
+    // Shift : l'esquive part au relâchement d'un appui bref ; maintenu, c'est un sprint.
+    const dodgeTap = this.shift.update(dodge, deltaTime);
+    let pressed: BufferedAction | null = null;
+    if (attack && !this.attackHeld) pressed = 'light';
+    if (heavy && !this.heavyHeld) pressed = 'heavy';
+    if (dodgeTap) pressed = 'dodge';
+    this.attackHeld = attack;
+    this.heavyHeld = heavy;
+    this.dodgeHeld = dodge;
+    if (pressed) {
+      this.buffered = pressed;
+      this.bufferTime = PLAYER_CONFIG.inputBuffer;
+    } else if (this.buffered) {
+      this.bufferTime -= deltaTime * 1000;
+      if (this.bufferTime <= 0) this.buffered = null;
+    }
+  }
+
+  private consume() {
+    this.buffered = null;
+    this.bufferTime = 0;
+  }
+
+  /** Direction demandée au clavier, en coordonnées monde (relative à la caméra). */
+  private inputDirection() {
+    const horizontal = (this.input.right() ? 1 : 0) - (this.input.left() ? 1 : 0);
+    const vertical = (this.input.down() ? 1 : 0) - (this.input.up() ? 1 : 0);
+    const heading = this.cameraHeading;
+    const dx = heading === null ? horizontal : -horizontal * Math.cos(heading) - vertical * Math.sin(heading);
+    const dy = heading === null ? vertical : horizontal * Math.sin(heading) - vertical * Math.cos(heading);
+    const length = Math.hypot(dx, dy);
+    return { x: length > 0 ? dx / length : 0, y: length > 0 ? dy / length : 0, length };
   }
 
   private handleMovement(deltaTime: number, dodgePressed: boolean, target?: { x: number; y: number }) {
@@ -154,11 +259,8 @@ export class PlayerEntity {
 
     //Lire les inputs sur les directions. dx -> directionX ; dy->directionY
 
-    const horizontal = (this.input.right() ? 1 : 0) - (this.input.left() ? 1 : 0);
-    const vertical = (this.input.down() ? 1 : 0) - (this.input.up() ? 1 : 0);
     const heading = this.cameraHeading;
-    const dx = heading === null ? horizontal : -horizontal * Math.cos(heading) - vertical * Math.sin(heading);
-    const dy = heading === null ? vertical : horizontal * Math.sin(heading) - vertical * Math.cos(heading);
+    const { x: normX, y: normY, length } = this.inputDirection();
 
     //Probleme sur les diagonales a gerer.
     //Si on appuie sur Haut + Droite: dx = 1 et dy = -1
@@ -167,34 +269,37 @@ export class PlayerEntity {
     // 2. Calculer la longueur du vecteur (Magnitude)
     // Formule : racine carrée de (x² + y²)
 
-    const length = Math.sqrt(dx * dx + dy * dy);
-    const normX = length > 0 ? dx / length : 0;
-    const normY = length > 0 ? dy / length : 0;
+    // Sprint (Shift maintenu) tant qu'il reste du souffle ; marche plus posée
+    // quand on tourne autour d'un ennemi verrouillé.
+    const locked = heading !== null && !!target;
+    this.sprinting = length > 0 && this.shift.sprinting && data.stamina > 0;
+    const speed = this.sprinting ? PLAYER_CONFIG.sprintSpeed
+      : PLAYER_CONFIG.speed * (locked ? PLAYER_CONFIG.lockedSpeedFactor : 1);
 
-    const speed = PLAYER_CONFIG.speed;
-
-    //Calculer la nouvelle position
-
-    const newX = data.x + normX * speed * deltaTime;
-    const newY = data.y + normY * speed * deltaTime;
+    // Inertie courte : on accélère et on freine en quelques centièmes de seconde.
+    const velocity = approachVelocity(data.vx, data.vy, normX * speed, normY * speed, deltaTime);
 
     //Mettre a jour la position
     const changes: Partial<typeof data> = {
-      x: newX,
-      y: newY,
-      vx: normX * speed,
-      vy: normY * speed,
+      x: data.x + velocity.x * deltaTime,
+      y: data.y + velocity.y * deltaTime,
+      vx: velocity.x,
+      vy: velocity.y,
       state: length > 0 ? 'moving' : 'idle',
     };
+    if (this.sprinting) {
+      changes.stamina = Math.max(0, data.stamina - PLAYER_CONFIG.sprintStaminaPerSecond * deltaTime);
+      this.staminaRegenCooldown = Math.max(this.staminaRegenCooldown, PLAYER_CONFIG.staminaRegenDelay * 0.5);
+    }
 
     //Mettre a jour la direction du regard
     if (length > 0) {
       changes.facingX = normX;
       changes.facingY = normY;
     }
-    const locked = heading !== null && !!target;
-    if (target && !dodgePressed && (locked ||
-        (length === 0 && (this.input.attack() || this.input.heavyAttack())))) {
+    // En sprint, on court droit devant : le regard suit la course, pas l'ennemi.
+    if (target && !dodgePressed && !this.sprinting && (locked ||
+        (length === 0 && (this.buffered === 'light' || this.buffered === 'heavy')))) {
       const aimX = target.x - this.centerX;
       const aimY = target.y - this.centerY;
       const distance = Math.hypot(aimX, aimY);
@@ -211,24 +316,55 @@ export class PlayerEntity {
     const currentData = this.store.getData();
     //Je dois savoir si on a fais une attaque legere ou lourde . Et si c'est une attaque legere c'est laquelle
 
-    if (dodgePressed && currentData.stamina >= PLAYER_CONFIG.rollCost) {
+    if (dodgePressed && currentData.stamina > 0) {
+      this.consume();
       this.enterRoll();
       return;
     }
 
-    const lightAttack = this.getCurrentLightAttack(currentData.comboCount);
+    // Équipement : changer d'arme (R) et boire du Bandji (B), sur appui.
+    const switchDown = this.input.switchWeapon();
+    const switchPressed = switchDown && !this.switchHeld;
+    this.switchHeld = switchDown;
+    if (switchPressed) {
+      const weapon = this.equipment.switchWeapon();
+      this.equipment.say(weapon === 'bow' ? 'Arc en main' : 'Lance en main', 900);
+    }
+    const drinkDown = this.input.drink();
+    const drinkPressed = drinkDown && !this.drinkHeld;
+    this.drinkHeld = drinkDown;
+    if (drinkPressed) {
+      if (currentData.hp >= currentData.maxHp) {
+        this.equipment.say('Déjà en pleine forme', 900);
+      } else if (this.equipment.consumeBandji()) {
+        this.enterDrinking();
+        return;
+      }
+    }
 
-    if (this.input.attack() && currentData.stamina >= lightAttack.staminaCost) {
+    if (this.equipment.getData().weapon === 'bow') {
+      const shot = this.buffered === 'heavy' ? BOW_POWER_SHOT : this.buffered === 'light' ? BOW_QUICK_SHOT : null;
+      if (shot && currentData.stamina > 0) {
+        this.consume();
+        if (this.equipment.getData().arrows > 0) this.enterShooting(shot);
+        else this.equipment.say('Plus de flèches');
+      }
+      return;
+    }
+
+    // Comme dans le genre : une action part tant qu'il reste un peu de souffle.
+    if (this.buffered === 'light' && currentData.stamina > 0) {
       //Entrer en mode attaque rapide
-
+      this.consume();
       this.enterLightAttack();
       return;
     }
 
     if (
-      this.input.heavyAttack() &&
-      currentData.stamina >= HEAVY_ATTACK.staminaCost
+      this.buffered === 'heavy' &&
+      currentData.stamina > 0
     ) {
+      this.consume();
       this.enterHeavyAttack();
       return;
     }
@@ -251,7 +387,7 @@ export class PlayerEntity {
       vx: data.facingX * 170,
       vy: data.facingY * 170,
       comboTimer: 0,
-      stamina: data.stamina - attack.staminaCost,
+      stamina: Math.max(0, data.stamina - attack.staminaCost),
     });
 
     this.staminaRegenCooldown = PLAYER_CONFIG.staminaRegenDelay;
@@ -270,23 +406,37 @@ export class PlayerEntity {
       vy: data.facingY * 220,
       comboTimer: 0,
       comboCount: 0,
-      stamina: data.stamina - HEAVY_ATTACK.staminaCost,
+      stamina: Math.max(0, data.stamina - HEAVY_ATTACK.staminaCost),
     });
 
     this.staminaRegenCooldown = PLAYER_CONFIG.staminaRegenDelay;
   }
 
   //Pour rentrer dans le mode roulade.
+  // Verrouillé sur un ennemi sans direction tenue : pas en arrière (court,
+  // on garde l'ennemi en face). Sinon roulade dans la direction tenue.
 
   private enterRoll() {
     const data = this.store.getData();
+    const wish = this.inputDirection();
+    const kind: DodgeKind = wish.length === 0 && this.lockTarget ? 'backstep' : 'roll';
+    const profile = dodgeProfile(kind);
+    this.dodgeKind = kind;
+    this.sprinting = false;
+    if (kind === 'roll' && wish.length > 0) this.store.update({ facingX: wish.x, facingY: wish.y });
+    if (kind === 'backstep' && this.lockTarget) {
+      const aimX = this.lockTarget.x - this.centerX;
+      const aimY = this.lockTarget.y - this.centerY;
+      const distance = Math.hypot(aimX, aimY);
+      if (distance > 0) this.store.update({ facingX: aimX / distance, facingY: aimY / distance });
+    }
 
     this.store.update({
       state: 'rolling',
-      stateTimer: PLAYER_CONFIG.rollDuration,
+      stateTimer: profile.duration,
       comboTimer: 0,
       comboCount: 0,
-      stamina: data.stamina - PLAYER_CONFIG.rollCost,
+      stamina: Math.max(0, data.stamina - profile.cost),
       invicible: true,
       attackType: 'none',
     });
@@ -294,54 +444,102 @@ export class PlayerEntity {
     this.staminaRegenCooldown = PLAYER_CONFIG.staminaRegenDelay;
   }
 
-  //Gerer le roll (Roulade)
+  //Gerer le roll (Roulade) : élan puis freinage, invincible au début seulement,
+  //récupération annulable par une action tamponnée.
 
-  private handleRolling(deltaTime: number) {
+  private handleRolling(deltaTime: number, target?: { x: number; y: number }) {
     const data = this.store.getData();
+    const profile = dodgeProfile(this.dodgeKind);
     const newTimer = data.stateTimer - deltaTime * 1000; //Pour convertir en MilliSeconde
+    const elapsed = profile.duration - newTimer;
 
-    //Gerer les deplacement
+    const f = this.facingNorm(data);
+    const direction = this.dodgeKind === 'backstep' ? -1 : 1;
+    const speed = dodgeSpeed(profile.speed, (elapsed - deltaTime * 500) / profile.duration);
+    const vx = f.x * direction * speed;
+    const vy = f.y * direction * speed;
+    const newX = data.x + vx * deltaTime;
+    const newY = data.y + vy * deltaTime;
 
-    const length = Math.sqrt(data.facingX ** 2 + data.facingY ** 2);
-    const normX = length > 0 ? data.facingX / length : 1;
-    const normY = length > 0 ? data.facingY / length : 0;
-
-    const rollSpeed = PLAYER_CONFIG.rollSpeed; // 300px par secondes
-
-    const newX = data.x + normX * rollSpeed * deltaTime;
-    const newY = data.y + normY * rollSpeed * deltaTime;
-
-    if (newTimer <= 0) {
+    if (newTimer <= 0 || (elapsed >= profile.cancel && this.buffered !== null)) {
+      // Fin de l'esquive : l'élan restant alimente la marche (pas d'arrêt sec).
       this.store.update({
         state: 'idle',
         stateTimer: 0,
-        vx: 0,
-        vy: 0,
+        vx: vx * 0.5,
+        vy: vy * 0.5,
         x: newX,
         y: newY,
-        invicible: false, //Si l'animation fini il n'est plus invincible
+        invicible: this.hurtIFrames > 0,
       });
-
-      if (this.store.getData().stamina <= 0) {
-        this.enterExhausted();
-      }
+      // Action tamponnée pendant la récupération : elle part tout de suite.
+      if (this.buffered !== null) this.handleMovement(0, this.buffered === 'dodge', target);
     } else {
       this.store.update({
         stateTimer: newTimer,
         x: newX,
         y: newY,
+        vx, vy,
+        invicible: elapsed < profile.iFrames || this.hurtIFrames > 0,
       });
     }
   }
 
   //Pouvoir gerer les attaques
 
-  private handleAttacking(deltaTime: number) {
-    const data = this.store.getData();
-
-    const newTimer = data.stateTimer - deltaTime * 1000;
+  private handleAttacking(deltaTime: number, target?: { x: number; y: number }) {
+    let data = this.store.getData();
     const attack = this.getActiveAttackData(data);
     const elapsed = attack.duration - data.stateTimer;
+    const impactEnd = attack.windup + attack.active;
+
+    // Fenêtres d'annulation : roulade dès la fin de l'impact, nouvelle attaque
+    // à partir de `chain`. L'appui a pu être fait bien avant (tampon).
+    if (data.attackType !== 'counter' && elapsed >= impactEnd) {
+      const chain = attack.chain ?? attack.duration;
+      if (this.buffered === 'dodge' && data.stamina > 0) {
+        this.consume();
+        this.enterRoll();
+        return;
+      }
+      if (elapsed >= chain && this.equipment.getData().weapon === 'spear') {
+        const finished = data.attackType !== 'light' || data.comboCount >= LIGHT_COMBO.length;
+        if (this.buffered === 'light' && data.stamina > 0) {
+          this.consume();
+          if (finished) this.store.update({ comboCount: 0 });
+          this.enterLightAttack();
+          return;
+        }
+        if (this.buffered === 'heavy' && data.stamina > 0) {
+          this.consume();
+          this.enterHeavyAttack();
+          return;
+        }
+      }
+    }
+
+    // Pendant l'anticipation on peut encore orienter le coup (vers la cible
+    // verrouillée, sinon vers la direction tenue), à vitesse limitée.
+    if (data.attackType !== 'counter' && elapsed < attack.windup) {
+      const wish = this.cameraHeading !== null && target
+        ? { x: target.x - this.centerX, y: target.y - this.centerY }
+        : this.inputDirection();
+      if (wish.x !== 0 || wish.y !== 0) {
+        const current = Math.atan2(data.facingY, data.facingX);
+        const goal = Math.atan2(wish.y, wish.x);
+        const gap = Math.atan2(Math.sin(goal - current), Math.cos(goal - current));
+        const maxTurn = PLAYER_CONFIG.windupTurnRate * deltaTime;
+        const angle = current + Math.max(-maxTurn, Math.min(maxTurn, gap));
+        const speed = Math.hypot(data.vx, data.vy);
+        this.store.update({
+          facingX: Math.cos(angle), facingY: Math.sin(angle),
+          vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        });
+        data = this.store.getData();
+      }
+    }
+
+    const newTimer = data.stateTimer - deltaTime * 1000;
     const lungeStart = data.attackType === 'counter' ? 0 : attack.windup;
     const lungeEnd = data.attackType === 'counter' ? 160 : attack.windup + attack.active;
     const travel = Math.max(0, Math.min(elapsed + deltaTime * 1000, lungeEnd) - Math.max(elapsed, lungeStart)) / 1000;
@@ -372,18 +570,110 @@ export class PlayerEntity {
     }
   }
 
-  //Une fonction pour qua d l'utilisateur est a bout de souffle
+  // ====================================================================
+  // ARC
+  // ====================================================================
 
-  private enterExhausted() {
+  private enterShooting(shot: BowShotData) {
+    const data = this.store.getData();
+    this.shot = shot;
+    this.arrowReleased = false;
     this.store.update({
-      state: 'exhausted',
-      stateTimer: PLAYER_CONFIG.exhaustedDuration,
+      state: 'shooting',
+      attackType: 'none',
+      stateTimer: shot.duration,
       vx: 0,
       vy: 0,
       comboCount: 0,
       comboTimer: 0,
-      attackType: 'none',
+      stamina: Math.max(0, data.stamina - shot.staminaCost),
     });
+    this.staminaRegenCooldown = PLAYER_CONFIG.staminaRegenDelay;
+  }
+
+  /** Bande l'arc (windup), décoche à la fin du windup, puis récupère. */
+  private handleShooting(deltaTime: number, dodgePressed: boolean) {
+    const data = this.store.getData();
+    // Une roulade annule le tir tant que la flèche n'est pas partie.
+    if (dodgePressed && !this.arrowReleased && data.stamina > 0) {
+      this.consume();
+      this.enterRoll();
+      return;
+    }
+    const newTimer = data.stateTimer - deltaTime * 1000;
+    const elapsed = this.shot.duration - newTimer;
+    if (!this.arrowReleased && elapsed >= this.shot.windup) {
+      this.arrowReleased = true;
+      if (this.equipment.consumeArrow()) {
+        const f = this.facingNorm(data);
+        this.arrows.fire(this.centerX + f.x * 16, this.centerY + f.y * 16, f.x, f.y,
+          this.shot.arrowSpeed, this.shot.damage, this.shot.maxDistance);
+      }
+    }
+    if (newTimer <= 0) {
+      this.store.update({ state: 'idle', stateTimer: 0 });
+      if (this.store.getData().stamina <= 0) this.enterExhausted();
+    } else {
+      this.store.update({ stateTimer: newTimer });
+    }
+  }
+
+  // ====================================================================
+  // BANDJI (vin de palme) : soin limité, immobile pendant la gorgée
+  // ====================================================================
+
+  private enterDrinking() {
+    this.bandjiHealed = false;
+    this.store.update({
+      state: 'drinking',
+      attackType: 'none',
+      stateTimer: EQUIPMENT_CONFIG.drinkDuration,
+      vx: 0,
+      vy: 0,
+      comboCount: 0,
+      comboTimer: 0,
+    });
+  }
+
+  /** Le soin tombe aux 60 % de la gorgée : un coup reçu avant fait perdre la gourde. */
+  private handleDrinking(deltaTime: number) {
+    const data = this.store.getData();
+    const newTimer = data.stateTimer - deltaTime * 1000;
+    const progress = 1 - newTimer / EQUIPMENT_CONFIG.drinkDuration;
+    const changes: Partial<PlayerData> = { stateTimer: newTimer };
+    if (!this.bandjiHealed && progress >= EQUIPMENT_CONFIG.drinkHealAt) {
+      this.bandjiHealed = true;
+      changes.hp = Math.min(data.maxHp, data.hp + EQUIPMENT_CONFIG.bandjiHeal);
+    }
+    if (newTimer <= 0) {
+      changes.state = 'idle';
+      changes.stateTimer = 0;
+    }
+    this.store.update(changes);
+  }
+
+  /** Pose 3D pour les états d'équipement (null = laisser la logique par défaut). */
+  equipmentPose(data?: PlayerData): { state: string; phase: number } | null {
+    const d = data ?? this.store.getData();
+    if (d.state === 'shooting') {
+      const elapsed = this.shot.duration - d.stateTimer;
+      return elapsed < this.shot.windup
+        ? { state: 'aiming', phase: elapsed / this.shot.windup }
+        : { state: 'release', phase: (elapsed - this.shot.windup) / (this.shot.duration - this.shot.windup) };
+    }
+    if (d.state === 'drinking') {
+      return { state: 'drinking', phase: 1 - d.stateTimer / EQUIPMENT_CONFIG.drinkDuration };
+    }
+    return null;
+  }
+
+  //Une fonction pour qua d l'utilisateur est a bout de souffle
+
+  // Souffle vidé : plus d'étourdissement d'une seconde (ressenti comme un bug),
+  // seulement une reprise de souffle plus lente. L'état 'exhausted' reste
+  // disponible pour d'autres causes.
+  private enterExhausted() {
+    this.staminaRegenCooldown = Math.max(this.staminaRegenCooldown, PLAYER_CONFIG.exhaustedRegenDelay);
   }
 
   private handleExhausted(deltaTime: number) {
@@ -433,6 +723,18 @@ export class PlayerEntity {
       comboTimer: 0,
       invicible: false,
     });
+    this.sprinting = false;
+    this.hurtIFrames = 0;
+  }
+
+  /** Brève invincibilité après un coup : le temps de se relever et de réagir. */
+  private tickHurtIFrames(deltaTime: number) {
+    if (this.hurtIFrames <= 0) return;
+    this.hurtIFrames -= deltaTime * 1000;
+    if (this.hurtIFrames > 0) return;
+    this.hurtIFrames = 0;
+    const data = this.store.getData();
+    if (data.state !== 'rolling' && data.attackType !== 'counter') this.store.update({ invicible: false });
   }
 
   //Gerer l'etat hurt : recul amorti puis retour en idle.
@@ -440,7 +742,17 @@ export class PlayerEntity {
     const data = this.store.getData();
     const newTimer = data.stateTimer - deltaTime * 1000;
 
-    const friction = 0.85;
+    // Fin de recul : une roulade tamponnée permet de se dégager.
+    if (newTimer <= PLAYER_CONFIG.hurtDuration * (1 - PLAYER_CONFIG.hurtDodgeCancel) &&
+        this.buffered === 'dodge' && data.stamina > 0) {
+      this.hurtIFrames = PLAYER_CONFIG.hurtIFrames;
+      this.consume();
+      this.enterRoll();
+      return;
+    }
+
+    // Frottement indépendant de la cadence d'images (≈ 0,85 par image à 60 fps).
+    const friction = Math.exp(-10 * deltaTime);
     const newVx = data.vx * friction;
     const newVy = data.vy * friction;
 
@@ -452,7 +764,8 @@ export class PlayerEntity {
     });
 
     if (newTimer <= 0) {
-      this.store.update({ state: 'idle', stateTimer: 0, vx: 0, vy: 0 });
+      this.hurtIFrames = PLAYER_CONFIG.hurtIFrames;
+      this.store.update({ state: 'idle', stateTimer: 0, vx: 0, vy: 0, invicible: true });
     } else {
       this.store.update({ stateTimer: newTimer });
     }
@@ -463,7 +776,7 @@ export class PlayerEntity {
   private updateStamina(delatTime: number) {
     const data = this.store.getData();
 
-    if (data.state === 'attacking' || data.state === 'rolling') return;
+    if (data.state === 'attacking' || data.state === 'rolling' || data.state === 'shooting' || this.sprinting) return;
 
     //Petit délai avat de regenerer le souffle.
 
