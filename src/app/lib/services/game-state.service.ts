@@ -9,6 +9,7 @@ import {
   BossAttackType,
   SURGE_WIDTH,
   SHOT_WIDTH,
+  SHOT_DAMAGE_RATIO,
   shotAngles,
   surgeRadius,
   attackProgress,
@@ -48,6 +49,8 @@ import { GameLoopService } from './game-loop.service';
 import { RendererService } from './renderer.service';
 import { CombatFxService, type ImpactMaterial, type StrikeStyle } from './combat-fx.service';
 import { MusicCue, MusicDirectorService } from '../audio/music-director.service';
+import { AudioEngineService } from '../audio/audio-engine.service';
+import { BaduSfx } from '../audio/badu-sfx';
 
 export interface CombatHud {
   /** Cinématique en cours : le HUD de combat est masqué. */
@@ -58,9 +61,34 @@ export interface CombatHud {
   maxStamina: number;
   boss: BossHud | null;
   counter: boolean;
+  /** Fondu au noir de 0 à 1 (mort du joueur). */
+  fade: number;
   /** Nom du boss qui vient de tomber (annonce pendant son animation de mort). */
   defeated: { name: string; label: string } | null;
 }
+
+/** Cause de la mort et conseil, par coup de boss. [SUPPOSITION] formulations à relire. */
+const KILL_HINTS: Partial<Record<string, string>> = {
+  shot: 'Abattu par le mousquet de Badu. Quand la fumée noire sort du canon, esquive de côté au dernier moment.',
+  reap: 'Fauché par la double faucheuse. Esquive vers l’avant, à travers la lame, pour finir dans son flanc.',
+  judgment: 'Écrasé par le jugement retardé. Attends que la hache commence à descendre avant d’esquiver.',
+  feint: 'Pris par la feinte. Quand il lève la hache, ne frappe pas tant que le coup n’est pas parti.',
+  backhand: 'Frappé par le revers de crosse. Ne reste pas collé dans son dos.',
+  furrow: 'Fauché par le sillon d’étincelles. Esquive en diagonale quand il relève la lame.',
+  leap: 'Écrasé par la chute du roi. Roule sous lui pendant qu’il est en l’air.',
+  mill: 'Pris dans le moulinet. Reste hors de portée des trois premiers coups, esquive le quatrième.',
+  thrust: 'Transpercé par l’estocade. Esquive de côté : l’estoc vide l’endurance.',
+};
+
+/** Cause de la mort et conseil, par soldat de terrain. */
+const FIELD_HINTS: Partial<Record<string, string>> = {
+  eclaireur: 'Tué par la lance de l’éclaireur. Deux coups suffisent : esquive quand il recule le bras.',
+  lancier: 'Tué par le lancier. Esquive son estoc sur le côté, puis frappe pendant qu’il se replace.',
+  tireur: 'Abattu par le tireur posté. Abrite-toi derrière les troncs : il met quatre secondes à recharger.',
+  fusilier: 'Abattu par un fusilier. Une ligne rouge marque la visée : sors-en avant le tir.',
+  garde: 'Assommé par le garde d’élite. Son bouclier arrête les coups de face : prends-le de flanc ou frappe lourd.',
+  pilleur: 'Tué par un pillard. Ses deux coups s’enchaînent : esquive le second aussi.',
+};
 
 @Injectable({
   providedIn: 'root',
@@ -109,7 +137,7 @@ export class GameStateService {
     view.addLayer((scene) => new L.Souls3D(scene, () => this.souls.stash()));
     view.addLayer((scene) => new L.AttackTelegraph3D(scene, () => this.threatPose()));
     view.addLayer((scene) => new L.Prologue3D(scene, () => this.chapter() === 'prologue', (id) => this.prologue.hasRead(id),
-      () => this.prologue.championSpot));
+      () => this.prologue.championSpot, () => this.prologue.bridged));
     view.cameraBlocker = (x, z, y) => this.prologue.blocksCamera(x, z, y);
   }
 
@@ -198,7 +226,7 @@ export class GameStateService {
       return 'Chapitre 1, 1701. Badu Ofosu, le porte-hache du roi du Denkyira, tient encore la crête. Esquive la hache, guette la longue visée du mousquet : la fumée noire marque la ligne du tir. Frappe pendant qu’il recharge.';
     }
     if (this.chapter() === 'prologue') {
-      return 'Chapitre 1, 1701. La guerre de libération contre le Denkyira. Kwadwo Ofori, de l’arrière-garde, est resté en arrière. Suis le sentier laissé par la colonne jusqu’au camp, à l’est. Des soldats du Denkyira rôdent encore parmi les morts.';
+      return 'Chapitre 1, 1701. Feyiase, après la bataille. Kwadwo Ofori, isolé de l’arrière-garde, remonte la piste vers la crête à l’est. Des éclaireurs du Denkyira sont embusqués : avance prudemment.';
     }
     if (this.chapter() === 'battle') {
       return 'Acte I, 1824. Le Pra est en crue. Kwabena Ofori, de la lignée de Pokou, fait passer les familles de son clan qui fuient la guerre. Kofi Brempong, capitaine asafo, a l’ordre de ne laisser passer personne. Esquive ses charges et frappe quand il reprend son souffle.';
@@ -280,6 +308,11 @@ export class GameStateService {
   /** L'intro attend que la vue 3D soit prête (les shaders compilent au lancement). */
   private introPending = false;
   static readonly INTRO_DURATION = 3.8;
+  /** Entrée de Badu : plus longue et sans coupure (dos tourné, regard, épaulé). [SUPPOSITION] */
+  static readonly BADU_INTRO = 8.5;
+  private introLength() {
+    return this.bossEntity.id === 'champion' ? GameStateService.BADU_INTRO : GameStateService.INTRO_DURATION;
+  }
   /** Dernier coup de combo / anneau vu, pour réarmer la touche à chaque coup. */
   private bossStrikeSeen = -1;
   private bossHitThisFrame = false;
@@ -287,8 +320,30 @@ export class GameStateService {
 
   constructor() {
     inject(MusicDirectorService).setCueSource(() => this.musicCue());
+    // Q (A en AZERTY) : verrouiller la cible, ou recentrer la caméra s'il n'y en a pas.
+    // Molette : changer de cible pendant le verrouillage.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (event) => {
+        if (event.code === 'KeyQ' && !event.repeat && this._currentScreen() === 'playing') this.toggleLock();
+      });
+      window.addEventListener('wheel', (event) => {
+        if (this.lockedId !== null && Math.abs(event.deltaY) > 4) this.switchLock(event.deltaY > 0 ? 1 : -1);
+      }, { passive: true });
+    }
     // Murs encore debout des ruines (décor de landscape.ts).
     this.terrain.addBlocker(ruinBlocks);
+    // Soldats de terrain : chaque coup donné ou reçu a son impact (étincelles,
+    // sang, son, secousse), et la cause d'une mort est retenue pour l'écran de mort.
+    this.slice.enemies.onEnemyHit = (enemy, dirX, dirY, heavy) => {
+      const shielded = enemy.kind === 'garde' && !heavy && -(dirX * enemy.facingX + dirY * enemy.facingY) > 0.35;
+      this.fx.hit({ x: enemy.x - dirX * 6, y: enemy.y - dirY * 6, height: 18, dirX, dirY,
+        material: shielded ? 'guard' : 'flesh', style: heavy ? 'slam' : 'slash', strength: heavy ? 1.3 : 0.9, target: 'boss' });
+    };
+    this.slice.enemies.onPlayerHit = (enemy, dirX, dirY) => {
+      this.fx.hit({ x: this.playerEntity.centerX, y: this.playerEntity.centerY, height: 20, dirX, dirY,
+        material: 'flesh', style: 'thrust', strength: 1.2, target: 'player' });
+      this.lastHitBy = FIELD_HINTS[enemy.kind] ?? 'Tué par un soldat du Denkyira.';
+    };
   }
 
   /** Situation lue par la musique : zone, pause, approche de l'arène de la vanne. */
@@ -299,7 +354,11 @@ export class GameStateService {
     if (screen !== 'playing' && screen !== 'paused') return { zone: 'silence' };
     const paused = screen === 'paused';
     const chapter = this.chapter();
-    if (chapter === 'prologue') return { zone: this.prologueDuel() ? 'duel-ford' : 'depths', paused };
+    // Entrée de Badu : silence absolu jusqu'au déclic du mousquet, puis les tambours explosent.
+    if (chapter === 'prologue') {
+      const silent = this.prologueDuel() && this.introTime > 0 && !this.baduClick;
+      return { zone: silent ? 'silence' : this.prologueDuel() ? 'duel-badu' : 'feyiase', paused };
+    }
     if (chapter === 'battle') return { zone: 'duel-ford', paused };
     if (chapter === 'crossing') return { zone: 'river', paused };
     if (this.decision()) return { zone: 'duel-sluice', paused };
@@ -345,6 +404,7 @@ export class GameStateService {
   }
 
   startGame() {
+    this.dying = 0;
     this.mode.set('story');
     this.rushNext = [];
     this.rushTransition = 0;
@@ -431,6 +491,7 @@ export class GameStateService {
     this.bossEntity.configure('champion');
     this.bossRewarded = false;
     this.defeatShot = false;
+    this.baduClick = false;
     this.counterTime.set(0);
     this.bossStore.update({
       x: PROLOGUE_DUEL.x + 95 - BOSS_CONFIG.size / 2, y: PROLOGUE_DUEL.y - 20 - BOSS_CONFIG.size / 2,
@@ -441,14 +502,82 @@ export class GameStateService {
     this.beginBossIntro();
   }
 
+  /**
+   * Entrée de Badu, sans coupure : de dos au milieu des morts, il entend les
+   * pas, tourne la tête (le regard suit déjà le joueur), pivote lentement,
+   * plante sa hache, épaule le mousquet ; le chien claque, le duel commence.
+   */
+  private baduIntroPose(pose: Actor3D, k: number) {
+    const toPlayer = Math.atan2(this.playerEntity.centerX - pose.x, this.playerEntity.centerY - pose.y);
+    const away = toPlayer + Math.PI;
+    const turn = Math.max(0, Math.min(1, (k - 0.42) / 0.2));
+    const eased = turn * turn * (3 - 2 * turn);
+    const yaw = away + (toPlayer - away) * eased;
+    pose.facingX = Math.sin(yaw);
+    pose.facingY = Math.cos(yaw);
+    if (k < 0.66) {
+      pose.state = 'idle';
+      pose.phase = 0;
+    } else {
+      pose.state = 'windup';
+      pose.attack = 'shot';
+      pose.phase = Math.min(1, (k - 0.66) / 0.26);
+    }
+    if (k >= 0.88 && !this.baduClick) {
+      // Le chien du mousquet claque dans le silence.
+      this.baduClick = true;
+      this.baduSfx.cock();
+    }
+  }
+  private baduClick = false;
+
+  private bossDeathK = 0;
+
+  /**
+   * Poids de la chute du boss : poussière quand le genou touche terre, puis
+   * quand le corps tombe (combattants humains) ; gerbe d'eau quand le Gardien
+   * s'effondre dans la vase.
+   */
+  private deathImpacts() {
+    const k = this.bossEntity.progress();
+    const was = this.bossDeathK;
+    this.bossDeathK = k;
+    const crossed = (at: number) => was < at && k >= at;
+    const x = this.bossEntity.centerX;
+    const y = this.bossEntity.centerY;
+    const boss = this.bossStore.getData();
+    if (this.bossEntity.id === 'guardian') {
+      if (crossed(0.45)) {
+        this.fx.quake(x, y, 40, 'wet', 1.2);
+        this.groundEffects.emit(x, y, 26, 0, 0, true);
+        this.rendered.shake(10);
+      }
+      return;
+    }
+    if (crossed(0.36)) {
+      this.fx.dust(x, y, 0, 0, 1.2);
+      this.rendered.shake(4);
+    }
+    if (crossed(0.8)) {
+      const fx = x + boss.facingX * 22;
+      const fy = y + boss.facingY * 22;
+      this.fx.dust(fx, fy, boss.facingX, boss.facingY, 2.6);
+      this.fx.mark(fx, fy, 18, 'crack');
+      this.fx.sfx.quake(0.7);
+      this.rendered.shake(9);
+    }
+  }
+
   /** Une fois par mort de boss : plan de caméra « vaincu » et annonce. */
   private playDefeat() {
     if (this.defeatShot) return;
     this.defeatShot = true;
+    this.bossDeathK = 0;
     const boss = { x: this.bossEntity.centerX, y: this.bossEntity.centerY };
     // Le Gardien n'est pas tué : le dernier nœud cède et il retourne au fleuve.
     this.defeated.set({ name: this.bossEntity.lore.name,
-      label: this.bossEntity.id === 'guardian' ? 'Esprit libéré' : 'Adversaire vaincu' });
+      label: this.bossEntity.id === 'guardian' ? 'Esprit libéré'
+        : this.bossEntity.id === 'champion' ? 'Ennemi majeur abattu' : 'Adversaire vaincu' });
     this.view3d?.playDefeatShot({ x: this.playerEntity.centerX, y: this.playerEntity.centerY }, boss);
     this.gameloop.slowMotion(0.35, 700);
   }
@@ -518,7 +647,7 @@ export class GameStateService {
 
         const backstab = this.isBackstab(boss);
         this.bossEntity.takeDamage(this.slice.meleeDamage(attackData.damage), knockbackX, knockbarY, player.attackType === 'counter',
-          { weight: player.attackType as HitWeight, backstab });
+          { weight: player.attackType as HitWeight, backstab, poise: this.prologue.poiseBonus() });
         this.dilateOnCriticalHit(backstab ? 'backstab' : player.attackType === 'counter' ? 'counter' : null);
         this.groundEffects.emit(this.bossEntity.centerX, this.bossEntity.centerY, 7, player.facingX, player.facingY);
         const guarded = boss.state !== 'recover' && player.attackType !== 'counter';
@@ -595,8 +724,34 @@ export class GameStateService {
 
     const dxToPlayer = this.playerEntity.centerX - this.bossEntity.centerX;
     const dyToPlayer = this.playerEntity.centerY - this.bossEntity.centerY;
-    const distance = Math.hypot(dxToPlayer, dyToPlayer);
+    // Zone de vulnérabilité du joueur un peu plus petite que son modèle (hitbox indulgente).
+    const distance = Math.hypot(dxToPlayer, dyToPlayer) + 4;
     const size = BOSS_CONFIG.size;
+    const along = (dxToPlayer * boss.facingX + dyToPlayer * boss.facingY) / (distance || 1);
+    const across = Math.abs(dxToPlayer * boss.facingY - dyToPlayer * boss.facingX);
+    const ahead = (offset: number, radius: number) => Math.hypot(
+      dxToPlayer - boss.facingX * offset, dyToPlayer - boss.facingY * offset) + 4 < radius;
+    const progress = attackProgress(attackName, boss.stateTimer);
+    // Coups de Badu Ofosu : chaque forme suit le geste de l'animation.
+    const baduHit = (): boolean | null => {
+      switch (attackName) {
+        case 'reap': return distance < cfg.range * size + 9 && along > -0.25;
+        case 'judgment': return ahead(38, cfg.range * size / 2 + 6);
+        case 'feint': return distance < cfg.range * size && along > 0.3;
+        case 'backhand': return distance < cfg.range * size && along < 0.2;
+        case 'thrust': return along > 0 && distance < cfg.range * size + 9 && across < 22;
+        case 'leap': return distance < cfg.range * size / 2;
+        case 'furrow': return progress < 0.8 ? distance < size * 0.75 : distance < size * 1.6 && along > 0.2;
+        case 'mill': {
+          const step = boss.comboStep;
+          if (step === 2) return distance < size * 1.4;
+          if (step === 3) return ahead(40, 58);
+          return distance < cfg.range * size + 9 && along > 0.1;
+        }
+        default: return null;
+      }
+    };
+    const badu = baduHit();
     // Mousquet ensorcelé : une balle (trois en phase 3) en ligne droite depuis le boss.
     const shotHit = () => shotAngles(boss.phase).some((angle) => {
       const c = Math.cos(angle);
@@ -607,7 +762,8 @@ export class GameStateService {
       const across = Math.abs(dxToPlayer * fy - dyToPlayer * fx);
       return along > 0 && along < cfg.range * size && across < SHOT_WIDTH + 8;
     });
-    const hit = boss.currentAttack === 'shot' ? shotHit()
+    const hit = badu !== null ? badu
+      : boss.currentAttack === 'shot' ? shotHit()
       : boss.currentAttack === 'surge'
       ? Math.abs(distance - surgeRadius(size, boss.stateTimer)) <= SURGE_WIDTH + 8
       : boss.currentAttack === 'tide'
@@ -631,16 +787,22 @@ export class GameStateService {
       const dx = dxToPlayer;
       const dy = dyToPlayer;
       const len = distance || 1;
-      const knockback = 220;
+      // La balle de Badu emporte 70 % de la vie et projette au sol ; l'estoc et la crosse vident l'endurance.
+      const shot = boss.currentAttack === 'shot';
+      const knockback = shot ? 460 : boss.currentAttack === 'judgment' || boss.currentAttack === 'leap' ? 320 : 220;
+      const damage = shot ? Math.round(player.maxHp * SHOT_DAMAGE_RATIO) : cfg.damage;
 
       this.playerEntity.takeDamage(
-        cfg.damage,
+        damage,
         (dx / len) * knockback,
         (dy / len) * knockback,
       );
+      if (boss.currentAttack === 'thrust' || boss.currentAttack === 'feint') this.playerStore.update({ stamina: 0 });
+      this.lastHitBy = KILL_HINTS[boss.currentAttack] ?? `Frappé par ${this.bossEntity.lore.name}.`;
       this.groundEffects.emit(this.playerEntity.centerX, this.playerEntity.centerY, 8, dx / len, dy / len);
-      this.rendered.shake(14);
-      this.gameloop.freeze(65);
+      this.rendered.shake(shot ? 22 : 14);
+      // Micro-gel de 60 à 80 ms : les coups lourds pèsent plus.
+      this.gameloop.freeze(shot || boss.currentAttack === 'judgment' || boss.currentAttack === 'leap' ? 80 : 65);
       const attack = boss.currentAttack;
       const ground = attack === 'slam' || attack === 'surge' || attack === 'tide';
       this.fx.hit({ x: this.playerEntity.centerX, y: this.playerEntity.centerY, height: 20,
@@ -667,11 +829,17 @@ export class GameStateService {
 
   /** Avancement 0→1 de l'entrée du boss, null hors intro. */
   get introProgress(): number | null {
-    return this.introTime > 0 ? 1 - this.introTime / GameStateService.INTRO_DURATION : null;
+    return this.introTime > 0 ? 1 - this.introTime / this.introLength() : null;
   }
 
   update(deltaTime: number) {
     if (this.dialogue() || this.uiLock()) return;
+    // Mort du joueur : il tombe au ralenti, l'image s'éteint, puis l'écran de mort.
+    if (this.dying > 0) {
+      this.dying = Math.max(0, this.dying - deltaTime / this.gameloop.timeScale);
+      if (this.dying === 0) this.onPlayerDeath();
+      return;
+    }
     // Accroche d'ouverture et menu du foyer : le monde attend.
     if (this.slice.tickHook(deltaTime) || this.slice.blocking()) return;
     if (this.chapter() === 'prologue') {
@@ -686,7 +854,8 @@ export class GameStateService {
     }
     if (this.introPending && this.view3d && this.inCombat()) {
       this.introPending = false;
-      this.introTime = GameStateService.INTRO_DURATION;
+      this.introTime = this.introLength();
+      this.view3d?.setIntroDuration(this.introLength() * 1000);
     }
     if (this.introTime > 0) {
       this.introTime = Math.max(0, this.introTime - deltaTime);
@@ -712,9 +881,10 @@ export class GameStateService {
     const py = this.playerEntity.centerY;
     this.slice.setFieldActive(this.mode() === 'story' &&
       (this.chapter() === 'village' || this.chapter() === 'prologue') && !inCombat);
+    const locked = this.lockedEnemy();
     this.playerEntity.update(deltaTime, inCombat
       ? { x: this.bossEntity.centerX, y: this.bossEntity.centerY }
-      : this.slice.aimTarget());
+      : locked ? { x: locked.x, y: locked.y } : this.slice.aimTarget());
     this.slice.spinFacing();
     this.slice.update(deltaTime, inCombat);
     if (this.mode() === 'story' && this.soulsTick(inCombat)) return;
@@ -763,6 +933,10 @@ export class GameStateService {
         }
       }
       this.soundBossSwing(boss);
+      if (this.bossEntity.id === 'champion') {
+        this.baduImpacts(before, boss);
+        this.baduAudio(before, boss, deltaTime);
+      }
       this.telegraphPerilous(boss);
       if (this.view3d) this.separateFighters();
       this.checkCollision();
@@ -887,6 +1061,107 @@ export class GameStateService {
     this.fx.swing(true);
   }
 
+  /**
+   * Badu : moments d'impact au sol (hache abattue, réception du saut,
+   * écrasement final du moulinet, uppercut du sillon) et étincelles de la
+   * hache traînée sur la pierre.
+   */
+  private baduImpacts(before: ReturnType<BossStore['getData']>, boss: ReturnType<BossStore['getData']>) {
+    if (boss.state !== 'attacking' || boss.currentAttack === 'none') return;
+    const attack = boss.currentAttack as Exclude<BossAttackType, 'none'>;
+    const now = attackProgress(attack, boss.stateTimer);
+    const was = before.state === 'attacking' && before.currentAttack === attack
+      ? attackProgress(attack, before.stateTimer) : -1;
+    const crossed = (at: number) => was < at && now >= at;
+    const x = this.bossEntity.centerX + boss.facingX * 34;
+    const y = this.bossEntity.centerY + boss.facingY * 34;
+    const slam = (radius: number, strength: number, shake: number) => {
+      this.fx.quake(x, y, radius, 'crack', strength);
+      this.fx.dust(x, y, boss.facingX, boss.facingY, 2.2);
+      this.groundEffects.emit(x, y, radius * 0.6, 0, 0);
+      this.rendered.shake(shake);
+    };
+    if (attack === 'judgment' && crossed(0.25)) slam(34, 1.3, 16);
+    if (attack === 'leap' && crossed(0.74)) {
+      this.fx.quake(this.bossEntity.centerX, this.bossEntity.centerY, 46, 'crack', 1.5);
+      this.fx.dust(this.bossEntity.centerX, this.bossEntity.centerY, 0, 0, 3);
+      this.rendered.shake(20);
+    }
+    if (attack === 'mill' && crossed(0.75 + 0.25 * 0.2)) slam(30, 1.1, 12);
+    if (attack === 'furrow') {
+      if (crossed(0.8)) slam(26, 1, 12);
+      // La hache racle la roche : gerbes d'étincelles pendant la course.
+      if (now < 0.8 && Math.floor(now * 14) !== Math.floor(Math.max(0, was) * 14)) {
+        this.fx.flash(this.bossEntity.centerX + boss.facingX * 20, this.bossEntity.centerY + boss.facingY * 20, '#ffb347', 3, 0.08, 2);
+        this.fx.dust(this.bossEntity.centerX, this.bossEntity.centerY, -boss.facingX, -boss.facingY, 0.6, false);
+      }
+    }
+    if (attack === 'shot' && crossed(0.01)) {
+      this.fx.flash(x, y, '#ff7a2e', 8, 0.1, 28);
+      this.rendered.shake(18);
+    }
+  }
+
+  private readonly engine = inject(AudioEngineService);
+  /** Bruiterie de Badu (pas, amulettes, hache, souffle, mousquet). */
+  private readonly baduSfx = new BaduSfx(() => {
+    const context = this.engine.context;
+    const destination = this.engine.bus('sfx');
+    return context && destination ? { context, destination } : null;
+  });
+  private baduStride = 0;
+  private baduClinkCooldown = 0;
+  private baduScrape = 0;
+
+  /** Sons de Badu selon ses changements d'état et ses déplacements. */
+  private baduAudio(before: ReturnType<BossStore['getData']>, boss: ReturnType<BossStore['getData']>, dt: number) {
+    const sfx = this.baduSfx;
+    const attack = boss.currentAttack;
+    const entered = (state: string) => before.state !== state && boss.state === state;
+    if (entered('windup')) {
+      if (attack === 'shot') {
+        sfx.cock();
+        sfx.hiss(BOSS_ATTACKS.shot.windupDuration / 1000);
+      } else if (attack !== 'feint' && attack !== 'backhand' && attack !== 'thrust') {
+        sfx.grunt(attack === 'leap' ? 1.4 : 0.9, attack === 'judgment' ? 0.9 : 0.5);
+      }
+      sfx.clink();
+    }
+    if (entered('attacking')) {
+      if (attack === 'shot') {
+        sfx.shot();
+        // La balle frôle le joueur sans le toucher : sifflement d'oreille.
+        const dx = this.playerEntity.centerX - this.bossEntity.centerX;
+        const dy = this.playerEntity.centerY - this.bossEntity.centerY;
+        const across = Math.abs(dx * boss.facingY - dy * boss.facingX);
+        if (dx * boss.facingX + dy * boss.facingY > 0 && across < 60) sfx.earRing();
+      } else if (attack !== 'furrow') {
+        sfx.axe(attack === 'judgment' || attack === 'leap' || attack === 'mill' ? 1.3 : 1);
+      }
+    }
+    // Nouveau coup d'un enchaînement : nouveau sifflement.
+    if (boss.state === 'attacking' && before.state === 'attacking' && boss.comboStep !== before.comboStep) sfx.axe(1.1);
+    if (boss.state === 'attacking' && attack === 'furrow' && attackProgress('furrow', boss.stateTimer) < 0.8) {
+      this.baduScrape -= dt;
+      if (this.baduScrape <= 0) { this.baduScrape = 0.11; sfx.scrape(); }
+    }
+    if (entered('recover') && (attack === 'mill' || attack === 'judgment')) sfx.grunt(0.8, attack === 'mill' ? 1.4 : 0.6);
+    if (entered('shift')) sfx.grunt(1.6, 1.2);
+    if (before.state === 'shift' && boss.state === 'shift') {
+      const was = 1 - before.stateTimer / (before.stateLength || 1);
+      const now = 1 - boss.stateTimer / (boss.stateLength || 1);
+      if (was < 0.42 && now >= 0.42) sfx.crack();
+    }
+    if (entered('dead')) sfx.grunt(1.2, 1.1);
+    // Pas lourds : un appui tous les ~26 unités parcourues.
+    const moved = Math.hypot(boss.x - before.x, boss.y - before.y);
+    this.baduStride += moved;
+    if (this.baduStride > 26) { this.baduStride = 0; sfx.step(boss.phase === 1 ? 0.8 : 1.1); }
+    this.baduClinkCooldown -= dt;
+    const turn = Math.abs(boss.facingX * before.facingY - boss.facingY * before.facingX);
+    if (turn > 0.06 && this.baduClinkCooldown <= 0) { this.baduClinkCooldown = 0.7; sfx.clink(); }
+  }
+
   /** Pendant la transition de phase, le souffle du boss repousse le joueur. */
   private pushPlayerFromBoss(deltaTime: number) {
     const x = this.playerEntity.centerX;
@@ -933,7 +1208,7 @@ export class GameStateService {
     const player = this.playerStore.getData();
     this.restPrompt.set(inCombat || player.state === 'dead' ? null : this.souls.promptAt(x, y));
     if (!inCombat && player.state === 'dead') {
-      this.onPlayerDeath();
+      this.beginPlayerDeath();
       return true;
     }
     return false;
@@ -943,14 +1218,105 @@ export class GameStateService {
   private onPlayerDeath() {
     if (this.mode() === 'story') {
       const { dropped, lost } = this.souls.die(this.playerEntity.centerX, this.playerEntity.centerY);
-      this.deathNote.set(dropped ? `${dropped} cauris sont restés là où tu es tombé.${lost ? ` Les ${lost} d’avant sont perdus.` : ''}`
-        : lost ? `Les ${lost} cauris laissés plus tôt sont perdus.` : null);
+      const cauris = dropped ? `${dropped} cauris sont restés là où tu es tombé.${lost ? ` Les ${lost} d’avant sont perdus.` : ''}`
+        : lost ? `Les ${lost} cauris laissés plus tôt sont perdus.` : '';
+      // Mort lisible : ce qui a frappé, et comment l'éviter.
+      this.deathNote.set([this.lastHitBy, cauris].filter(Boolean).join(' ') || null);
     } else {
       this.deathNote.set(null);
     }
     this.stopGame();
     this._currentScreen.set('death');
   }
+
+  // ─────────────────────────────────────────── Verrouillage de cible
+
+  /** Ennemi de terrain verrouillé (identifiant dans EnemiesService), null : caméra libre. */
+  private lockedId: number | null = null;
+
+  /** Ennemi verrouillé encore valable (vivant, pas trop loin), sinon le verrou saute. */
+  private lockedEnemy() {
+    if (this.lockedId === null) return null;
+    const enemy = this.slice.enemies.list[this.lockedId];
+    const far = !enemy || Math.hypot(enemy.x - this.playerEntity.centerX, enemy.y - this.playerEntity.centerY) > 460;
+    if (!enemy || enemy.state === 'dead' || far || this.inCombat()) {
+      this.lockedId = null;
+      return null;
+    }
+    return enemy;
+  }
+
+  /** Ennemis visables : vivants, à portée, avec leur angle par rapport à la caméra. */
+  private lockCandidates(range: number) {
+    const heading = this.view3d?.heading ?? 0;
+    const px = this.playerEntity.centerX;
+    const py = this.playerEntity.centerY;
+    return this.slice.enemies.list
+      .filter((e) => e.state !== 'dead' && Math.hypot(e.x - px, e.y - py) < range)
+      .map((e) => {
+        const angle = Math.atan2(e.x - px, e.y - py) - heading;
+        return { e, rel: Math.atan2(Math.sin(angle), Math.cos(angle)), d: Math.hypot(e.x - px, e.y - py) };
+      });
+  }
+
+  /**
+   * Touche de verrouillage (Q, clic du stick droit, bouton tactile) : verrouille
+   * l'ennemi le plus en face de la caméra, déverrouille, ou recentre la caméra
+   * s'il n'y a personne. En duel, le boss est toujours cadré.
+   */
+  /** Un ennemi est verrouillé (verrouillage automatique au premier coup reçu, côté interface). */
+  get lockActive() {
+    return this.lockedEnemy() !== null;
+  }
+
+  toggleLock() {
+    if (this.inCombat()) return;
+    if (this.lockedId !== null) {
+      this.lockedId = null;
+      return;
+    }
+    const best = this.lockCandidates(340)
+      .filter((c) => Math.abs(c.rel) < 1.3)
+      .sort((a, b) => Math.abs(a.rel) * 120 + a.d - (Math.abs(b.rel) * 120 + b.d))[0];
+    if (best) this.lockedId = best.e.id;
+    else this.view3d?.requestRecenter();
+  }
+
+  /** Passe à la cible voisine : direction 1 à droite, -1 à gauche (souris, molette, stick, swipe). */
+  switchLock(direction: number) {
+    const current = this.lockedEnemy();
+    if (!current) return;
+    const all = this.lockCandidates(400);
+    const from = all.find((c) => c.e === current)?.rel ?? 0;
+    // À l'écran, la droite correspond à un angle plus petit (voir World3D.heading).
+    const next = all
+      .filter((c) => c.e !== current && (c.rel - from) * -direction > 0)
+      .sort((a, b) => Math.abs(a.rel - from) - Math.abs(b.rel - from))[0];
+    if (next) this.lockedId = next.e.id;
+  }
+
+  /** Temps de chute restant (s, temps réel), 0 hors mort. [SUPPOSITION] 2,6 s. */
+  private dying = 0;
+  private static readonly DEATH_FALL = 2.6;
+
+  private deathProgress() {
+    return this.dying > 0 ? 1 - this.dying / GameStateService.DEATH_FALL
+      : this.playerStore.getData().state === 'dead' ? 1 : 0;
+  }
+
+  /** Le coup fatal : gel, ralenti, la caméra tremble ; la chute se joue avant l'écran de mort. */
+  private beginPlayerDeath() {
+    if (this.dying > 0) return;
+    this.dying = GameStateService.DEATH_FALL;
+    this.gameloop.freeze(90);
+    this.gameloop.slowMotion(0.35, 1100);
+    this.rendered.shake(12);
+    this.fx.quake(this.playerEntity.centerX, this.playerEntity.centerY, 18, 'crack', 0.6);
+    this.lockedId = null;
+  }
+
+  /** Dernier coup reçu (cause affichée à la mort). */
+  private lastHitBy = '';
 
   /** Message de l'écran de mort sur les cauris. */
   readonly deathNote = signal<string | null>(null);
@@ -1043,11 +1409,12 @@ export class GameStateService {
     const boss = this.bossStore.getData();
 
     if (player.state === 'dead') {
-      this.onPlayerDeath();
+      this.beginPlayerDeath();
     } else if (boss.state === 'dead') {
       this.counterTime.set(0);
       this.rewardBoss();
       this.playDefeat();
+      this.deathImpacts();
       // On laisse l'animation de mort se jouer avant la suite.
       if (!this.bossEntity.deathDone) return;
       this.defeated.set(null);
@@ -1068,7 +1435,8 @@ export class GameStateService {
         this.prologue.championSpot = { x: this.bossEntity.centerX, y: this.bossEntity.centerY,
           yaw: Math.atan2(fallen.facingX, fallen.facingY) };
         this.terrain.setArena(null);
-        this.slice.say('Le chemin du camp est libre.', 2600);
+        // Fin du chapitre 1 : texte sur fond sombre, puis l'acte suivant.
+        this.prologue.startOutro();
       } else if (this.chapter() === 'battle') {
         this.terrain.setArena(null);
         this.chapter.set('crossing');
@@ -1096,7 +1464,8 @@ export class GameStateService {
       x: this.playerEntity.centerX, y: this.playerEntity.centerY,
       facingX: player.facingX, facingY: player.facingY,
       state: playerAttack ? attackState : player.state,
-      phase: playerAttack ? Math.max(0, Math.min(1, attackPhase))
+      phase: player.state === 'dead' ? this.deathProgress()
+        : playerAttack ? Math.max(0, Math.min(1, attackPhase))
         : phase(player.stateTimer, player.state === 'rolling' ? this.playerEntity.dodgeDuration
           : player.state === 'exhausted' ? PLAYER_CONFIG.exhaustedDuration : PLAYER_CONFIG.hurtDuration),
       attack: player.attackType,
@@ -1142,11 +1511,16 @@ export class GameStateService {
 
     // Pendant l'entrée, le boss se dresse et rugit (pose de transition de phase).
     const intro = this.introProgress;
-    if (enemyPose && intro !== null && intro >= 0.3 && intro <= 0.85) {
+    if (enemyPose && intro !== null && this.bossEntity.id === 'champion') {
+      this.baduIntroPose(enemyPose, intro);
+    } else if (enemyPose && intro !== null && intro >= 0.3 && intro <= 0.85) {
       enemyPose.state = 'shift';
       enemyPose.phase = (intro - 0.3) / 0.55;
     }
     view.setBossKind(this.bossEntity.id);
+    view.setLockTarget(combat ? null : this.lockedEnemy());
+    view.onLockFlick ??= (direction) => this.switchLock(direction);
+    view.onLockButton ??= () => this.toggleLock();
     view.timeScale = this.gameloop.timeScale;
     view.render(this.environment.groundCanvas(), playerPose, enemyPose, duelist, combat ? null : this.objective(),
       combat ? this.duelArena() : undefined);
@@ -1168,6 +1542,8 @@ export class GameStateService {
       boss: combat ? this.bossEntity.hud(this.introProgress) : null,
       defeated: this.defeated(),
       counter: this.counterReady(),
+      // Fondu au noir pendant la fin de la chute (pas de 5 % pour ne pas redessiner à chaque image).
+      fade: Math.round(Math.max(0, Math.min(1, (this.deathProgress() - 0.55) / 0.45)) * 20) / 20,
     };
     const key = JSON.stringify(next);
     if (key === this.hudKey) return;

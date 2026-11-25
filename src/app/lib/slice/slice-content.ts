@@ -28,6 +28,11 @@ export const ENEMIES: Record<EnemyKind, EnemyConfig> = {
   pilleur: { name: 'Pilleur', hp: 46, radius: 11, speed: 122, aggro: 250, leash: 560, heavyPoise: false, cowries: 60 },
   fusilier: { name: 'Fusilier du conseil', hp: 34, radius: 11, speed: 96, aggro: 330, leash: 600, heavyPoise: false, cowries: 75 },
   noye: { name: 'Noyé de la digue', hp: 112, radius: 15, speed: 58, aggro: 190, leash: 420, heavyPoise: true, cowries: 140 },
+  // Chapitre 1 (1701). [SUPPOSITION] Combat sec : deux coups tuent l'éclaireur, deux coups de sa lance tuent Kwadwo.
+  eclaireur: { name: 'Éclaireur du Denkyira', hp: 20, radius: 11, speed: 128, aggro: 210, leash: 520, heavyPoise: false, cowries: 40 },
+  lancier: { name: 'Lancier du Denkyira', hp: 42, radius: 11, speed: 104, aggro: 240, leash: 420, heavyPoise: false, cowries: 70 },
+  tireur: { name: 'Tireur du Denkyira', hp: 26, radius: 11, speed: 70, aggro: 380, leash: 520, heavyPoise: false, cowries: 80 },
+  garde: { name: 'Garde d’élite du Denkyira', hp: 190, radius: 15, speed: 70, aggro: 230, leash: 380, heavyPoise: true, cowries: 300 },
 };
 
 export interface EnemyMove {
@@ -41,7 +46,7 @@ export interface EnemyMove {
   lunge?: number; // px/s pendant l'impact
 }
 
-export const ENEMY_MOVES: Record<'slash' | 'slash2' | 'shot' | 'butt' | 'claw' | 'slam', EnemyMove> = {
+export const ENEMY_MOVES: Record<'slash' | 'slash2' | 'shot' | 'butt' | 'claw' | 'slam' | 'spear' | 'longshot' | 'club' | 'bash', EnemyMove> = {
   // Pilleur : deux coups de coupe-coupe rapides (le second suit si le premier touche ou non).
   slash: { windup: 380, active: 120, recover: 260, damage: 13, reach: 30, shape: 'arc', lunge: 210 },
   slash2: { windup: 210, active: 120, recover: 620, damage: 11, reach: 30, shape: 'arc', lunge: 160 },
@@ -51,6 +56,13 @@ export const ENEMY_MOVES: Record<'slash' | 'slash2' | 'shot' | 'butt' | 'claw' |
   // Noyé : griffe lente et frappe au sol circulaire.
   claw: { windup: 560, active: 150, recover: 520, damage: 17, reach: 34, shape: 'arc', lunge: 120 },
   slam: { windup: 900, active: 140, recover: 900, damage: 27, reach: 50, shape: 'ring' },
+  // Lance du Denkyira : estoc avec élan (deux coups tuent le héros).
+  spear: { windup: 620, active: 110, recover: 620, damage: 55, reach: 40, shape: 'arc', lunge: 230 },
+  // Tireur posté : 4 s pour recharger, c'est le moment de le déloger.
+  longshot: { windup: 1100, active: 40, recover: 4000, damage: 44, reach: 430, shape: 'shot' },
+  // Garde d'élite : massue cloutée lente et coup de bouclier rapide.
+  club: { windup: 950, active: 150, recover: 950, damage: 40, reach: 36, shape: 'arc', lunge: 90 },
+  bash: { windup: 360, active: 120, recover: 620, damage: 16, reach: 26, shape: 'arc', lunge: 280 },
 };
 
 export type EnemyMoveId = keyof typeof ENEMY_MOVES;

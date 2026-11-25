@@ -12,7 +12,7 @@ import { Instruments, midi } from './instruments';
  * cloche en 12/8 courant en Afrique de l'Ouest (x.x.xx.x.x.x).
  */
 
-export type ThemeId = 'village' | 'river' | 'depths' | 'dawn' | 'boss-duelist' | 'boss-guardian';
+export type ThemeId = 'village' | 'river' | 'depths' | 'dawn' | 'boss-duelist' | 'boss-guardian' | 'feyiase' | 'boss-badu';
 export type StingId = 'boss-intro' | 'phase' | 'death';
 
 export interface StepContext {
@@ -256,7 +256,84 @@ const guardian: ThemeSpec = {
   ambience: (inst, out, t) => inst.bed(out, t, { freq: 700, q: 1.1, rate: 0.11, level: 0.07, flutter: 0.6 }),
 };
 
-export const THEMES: Record<ThemeId, ThemeSpec> = { village, river, depths, dawn, 'boss-duelist': duelist, 'boss-guardian': guardian };
+// ---------------------------------------------------------------- chapitre 1 (1701)
+
+/**
+ * Feyiase, après la bataille : pas de musique. Le vent dans les hautes
+ * branches, des corbeaux au loin, et un fontomfrom crevé qui résonne très
+ * sourdement, à intervalles irréguliers.
+ */
+const feyiase: ThemeSpec = {
+  id: 'feyiase',
+  stepSeconds: 0.5,
+  stepsPerBar: 12,
+  plucks: { notes: RIVER_NOTES.slice(5), sustain: 0.99 },
+  layers: { 1: [1, 1], 2: [1, 1], 3: [1, 1] },
+  stems: [
+    {
+      id: 'fontomfrom-creve',
+      step: (c) => {
+        if ((c.bar % 3 === 0 && c.beat === 0) || (c.bar % 7 === 4 && c.beat === 5)) {
+          c.inst.atumpan(c.out, c.time, midi(C3 - 21), true, 0.08 + c.random() * 0.04, -0.3);
+        }
+      },
+    },
+    {
+      id: 'corbeaux',
+      step: (c) => {
+        if (c.random() < 0.012) {
+          const pan = c.random() * 1.6 - 0.8;
+          for (let i = 0; i < 2 + Math.floor(c.random() * 2); i++) {
+            c.inst.noiseBurst(c.out, c.time + i * 0.24, { level: 0.03, decay: 0.12, freq: 1100 + c.random() * 300, q: 7, pan });
+          }
+        }
+      },
+    },
+  ],
+  // Vent dans les hautes branches : grave, large, en rafales lentes (pas de frémissement d'eau).
+  ambience: (inst, out, t) => inst.bed(out, t, { freq: 240, q: 0.35, rate: 0.03, level: 0.06 }),
+};
+
+/** Fontomfrom lourd : grosse caisse royale sur les temps forts, réponses graves. */
+function fontomfrom(root: number): StemSpec {
+  return {
+    id: 'fontomfrom',
+    hold: (inst, out, t) => inst.drone(out, t, midi(root - 12), { cutoff: 220, level: 0.16, breath: 0.1, fifth: false }),
+    step: (c) => {
+      if (c.beat === 0 || c.beat === 6) c.inst.atumpan(c.out, c.time, midi(root - 17), true, 0.75);
+      if (c.beat === 3 || c.beat === 9) c.inst.atumpan(c.out, c.time, midi(root - 15), false, 0.42);
+      if (c.beat === 11 && c.bar % 2) c.inst.atumpan(c.out, c.time, midi(root - 17), true, 0.5, 0.2);
+    },
+  };
+}
+
+/**
+ * Duel de la crête : percussions lourdes et oppressantes, cordes graves
+ * minimalistes ; à mi-vie (mousquet brisé), les tambours deviennent frénétiques.
+ */
+const badu: ThemeSpec = {
+  id: 'boss-badu',
+  stepSeconds: 60 / 96 / 3,
+  stepsPerBar: 12,
+  plucks: { notes: GUARDIAN_NOTES, sustain: 0.993 },
+  layers: { 1: [1, 0.55, 0], 2: [1, 1, 1], 3: [1, 1, 1] },
+  stems: [
+    fontomfrom(C3 - 2),
+    {
+      id: 'cordes-graves',
+      hold: (inst, out, t) => inst.drone(out, t, midi(C3 - 14), { cutoff: 420, level: 0.12, breath: 0.04, fifth: true }),
+      step: (c) => {
+        if (c.beat === 0 && c.bar % 2 === 0) c.inst.swell(c.out, c.time, c.stepSeconds * 10, 0.12);
+        drumCall(c, midi(C3 - 4), 0.22);
+      },
+    },
+    fury(C3 - 2, GUARDIAN_NOTES, [0, -1, 0, 3, -1, 2, 0, -1, 0, 4, 3, 2, 0, -1, 0, 3, -1, 5, 6, 5, 4, 3, 2, 1]),
+  ],
+};
+
+export const THEMES: Record<ThemeId, ThemeSpec> = {
+  village, river, depths, dawn, 'boss-duelist': duelist, 'boss-guardian': guardian, feyiase, 'boss-badu': badu,
+};
 
 /** Courts motifs joués hors mesure, par-dessus la musique. */
 export function playSting(id: StingId, inst: Instruments, out: AudioNode, time: number) {

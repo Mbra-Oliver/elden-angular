@@ -45,13 +45,38 @@ export const TRAIL: readonly Spot[] = [
 
 /** Demi-largeur praticable du sentier (herbes piétinées, sous-bois arraché). */
 export const TRAIL_HALF = 62;
+/**
+ * Demi-largeur par tronçon : la ravine boueuse (séquence 2) et la montée
+ * vers la crête (séquence 3) se resserrent.
+ */
+export const TRAIL_HALVES: readonly number[] = [62, 62, 46, 46, 62, 62, 62, 36, 46, 62, 62];
+
+/** Embranchements de la séquence 2 : sanctuaire brisé (gauche) et raccourci (droite). */
+export const BRANCHES: readonly { id: string; points: readonly Spot[]; half: number }[] = [
+  { id: 'sanctuaire', points: [{ x: 4232, y: 880 }, { x: 4258, y: 770 }, { x: 4295, y: 660 }], half: 32 },
+  {
+    id: 'raccourci',
+    points: [{ x: 4460, y: 830 }, { x: 4410, y: 1010 }, { x: 4160, y: 1170 }, { x: 3860, y: 1320 }, { x: 3590, y: 1425 }],
+    half: 32,
+  },
+];
+/** Pont du raccourci : le tronc poussé franchit le ravin jusqu'à l'autel de départ. */
+export const BRIDGE = { points: [{ x: 3575, y: 1335 }, { x: 3588, y: 1428 }], half: 22 };
+/** Où se tenir pour pousser le tronc (depuis le raccourci, au sud du ravin). */
+export const BRIDGE_PUSH: Spot = { x: 3592, y: 1430 };
 
 /** Clairières le long du sentier. */
 export const CLEARINGS: readonly (Circle & { id: string })[] = [
   { id: 'reveil', x: 3540, y: 1240, r: 112 },
   { id: 'ruisseau', x: 4225, y: 885, r: 92 },
   { id: 'ligne', x: 4700, y: 700, r: 195 },
-  { id: 'tambours', x: 5195, y: 475, r: 125 },
+  { id: 'tambours', x: 5195, y: 475, r: 110 },
+  { id: 'sanctuaire', x: 4300, y: 630, r: 70 },
+  { id: 'rocher', x: 4410, y: 768, r: 30 },
+  { id: 'raccourci', x: 3592, y: 1436, r: 42 },
+  // Plateau rocheux avant la crête : second brasero (retour rapide au boss).
+  { id: 'plateau', x: 5378, y: 418, r: 52 },
+  { id: 'fromager', x: 4990, y: 600, r: 60 },
   // La crête : le porte-hache du Denkyira y garde l'abri du roi (combat de boss).
   { id: 'crete', x: 5640, y: 330, r: 262 },
   { id: 'camp', x: 6080, y: 250, r: 140 },
@@ -76,16 +101,33 @@ export function distanceToPolyline(x: number, y: number, points: readonly Spot[]
   return best;
 }
 
-/** Vrai si un cercle (x, y, radius) tient entièrement dans le sentier ou une clairière. */
-export function walkable(x: number, y: number, radius = 0) {
-  if (distanceToPolyline(x, y, TRAIL) + radius <= TRAIL_HALF) return true;
+function distanceToSegment(x: number, y: number, a: Spot, b: Spot) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(x - a.x - dx * t, y - a.y - dy * t);
+}
+
+/**
+ * Vrai si un cercle (x, y, radius) tient entièrement dans le sentier, un
+ * embranchement ou une clairière. `bridged` : le tronc du raccourci est poussé.
+ */
+export function walkable(x: number, y: number, radius = 0, bridged = false) {
+  for (let i = 0; i < TRAIL.length - 1; i++) {
+    if (distanceToSegment(x, y, TRAIL[i], TRAIL[i + 1]) + radius <= TRAIL_HALVES[i]) return true;
+  }
+  for (const branch of BRANCHES) {
+    if (distanceToPolyline(x, y, branch.points) + radius <= branch.half) return true;
+  }
+  if (bridged && distanceToPolyline(x, y, BRIDGE.points) + radius <= BRIDGE.half) return true;
   return CLEARINGS.some((c) => Math.hypot(x - c.x, y - c.y) + radius <= c.r);
 }
 
 // ─── Récit du décor ─────────────────────────────────────────────────────────
 
 export type RemainsId =
-  | 'kwasi' | 'traces' | 'fusil' | 'archer' | 'ruisseau' | 'ligne' | 'gourde' | 'tambours' | 'awale';
+  | 'kwasi' | 'traces' | 'fusil' | 'archer' | 'ruisseau' | 'ligne' | 'gourde' | 'tambours' | 'awale'
+  | 'sanctuaire' | 'talisman' | 'tambourinaire';
 
 export interface Remains extends Spot {
   id: RemainsId;
@@ -94,7 +136,9 @@ export interface Remains extends Spot {
   title: string;
   text: string;
   /** Ce que l'on ramasse, s'il y a quelque chose. */
-  gives?: { arrows?: number; bandji?: number };
+  gives?: { arrows?: number; bandji?: number; kaolin?: boolean };
+  /** Parole d'un personnage (affichée comme une réplique). */
+  speaker?: string;
 }
 
 /**
@@ -135,6 +179,24 @@ export const REMAINS: readonly Remains[] = [
     text: 'Ici, les fusiliers du Denkyira tenaient en rang. Les tonnelets de poudre ont brûlé l’herbe autour d’eux. Quand la ligne a cédé, ils ont jeté leurs fusils pour courir plus vite.',
   },
   {
+    id: 'sanctuaire', x: 4290, y: 615, label: 'Ramasser la décoction',
+    title: 'Décoction d’écorce amère',
+    text: 'Sur l’autel forestier profané, une calebasse de décoction d’écorce amère, laissée en offrande. Elle referme les plaies.',
+    gives: { bandji: 1 },
+  },
+  {
+    id: 'talisman', x: 4322, y: 648, label: 'Examiner le talisman',
+    title: 'Talisman de cuivre du Denkyira',
+    text: 'Talisman portant le sceau de Ntim Gyakari. Pendant des décennies, l’or, les récoltes et les fils du royaume furent livrés en tribut au Denkyira. Ce soir, le tribut se paie par le sang.',
+  },
+  {
+    id: 'tambourinaire', x: 5012, y: 618, label: 'Parler au tambourinaire',
+    title: 'Le tambourinaire mourant',
+    speaker: 'Le tambourinaire',
+    text: '« Ofori… tu es vivant. La colonne principale a percé vers l’est… Ntim Gyakari est encerclé. Mais son porte-hache, Badu Ofosu, refuse de plier. Il tient la crête avec son mousquet et sa hache… Ne te laisse pas abuser par sa lenteur. Il frappe comme la foudre. » Il te tend une poudre de kaolin, puis ferme les yeux.',
+    gives: { kaolin: true },
+  },
+  {
     id: 'gourde', x: 4885, y: 615, label: 'Ramasser la gourde',
     title: 'Gourde de vin de palme',
     text: 'Bouchée de feuilles, encore pleine. Un porteur l’a laissée tomber en courant derrière les soldats.',
@@ -146,7 +208,7 @@ export const REMAINS: readonly Remains[] = [
     text: 'La paire d’atumpan de l’avant-garde, abandonnée. L’un est crevé d’une balle. Ce sont eux que tu entendais : quelqu’un d’autre en joue maintenant, plus loin vers l’est.',
   },
   {
-    id: 'awale', x: 5440, y: 410, label: 'Examiner le plateau',
+    id: 'awale', x: 5355, y: 448, label: 'Examiner le plateau',
     title: 'Un plateau d’awalé renversé',
     text: 'Les graines sont éparpillées dans la boue, au milieu d’un abri de feuilles écrasé. On racontera plus tard que le roi du Denkyira, Ntim Gyakari, jouait encore quand les guerriers d’Osei Tutu l’ont trouvé.',
   },
@@ -163,20 +225,34 @@ export const START: Spot = { x: 3530, y: 1262 };
 
 /** Foyers du prologue (repos, point de retour). */
 export const PROLOGUE_FOYERS = {
-  kyidom: { x: 3500, y: 1205, name: 'Feu de l’arrière-garde' },
-  tambours: { x: 5230, y: 520, name: 'Feu des tambours' },
+  // Petit brasero rituel entouré de cauris, une calebasse d'eau à côté.
+  kyidom: { x: 3500, y: 1205, name: 'Autel de mémoire' },
+  // Juste avant l'arène de Badu : moins de dix secondes entre la mort et le duel.
+  tambours: { x: 5390, y: 410, name: 'Brasero de la crête' },
 } as const;
 
 /** Soldats du Denkyira restés en arrière (pillards et fusiliers de la slice). */
-export const PROLOGUE_SPAWNS: readonly ({ kind: 'pilleur' | 'fusilier' } & Spot)[] = [
-  // Un pillard fouille les morts près de l'archer.
-  { kind: 'pilleur', x: 4070, y: 960 },
-  // Arrière-garde du Denkyira sur la ligne de fusiliers.
+export const PROLOGUE_SPAWNS: readonly ({ kind: 'pilleur' | 'fusilier' | 'eclaireur' | 'lancier' | 'tireur' | 'garde' } & Spot)[] = [
+  // Séquence 1 : l'éclaireur qui dépouille un mort, près d'une charge de porteur renversée.
+  { kind: 'eclaireur', x: 3805, y: 1150 },
+  // Séquence 2 : la ravine boueuse, un lancier devant, un tireur posté sur un rocher.
+  { kind: 'lancier', x: 4305, y: 862 },
+  { kind: 'tireur', x: 4410, y: 768 },
+  // Un pillard sur l'autel profané (chemin de gauche).
+  { kind: 'pilleur', x: 4300, y: 650 },
+  // Campement avancé incendié, sur la ligne de fusiliers.
   { kind: 'fusilier', x: 4800, y: 640 },
   { kind: 'pilleur', x: 4640, y: 770 },
-  // Un dernier tireur garde les tambours.
-  { kind: 'fusilier', x: 5300, y: 430 },
+  // Séquence 3 : le garde d'élite bloque la montée vers la crête.
+  { kind: 'garde', x: 5290, y: 445 },
 ];
+
+/** Troncs brisés de la ravine : couverts contre le tir du mousquet (collision et ligne de vue). */
+export const COVER_TRUNKS: readonly Circle[] = [
+  { x: 4262, y: 888, r: 7 }, { x: 4330, y: 838, r: 7 }, { x: 4372, y: 860, r: 6 },
+];
+/** Grand fromager où s'adosse le tambourinaire. */
+export const KAPOK: Circle = { x: 5040, y: 650, r: 18 };
 
 // ─── Décor (positions générées une fois, partagées par la 3D et les collisions) ──
 
@@ -195,7 +271,7 @@ export const FOREST: readonly (Circle & { height: number; seed: number })[] = ((
     // Lisière serrée près du sentier, sous-bois plus clair plus loin.
     const edge = distanceToPolyline(x, y, TRAIL) - TRAIL_HALF;
     // Le tronc reste hors du praticable (il peut mordre la lisière).
-    if (edge < r * 0.6 || CLEARINGS.some((c) => Math.hypot(x - c.x, y - c.y) < c.r + r * 0.6)) continue;
+    if (walkable(x, y, -r * 0.6, true)) continue;
     if (edge > 260 && rand() < 0.55) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.y - y) < t.r + r + 10)) continue;
     trees.push({ x, y, r, height: 95 + rand() * 120, seed: i });
@@ -241,7 +317,7 @@ export const BODIES: readonly PropSpot[] = [
 ];
 
 /** Lances plantées ou couchées. */
-export const SPEARS: readonly PropSpot[] = along(14, 50, 0.05, 0.95);
+export const SPEARS: readonly PropSpot[] = along(9, 44, 0.05, 0.95);
 /** Mousquets jetés (surtout sur la ligne de fusiliers). */
 export const MUSKETS: readonly PropSpot[] = [
   ...along(6, 40, 0.15, 0.9),
@@ -266,7 +342,7 @@ export const SMOKES: readonly Spot[] = [
 /** Tonnelets de poudre éventrés (ligne de fusiliers). */
 export const KEGS: readonly PropSpot[] = near({ x: 4730, y: 670 }, 5, 70);
 /** Gourdes, sandales, ceintures tombées. */
-export const LITTER: readonly PropSpot[] = along(30, 54, 0, 1);
+export const LITTER: readonly PropSpot[] = along(14, 44, 0, 1);
 
 /** Gros obstacles (collision) : tronc couché du réveil, tambours, abri écrasé. */
 export const FALLEN_TRUNK = { x: 3498, y: 1290, length: 120, yaw: 0.25, r: 11 };
@@ -278,7 +354,14 @@ export const SOLIDS: readonly Circle[] = [
   }),
   { x: 5150, y: 430, r: 12 },
   { x: 5172, y: 418, r: 10 },
-  { x: 5460, y: 430, r: 26 },
+  { x: 5345, y: 475, r: 12 },
+  ...COVER_TRUNKS,
+  KAPOK,
+];
+
+/** Trois guerriers asante tombés aux pieds de Badu, sur la crête. */
+export const CREST_FALLEN: readonly PropSpot[] = [
+  { x: 5690, y: 300, yaw: 0.4, variant: 0 }, { x: 5720, y: 350, yaw: 2.2, variant: 2 }, { x: 5665, y: 365, yaw: 4.1, variant: 0 },
 ];
 
 /** Guerriers de l'arrière-garde au camp (silhouettes immobiles, autour des feux). */
@@ -304,7 +387,11 @@ export const CREST_GATE_X = 5895;
  * du monde, à plus de 1000 unités à l'ouest). [SUPPOSITION] valeurs à régler.
  */
 export const PROLOGUE_MOOD = {
-  fog: '#6f6a5c', fogDensity: 0.0031, background: '#5f5a4e', hemi: 1.35, sun: 2.0, sunColor: '#ffb47e',
+  // Crépuscule : ombres froides et sombres, soleil bas et rouge à l'est, derrière la crête :
+  // on marche vers la lumière. Brume brun-rouge, moins dense pour voir les repères au loin.
+  fog: '#3b2a25', fogDensity: 0.0022, background: '#2a1d1b', hemi: 0.95, sun: 3.1, sunColor: '#ff8f52',
+  sunPosition: [520, 150, -170] as [number, number, number],
+  hemiSky: '#c7906d', hemiGround: '#23262c',
 };
 
 /** Centre de la carte (collines lointaines). */

@@ -1,5 +1,6 @@
-<div class="stage">
-  <div #viewport class="game-viewport"><app-combat-hud /><app-social-hud /><app-slice-hud /><app-prologue-hud /></div>
+<div class="stage" [class.touch]="touch" [class.narrating]="narrating()">
+  <div #viewport class="game-viewport" (pointerdown)="onPointerDown($event)" (pointerup)="onPointerUp($event)"
+    (contextmenu)="$event.preventDefault()"><app-combat-hud /><app-social-hud /><app-slice-hud /><app-prologue-hud /></div>
   @if (engineStatus() === 'loading') {
     <p class="engine-message" role="status">Chargement du terrain…</p>
   } @else if (engineStatus() === 'failed') {
@@ -8,10 +9,6 @@
       <button type="button" (click)="gameState.returnToMainMenu()">Retour au menu</button>
     </div>
   }
-  <div class="journal" aria-live="polite">
-    <strong>◆ {{ gameState.objective().name }}</strong>
-    <p>{{ gameState.story() }}</p>
-  </div>
   @if (!gameState.dialogue()) {
     @let gear = equipment.state();
     <section class="loadout" aria-label="Équipement">
@@ -47,3 +44,9 @@
     <app-key-hint action="move" /> se déplacer · <app-key-hint action="attack" /> combo / tir · <app-key-hint action="heavy" /> lourde / tir bandé · <app-key-hint action="dodge" /> esquive (maintenu : sprint) · <app-key-hint action="switch" /> lance ↔ arc · <app-key-hint action="drink" /> Bandji · <app-key-hint action="interact" /> interagir · <app-key-hint action="message" /> message
   </div>
 </div>
+@if (touch && engineStatus() === 'ready' && !paused() && !narrating()) {
+  <app-touch-controls (pause)="pause()" />
+}
+@if (paused()) {
+  <app-pause-menu (resume)="resume()" (quit)="quitToMenu()" />
+}

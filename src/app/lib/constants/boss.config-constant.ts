@@ -57,9 +57,9 @@ export const BOSS_PHASE_PROFILE: Record<BossId, Record<1 | 2 | 3, BossPhaseProfi
   },
   // Porte-hache du Denkyira : hache, puis mousquet ensorcelé, puis sabre. Lueur de braise sombre (poudre).
   champion: {
-    1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['slam', 'sweep', 'charge'] },
-    2: { timeScale: 1.08, emissive: '#3a0d06', emissiveIntensity: 0.5, attacks: ['shot', 'slam', 'sweep', 'charge'] },
-    3: { timeScale: 1.18, emissive: '#7a1d0a', emissiveIntensity: 0.8, attacks: ['slash', 'combo', 'shot', 'charge', 'sweep'] },
+    1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['shot', 'reap', 'judgment', 'feint', 'backhand'] },
+    2: { timeScale: 1.12, emissive: '#2a0904', emissiveIntensity: 0.35, attacks: ['furrow', 'leap', 'mill', 'thrust', 'feint', 'backhand'] },
+    3: { timeScale: 1.12, emissive: '#2a0904', emissiveIntensity: 0.35, attacks: ['furrow', 'leap', 'mill', 'thrust', 'feint', 'backhand'] },
   },
   guardian: {
     1: { timeScale: 1, emissive: '#27756c', emissiveIntensity: 1, attacks: ['surge', 'slam', 'charge'] },

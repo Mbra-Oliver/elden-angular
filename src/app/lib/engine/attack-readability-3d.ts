@@ -63,8 +63,10 @@ export interface ThreatPose {
 
 type Shape = 'cone' | 'disc' | 'lane' | 'ring';
 
-const SHAPES: Record<Exclude<BossAttackType, 'none'>, Shape> = {
+// Attaques sans forme (feintes, estoc, crosse, saut) : rien au sol, il faut lire le corps de Badu.
+const SHAPES: Partial<Record<Exclude<BossAttackType, 'none'>, Shape>> = {
   slash: 'cone', combo: 'cone', slam: 'disc', sweep: 'disc', charge: 'lane', surge: 'ring', tide: 'ring', shot: 'lane',
+  reap: 'cone', mill: 'cone', judgment: 'disc', furrow: 'lane',
 };
 
 /** Couche 3D (World3D.addLayer) : zone de danger pendant l'anticipation. */
@@ -118,8 +120,9 @@ export class AttackTelegraph3D {
     const t = windup ? pose.progress : 1;
     const late = windup ? T.MathUtils.smoothstep(t, 0.72, 1) : 0;
     const size = BOSS_CONFIG.size;
-    const radius = shape === 'cone' ? this.coneRadius[attack as 'slash' | 'combo']
-      : attack === 'slam' ? BOSS_ATTACKS.slam.range * size / 2
+    const radius = shape === 'cone'
+      ? this.coneRadius[attack as 'slash' | 'combo'] ?? Math.min(BOSS_ATTACKS[attack].range * size, size * 2.2) + 9
+      : attack === 'slam' || attack === 'judgment' ? BOSS_ATTACKS[attack].range * size / 2
       : attack === 'sweep' ? BOSS_ATTACKS.sweep.range * size / 2
       : BOSS_ATTACKS[attack].range * size;
     const yaw = Math.atan2(pose.facingX, pose.facingY);
@@ -132,6 +135,7 @@ export class AttackTelegraph3D {
       // Charge : la course ; tir : la ligne de la balle (mince, très longue).
       const shot = attack === 'shot';
       const length = shot ? BOSS_ATTACKS.shot.range * size
+        : attack === 'furrow' ? BOSS_CONFIG.chargeSpeed * 1.1 * BOSS_ATTACKS.furrow.attackDuration / 1000
         : BOSS_CONFIG.chargeSpeed * BOSS_ATTACKS.charge.attackDuration / 1000;
       const width = shot ? SHOT_WIDTH * 2 : size * 0.7;
       parts.edge.scale.set(width, 1, length);

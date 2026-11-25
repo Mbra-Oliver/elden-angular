@@ -11,7 +11,7 @@ import { playSting, StingId, THEMES, ThemeId } from './themes';
  * Zones musicales. Une zone d'exploration a un thème calme ; une zone de boss
  * a un thème en trois couches qui suivent la phase du boss.
  */
-export type MusicZone = 'silence' | 'village' | 'river' | 'depths' | 'dawn' | 'duel-ford' | 'duel-sluice';
+export type MusicZone = 'silence' | 'village' | 'river' | 'depths' | 'dawn' | 'duel-ford' | 'duel-sluice' | 'feyiase' | 'duel-badu';
 
 export const ZONE_THEMES: Record<MusicZone, ThemeId | null> = {
   silence: null,
@@ -21,6 +21,8 @@ export const ZONE_THEMES: Record<MusicZone, ThemeId | null> = {
   dawn: 'dawn',
   'duel-ford': 'boss-duelist',
   'duel-sluice': 'boss-guardian',
+  feyiase: 'feyiase',
+  'duel-badu': 'boss-badu',
 };
 
 /** Ce que le jeu dit à la musique, lu à chaque tick. */

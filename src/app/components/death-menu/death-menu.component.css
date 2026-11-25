@@ -150,3 +150,18 @@ background: transparent;
 .results button { padding: 4px 10px; background: #7a3e1d; color: inherit; border: 1px solid #d8a23a; border-radius: 4px; cursor: pointer; font: inherit; }
 .copied, .unlock { text-align: center; color: #ffdc9a; font: 13px system-ui, sans-serif; }
 .copied input { width: min(420px, 80vw); font: 12px monospace; }
+
+/* Écran de mort sobre : noir, lettres blanc cassé qui apparaissent lentement, aucune pulsation rouge. */
+.blood-overlay {
+  background: radial-gradient(ellipse at center, rgba(30, 22, 18, 0.55) 0%, rgba(0, 0, 0, 0.95) 75%);
+  animation: none;
+}
+.death-text {
+  color: #e8e0d0;
+  letter-spacing: 12px;
+  text-shadow: 0 0 18px rgba(0, 0, 0, 0.9);
+  transform: none;
+  animation: deathTextAnimation 2.2s ease-out forwards;
+}
+.death-content { animation: deathFadeIn 1.2s ease-out both; }
+@keyframes deathFadeIn { from { opacity: 0; } to { opacity: 1; } }

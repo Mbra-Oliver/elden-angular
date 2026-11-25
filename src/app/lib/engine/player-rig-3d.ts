@@ -33,6 +33,7 @@ const I = Object.fromEntries(CHANNELS.map((c, i) => [c, i])) as Record<Channel, 
 const TAU = Math.PI * 2;
 const LEG = 13.45;
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const easeInCubic = (t: number) => t * t * t;
 const smooth = (a: number, b: number, v: number) => {
   const t = clamp01((v - a) / (b - a));
   return t * t * (3 - 2 * t);
@@ -103,7 +104,7 @@ function springFor(state: string, attack: string): [number, number] {
     case 'rolling': return [30, 0.9];
     case 'hurt': return [22, 0.48];
     case 'exhausted': return [6, 1];
-    case 'dead': return [5, 1];
+    case 'dead': return [11, 0.75];
     default: return [13, 1];
   }
 }
@@ -431,9 +432,21 @@ export class PlayerAnimator {
           this.target[I.rX] += pant * 0.05;
           break;
         }
-        case 'dead':
-          this.blend(base, { rX: 1.0, tY: -3, aLx: 0.3, aRx: 0.4, wr: 0, lLx: -0.6, lRx: 0.3 }, 1);
+        case 'dead': {
+          // Mort : les genoux lâchent, il tombe à genoux, l'arme pèse, puis il
+          // bascule face contre terre avec un léger rebond (pose.phase : 0 → 1).
+          const buckle = easeOutCubic(smooth(0, 0.28, k));
+          const fall = easeInCubic(smooth(0.4, 0.66, k));
+          const settle = smooth(0.66, 0.8, k);
+          this.blend(base, {
+            rX: 0.3 + 0.45 * buckle, tY: -6 * buckle, aLx: 0.3 + 0.5 * fall, aLz: 0.25, aRx: 0.45 + 0.6 * fall,
+            aRz: -0.2, wr: 0, lLx: -1.25 * buckle * (1 - fall * 0.6), lRx: 0.45 * buckle,
+          }, 1);
+          pitch = 1.42 * fall - 0.07 * Math.sin(settle * Math.PI);
+          lift = -7.5 * fall;
+          ground = 0;
           break;
+        }
       }
     }
 

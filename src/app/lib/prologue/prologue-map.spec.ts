@@ -1,7 +1,7 @@
 import { TerrainCollisionService } from '../engine/terrain-collision.service';
 import {
-  CAMP, CLEARINGS, FOREST, PROLOGUE_AREA, PROLOGUE_FOYERS, PROLOGUE_SPAWNS, REMAINS, START, TRAIL, TRAIL_HALF,
-  distanceToPolyline, inPrologue, walkable,
+  BRIDGE, BRIDGE_PUSH, PROLOGUE_DUEL, CAMP, CLEARINGS, FOREST, PROLOGUE_AREA, PROLOGUE_FOYERS, PROLOGUE_SPAWNS, REMAINS, START, TRAIL, TRAIL_HALF,
+  inPrologue, walkable,
 } from './prologue-map';
 
 describe('Prologue map (1701)', () => {
@@ -16,9 +16,23 @@ describe('Prologue map (1701)', () => {
   it('never plants a tree trunk on the trail or in a clearing', () => {
     expect(FOREST.length).toBeGreaterThan(200);
     for (const tree of FOREST) {
-      expect(distanceToPolyline(tree.x, tree.y, TRAIL)).toBeGreaterThan(TRAIL_HALF);
+      expect(walkable(tree.x, tree.y, 0, true)).toBeFalse();
       for (const c of CLEARINGS) expect(Math.hypot(tree.x - c.x, tree.y - c.y)).toBeGreaterThan(c.r);
     }
+  });
+
+  it('only links the shortcut to the memory altar once the trunk is pushed', () => {
+    const middle = { x: (BRIDGE.points[0].x + BRIDGE.points[1].x) / 2, y: (BRIDGE.points[0].y + BRIDGE.points[1].y) / 2 };
+    expect(walkable(middle.x, middle.y, 10)).toBeFalse();
+    expect(walkable(middle.x, middle.y, 10, true)).toBeTrue();
+    expect(walkable(BRIDGE_PUSH.x, BRIDGE_PUSH.y, 10)).toBeTrue();
+  });
+
+  it('keeps the crest brasero outside the duel arena but close to it (fast retry)', () => {
+    const foyer = PROLOGUE_FOYERS.tambours;
+    const d = Math.hypot(foyer.x - PROLOGUE_DUEL.x, foyer.y - PROLOGUE_DUEL.y);
+    expect(d).toBeGreaterThan(PROLOGUE_DUEL.radius);
+    expect(d).toBeLessThan(PROLOGUE_DUEL.radius + 60);
   });
 
   it('lets the hero walk the trail but not into the forest, outside the main world bounds', () => {

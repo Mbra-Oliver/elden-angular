@@ -21,7 +21,7 @@ export class DeathMenuComponent {
       action: () => this.gameService.retry(),
     },
     {
-      label: 'Retour au village',
+      label: 'Menu principal',
       action: () => this.gameService.returnToMainMenu(),
     },
   ];

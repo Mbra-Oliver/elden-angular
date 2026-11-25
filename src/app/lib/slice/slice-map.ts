@@ -105,7 +105,8 @@ export const ACACIAS: readonly Spot[] = [
   { x: 1660, y: 1210 }, { x: 1950, y: 1500 }, { x: 2330, y: 1210 },
 ];
 
-export type EnemyKind = 'pilleur' | 'fusilier' | 'noye';
+/** eclaireur, lancier, tireur, garde : soldats du Denkyira du chapitre 1 (prologue-map.ts). */
+export type EnemyKind = 'pilleur' | 'fusilier' | 'noye' | 'eclaireur' | 'lancier' | 'tireur' | 'garde';
 
 export interface EnemySpawn extends Spot { kind: EnemyKind }
 

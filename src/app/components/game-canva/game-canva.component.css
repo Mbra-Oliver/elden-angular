@@ -1,17 +1,27 @@
 :host {
+  /* Zone sûre : rien sous l'encoche, la Dynamic Island ou la barre de geste. */
+  --safe-w: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right));
+  --safe-h: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   display: grid;
   place-items: center;
-  min-height: 100dvh;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: #000;
+  overflow: hidden;
 }
 
 .stage { position: relative; }
 
+/* Le jeu remplit toute la zone sûre, quel que soit le format (16:9, 19,5:9, 20:9). */
 .game-viewport {
   position: relative;
   display: block;
-  width: min(960px, 100vw, calc(100dvh * 16 / 9));
-  aspect-ratio: 16 / 9;
+  width: var(--safe-w);
+  height: var(--safe-h);
   background: #252d25;
+  touch-action: none;
 }
 
 .journal,
@@ -35,10 +45,21 @@
 .journal p { margin: 3px 0 0; }
 
 .controls {
-  padding: 7px 12px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 5px 12px;
   text-align: center;
   font-size: 11px;
+  background: #211b14b3;
+  pointer-events: none;
 }
+
+/* Tactile : les boutons à l'écran remplacent l'aide clavier. */
+.stage.touch .controls { display: none; }
+.stage.touch .loadout .keys { display: none; }
+.stage.touch .loadout { bottom: 12px; left: auto; right: 50%; transform: translateX(50%); }
 
 .talk,
 .dialogue {
@@ -137,3 +158,18 @@ button:hover { background: #ffe0ab; }
   font: 600 13px system-ui, sans-serif;
   pointer-events: none;
 }
+
+/* Tactile : équipement en une ligne en bas au centre, invite d'interaction au-dessus. */
+.stage.touch .loadout {
+  grid-auto-flow: column;
+  align-items: center;
+  bottom: 6px;
+  padding: 4px 8px;
+  min-width: 0;
+}
+.stage.touch .talk { bottom: 52px; min-height: 44px; }
+
+/* Mobile : pendant un texte, seul le texte reste (pas d'équipement ni d'invite par-dessus). */
+.stage.touch.narrating .loadout,
+.stage.touch.narrating .talk,
+.stage.touch.narrating .gear-notice { display: none; }

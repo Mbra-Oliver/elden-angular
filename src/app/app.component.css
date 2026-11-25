@@ -1,0 +1,63 @@
+.rotate {
+  display: none;
+}
+
+/* Seulement sur écran tactile tenu en portrait (pas sur une fenêtre de bureau étroite). */
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 6px;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: radial-gradient(circle at 50% 40%, #1a0f0a, #000 70%);
+    color: #efe6d4;
+    text-align: center;
+  }
+
+  .rotate svg {
+    width: 96px;
+    height: 96px;
+    margin-bottom: 8px;
+  }
+
+  .rotate .phone {
+    fill: none;
+    stroke: #e5c17b;
+    stroke-width: 2;
+    transform-origin: 32px 28px;
+    animation: turn 2.6s ease-in-out infinite;
+  }
+
+  .rotate .arrow {
+    fill: none;
+    stroke: #efe6d488;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+  }
+
+  .rotate p {
+    margin: 0;
+    color: #e5c17b;
+    font: 500 26px/1.1 "Cormorant Garamond", Garamond, "Times New Roman", serif;
+    letter-spacing: 0.04em;
+  }
+
+  .rotate small {
+    color: #b9a684;
+    font: 13px system-ui, sans-serif;
+  }
+}
+
+@keyframes turn {
+  0%, 20% { transform: rotate(0deg); }
+  55%, 85% { transform: rotate(-90deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate .phone { animation: none; transform: rotate(-90deg); }
+}

@@ -289,7 +289,11 @@ export class Slice3D {
     };
     const barBack = this.mat(new T.SpriteMaterial({ color: '#1b1210', transparent: true, opacity: 0.75, depthWrite: false }));
     const barFill = this.mat(new T.SpriteMaterial({ color: '#c9473a', depthWrite: false }));
-    const cloth: Record<EnemyKind, string> = { pilleur: '#6b3b2a', fusilier: '#2f3f5c', noye: '#3e4a44' };
+    const cloth: Record<EnemyKind, string> = {
+      pilleur: '#6b3b2a', fusilier: '#2f3f5c', noye: '#3e4a44',
+      // Soldats du Denkyira (1701) : pagnes rouille et brun sombre.
+      eclaireur: '#7a4a2a', lancier: '#6a3020', tireur: '#5a3a24', garde: '#3c2418',
+    };
     // Peau du noyé : ondulation d'eau (vertex) et reflet turquoise (shader élémentaire).
     const time = this.time;
     const drownedSkin = (material: T.MeshStandardMaterial) => {
@@ -328,7 +332,7 @@ export class Slice3D {
       add(torso, geos.hips, dress, 0, -2, 0);
       add(torso, geos.head, skin, 0, 11, 0.4);
       if (kind === 'pilleur') add(torso, geos.wrap, shared.red, 0, 12.6, 0.2);
-      if (kind === 'fusilier') {
+      if (kind === 'fusilier' || kind === 'tireur') {
         const belt = add(torso, geos.wrap, shared.leather, 0, 4, 0);
         belt.scale.set(1.5, 0.6, 1.5);
         belt.rotation.z = 0.7;
@@ -359,7 +363,30 @@ export class Slice3D {
       if (kind === 'pilleur') {
         weapon = add(arms[1], geos.blade, shared.iron, 0, -8, 6);
         weapon.rotation.x = Math.PI / 2 - 0.4;
-      } else if (kind === 'fusilier') {
+      } else if (kind === 'eclaireur' || kind === 'lancier') {
+        // Lance : long manche, fer en feuille.
+        const spear = new T.Group();
+        const shaft = add(spear, this.geo(new T.CylinderGeometry(0.45, 0.5, 40, 5)), shared.wood, 0, 0, 4);
+        shaft.rotation.x = Math.PI / 2;
+        const tip = add(spear, this.geo(new T.ConeGeometry(1.3, 6, 4)), shared.iron, 0, 0, 26);
+        tip.rotation.x = Math.PI / 2;
+        spear.position.set(0, -8, 4);
+        arms[1].add(spear);
+        weapon = spear;
+      } else if (kind === 'garde') {
+        // Massue cloutée.
+        const club = new T.Group();
+        const handle = add(club, this.geo(new T.CylinderGeometry(0.8, 1.1, 16, 6)), shared.wood, 0, 0, 6);
+        handle.rotation.x = Math.PI / 2;
+        add(club, this.geo(new T.DodecahedronGeometry(3, 0)), shared.wood, 0, 0, 15);
+        for (let i = 0; i < 5; i++) {
+          const stud = add(club, this.geo(new T.ConeGeometry(0.5, 2, 4)), shared.iron, Math.cos(i * 1.3) * 3, Math.sin(i * 1.3) * 3, 15);
+          stud.rotation.z = i * 1.3 - Math.PI / 2;
+        }
+        club.position.set(0, -8, 3);
+        arms[1].add(club);
+        weapon = club;
+      } else if (kind === 'fusilier' || kind === 'tireur') {
         const gun = new T.Group();
         const barrel = add(gun, geos.musket, shared.wood, 0, 0, 0);
         barrel.rotation.x = Math.PI / 2;
@@ -372,6 +399,13 @@ export class Slice3D {
         arms[1].add(weapon);
       }
       if (kind === 'noye') body.scale.setScalar(1.35);
+      if (kind === 'garde') {
+        // Grand bouclier rond en peau de buffle (bras gauche), carrure massive.
+        const shield = add(arms[0], this.geo(new T.CylinderGeometry(8.5, 8.5, 1.2, 12)), shared.leather, 0, -6, 4);
+        shield.rotation.x = Math.PI / 2;
+        add(arms[0], this.geo(new T.SphereGeometry(1.6, 6, 4)), shared.iron, 0, -6, 4.9);
+        body.scale.setScalar(1.3);
+      }
 
       const back = new T.Sprite(barBack);
       back.scale.set(22, 2.6, 1);

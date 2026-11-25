@@ -3,12 +3,15 @@
 body {
   margin: 0;
   padding: 0;
-  background: #0f0f1a;
+  background: #000;
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
   font-family: "Times New Roman", Times, serif;
 }
 
@@ -23,3 +26,18 @@ body {
 .items-center {
   align-items: center;
 }
+
+/* Mobile : pas de zoom au double tap ni de sélection de texte en jouant. */
+html, body {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+input, textarea { -webkit-user-select: text; user-select: text; }
+
+/* Tactile : les touches numérotées (choix de dialogue, stats) disparaissent ; on touche la ligne. */
+html.touch-input kbd:not(.key) { display: none; }
+html.touch-input app-social-hud .prompt.subtle { display: none; }

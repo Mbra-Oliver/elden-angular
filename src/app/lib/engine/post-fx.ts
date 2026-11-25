@@ -39,6 +39,11 @@ export class PostFx {
   private vignette = 0;
   private time = 0;
 
+  /** Rapport largeur/hauteur de l'écran de jeu (vignette ronde sur tout format). */
+  setAspect(aspect: number) {
+    this.composite.uniforms['aspect'].value = aspect;
+  }
+
   constructor(private readonly renderer: T.WebGLRenderer, width: number, height: number) {
     const options = { type: T.HalfFloatType, depthBuffer: true };
     this.bloomA = new T.WebGLRenderTarget(Math.ceil(width / 4), Math.ceil(height / 4), options);

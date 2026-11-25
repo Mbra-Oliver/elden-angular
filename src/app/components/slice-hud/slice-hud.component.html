@@ -3,7 +3,7 @@
     @for (line of lines; track $index) {
       <p [class.shown]="$index <= slice.hookLine()!">{{ line }}</p>
     }
-    <small>Espace pour passer</small>
+    <small><app-skip-hint /></small>
   </section>
 } @else {
   <div class="spirit" aria-label="Ardeur">
@@ -13,7 +13,7 @@
     <span class="special">C · {{ specialName() }}</span>
   </div>
   @if (slice.prompt(); as prompt) {
-    <p class="prompt">F · {{ prompt.label }}</p>
+    <p class="prompt"><app-key-hint action="interact" /> {{ prompt.label }}</p>
   }
   @if (slice.notice(); as notice) {
     <p class="notice" role="status">{{ notice }}</p>
@@ -41,7 +41,7 @@
           </li>
         }
       </ul>
-      <button type="button" class="leave" (click)="slice.closeRestMenu()"><kbd>Échap</kbd> Repartir</button>
+      <button type="button" class="leave" (click)="slice.closeRestMenu()"><app-key-hint action="back" /> Repartir</button>
     </section>
   }
 }

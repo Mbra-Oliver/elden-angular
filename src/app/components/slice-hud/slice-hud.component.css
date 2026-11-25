@@ -45,3 +45,16 @@ button { pointer-events: auto; cursor: pointer; }
 .rest li span { opacity: 0.8; }
 .leave { border: 1px solid #f4ce90; background: transparent; color: #fff0d1; padding: 6px 12px; }
 kbd { font: 11px ui-monospace, monospace; padding: 0 4px; border: 1px solid currentColor; border-radius: 3px; }
+
+/* --- Mobile : texte narratif en bulle compacte, une phrase à la fois, en bas de l'écran. --- */
+:host-context(html.touch-input) .hook {
+  inset: auto 0 0; align-content: end; justify-items: center; gap: 6px;
+  padding: 40px 12% calc(env(safe-area-inset-bottom) + 16px);
+  background: linear-gradient(0deg, #050302e6 0%, #05030299 55%, transparent);
+}
+:host-context(html.touch-input) .hook p { display: none; }
+:host-context(html.touch-input) .hook p.shown:not(:has(~ p.shown)) {
+  display: block; max-width: 560px; padding: 8px 14px; border: 1px solid #b9845466; border-radius: 10px;
+  background: #120c08e6; font-size: 14px; line-height: 1.45; text-align: center;
+}
+:host-context(html.touch-input) .hook small { position: static; font-size: 11px; }

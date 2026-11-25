@@ -1,0 +1,41 @@
+<div class="stick-zone" (pointerdown)="stickDown($event)" (pointermove)="stickMove($event)"
+  (pointerup)="stickUp($event)" (pointercancel)="stickUp($event)" aria-hidden="true">
+  @if (stick(); as s) {
+    <div class="stick-base" [style.left.px]="s.x" [style.top.px]="s.y">
+      <div class="stick-knob" [style.transform]="'translate(' + s.dx + 'px,' + s.dy + 'px)'"></div>
+    </div>
+  } @else {
+    <div class="stick-ghost"></div>
+  }
+</div>
+
+<div class="arc" role="group" aria-label="Actions">
+  @for (pad of [
+    { id: 'heavy', label: 'Frappe lourde', glyph: '⟱' },
+    { id: 'drink', label: 'Boire du Bandji', glyph: '⚱' },
+    { id: 'attack', label: 'Frappe légère', glyph: '⟋' },
+    { id: 'dodge', label: 'Esquive (maintenir : sprint)', glyph: '↺' },
+    { id: 'switch', label: 'Changer d’arme', glyph: '⇄' }
+  ]; track pad.id) {
+    <button type="button" class="pad" [class]="'pad ' + pad.id" [class.held]="held().has($any(pad.id))"
+      [attr.aria-label]="pad.label"
+      (pointerdown)="padDown($any(pad.id), $event)" (pointerup)="padUp($any(pad.id))"
+      (pointercancel)="padUp($any(pad.id))" (lostpointercapture)="padUp($any(pad.id))"
+      (contextmenu)="$event.preventDefault()">
+      <span aria-hidden="true">{{ pad.glyph }}</span>
+    </button>
+  }
+</div>
+
+<button type="button" class="pad lock" aria-label="Verrouiller la cible (glisser sur l’image pour en changer)"
+  (pointerdown)="lock($event)" (contextmenu)="$event.preventDefault()"><span aria-hidden="true">⌖</span></button>
+
+@if (canInteract()) {
+  <button type="button" class="pad interact" aria-label="Interagir" (pointerdown)="interact($event)"
+    (contextmenu)="$event.preventDefault()"><span aria-hidden="true">◈</span></button>
+}
+
+<button type="button" class="pause" aria-label="Pause" (click)="pause.emit()">
+  <!-- Trois traits, comme les bandes d'un tissu adinkra. -->
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>
+</button>

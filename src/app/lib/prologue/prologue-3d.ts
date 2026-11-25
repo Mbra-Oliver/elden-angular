@@ -5,6 +5,7 @@ import {
   BLADES, BODIES, BOWS, CAMP_FIRES, CAMP_WARRIORS, CLEARINGS, FALLEN_TRUNK, FOREST, KEGS, LITTER, MUSKETS,
   PROLOGUE_AREA, PROLOGUE_FOYERS, REMAINS, SCORCHES, SMOKES, SPEARS, STREAM, TRAIL, TRAIL_HALF,
   UMBRELLA, type PropSpot, type RemainsId,
+  BRANCHES, BRIDGE, COVER_TRUNKS, CREST_FALLEN, KAPOK, TRAIL_HALVES, PROLOGUE_CENTER, PROLOGUE_DUEL,
 } from './prologue-map';
 
 /**
@@ -77,8 +78,16 @@ export class Prologue3D {
   private readonly glints: { sprite: T.Sprite; id: RemainsId }[] = [];
   private readonly vultures: { bird: T.Group; wings: T.Mesh[]; seed: number }[] = [];
   private embers?: T.Points<T.BufferGeometry, T.PointsMaterial>;
+  /** Tisons qui balisent le sentier (lueur qui pulse). */
+  private readonly brands: T.Sprite[] = [];
+  /** Feux de la crête, visibles de loin. */
+  private readonly beacons: T.Sprite[] = [];
+
   /** Corps du porte-hache, couché sur la crête après le combat. */
   private readonly corpse: T.Group;
+  /** Tronc du raccourci : debout au bord du ravin, puis couché en pont. */
+  private trunkStanding!: T.Object3D;
+  private trunkBridge!: T.Object3D;
   private time = 0;
   private readonly tmp = new T.Object3D();
   private readonly random = sceneryRandom(91701);
@@ -88,6 +97,7 @@ export class Prologue3D {
     private readonly active: () => boolean,
     private readonly hasRead: (id: RemainsId) => boolean,
     private readonly championSpot: () => { x: number; y: number; yaw: number } | null = () => null,
+    private readonly bridged: () => boolean = () => false,
   ) {
     const vertex = this.mat(new T.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }));
     this.buildGround();
@@ -100,6 +110,8 @@ export class Prologue3D {
     this.buildGlints();
     this.buildVultures(vertex);
     this.corpse = this.buildCorpse(vertex);
+    this.buildSequences(vertex);
+    this.buildGuidance(vertex);
     this.root.visible = false;
     scene.add(this.root);
   }
@@ -110,6 +122,11 @@ export class Prologue3D {
     if (!on) return;
     this.time += dt;
     const t = this.time;
+    this.brands.forEach((b, i) => { b.material.opacity = 0.55 + 0.25 * Math.sin(t * 3.1 + i * 1.7) + 0.1 * Math.sin(t * 11 + i); });
+    this.beacons.forEach((b, i) => { b.material.opacity = 0.7 + 0.2 * Math.sin(t * 2.3 + i * 2.1); });
+    const down = this.bridged();
+    this.trunkStanding.visible = !down;
+    this.trunkBridge.visible = down;
     const spot = this.championSpot();
     this.corpse.visible = !!spot;
     if (spot) {
@@ -168,10 +185,11 @@ export class Prologue3D {
     const rand = sceneryRandom(1702);
 
     // Sous-bois : humus sombre, taches de feuilles.
-    ctx.fillStyle = '#3f3f27';
+    // Sous-bois sombre et froid : le sentier clair et chaud s'en détache nettement.
+    ctx.fillStyle = '#262619';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     for (let i = 0; i < 2600; i++) {
-      ctx.fillStyle = ['#36391f', '#4a4529', '#2f3420', '#514b2c'][i % 4];
+      ctx.fillStyle = ['#202517', '#2f2c1c', '#1c2016', '#35301e'][i % 4];
       ctx.globalAlpha = 0.35 + rand() * 0.4;
       ctx.beginPath();
       ctx.arc(rand() * canvas.width, rand() * canvas.height, 4 + rand() * 22, 0, Math.PI * 2);
@@ -189,25 +207,39 @@ export class Prologue3D {
       ctx.fill();
     }
     // Sentier : latérite mise à nu par des centaines de pieds, bords irréguliers.
-    const stroke = (width: number, color: string, jitter: number, alpha = 1) => {
+    // Chaque tronçon prend sa vraie largeur praticable : le bord peint est le bord où l'on bute.
+    const stroke = (factor: number, color: string, alpha = 1) => {
       ctx.strokeStyle = color;
       ctx.globalAlpha = alpha;
-      ctx.lineWidth = width * scale;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      ctx.beginPath();
-      TRAIL.forEach((p, i) => {
-        const x = X(p.x + (rand() - 0.5) * jitter);
-        const y = Y(p.y + (rand() - 0.5) * jitter);
-        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
-      });
-      ctx.stroke();
+      for (let i = 0; i < TRAIL.length - 1; i++) {
+        ctx.lineWidth = TRAIL_HALVES[i] * 2 * factor * scale;
+        ctx.beginPath();
+        ctx.moveTo(X(TRAIL[i].x), Y(TRAIL[i].y));
+        ctx.lineTo(X(TRAIL[i + 1].x), Y(TRAIL[i + 1].y));
+        ctx.stroke();
+      }
       ctx.globalAlpha = 1;
     };
-    stroke(TRAIL_HALF * 2.3, '#5a4d30', 30, 0.8);
-    stroke(TRAIL_HALF * 1.8, '#755c3e', 18);
-    stroke(TRAIL_HALF * 0.9, '#7f5f3e', 10);
-    stroke(TRAIL_HALF * 0.4, '#6c4f34', 6, 0.7);
+    stroke(1.08, '#140f0b', 0.9); // liseré sombre : la lisière se lit d'un coup d'œil
+    stroke(1, '#8e6340');
+    stroke(0.55, '#a1724a');
+    stroke(0.18, '#7a5234', 0.7);
+    // Embranchements (sentiers plus étroits) et ravin du raccourci.
+    for (const branch of BRANCHES) {
+      ctx.strokeStyle = '#7a5638';
+      ctx.lineWidth = branch.half * 1.9 * scale;
+      ctx.beginPath();
+      branch.points.forEach((p, i) => (i ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y))));
+      ctx.stroke();
+    }
+    ctx.strokeStyle = '#120d0a';
+    ctx.lineWidth = 34 * scale;
+    ctx.beginPath();
+    ctx.moveTo(X(3460), Y(1372));
+    ctx.quadraticCurveTo(X(3570), Y(1390), X(3680), Y(1362));
+    ctx.stroke();
     // Ruisseau.
     ctx.lineCap = 'round';
     for (const [width, color] of [[34, '#2c3532'], [22, '#3e4d47'], [8, '#62746a']] as const) {
@@ -307,7 +339,7 @@ export class Prologue3D {
       const nx = -(q.y - p.y);
       const ny = q.x - p.x;
       const len = Math.hypot(nx, ny);
-      for (let k = 0; k < 14; k++) {
+      for (let k = 0; k < 8; k++) {
         const u = rand();
         const side = (rand() < 0.5 ? -1 : 1) * (TRAIL_HALF + 6 + rand() * 30);
         const x = p.x + (q.x - p.x) * u + nx / len * side;
@@ -523,11 +555,11 @@ export class Prologue3D {
       ...Array.from({ length: 12 }, (_, i): Part =>
         [cyl(0.9, 0.9, 0.4, 6), C.darkWood, m4(-5.5 + (i % 6) * 2.2, 2.05, i < 6 ? -1.2 : 1.2)]),
     ]), material);
-    awale.position.set(5440, 0, 412);
+    awale.position.set(5355, 0, 450);
     awale.rotation.set(0, 0.4, 0.5);
     const seeds = new T.InstancedMesh(merge([[ball(0.5, 0), '#2a2520', m4(0, 0.4, 0)]]), material, 24);
     for (let i = 0; i < 24; i++) {
-      this.tmp.position.set(5440 + Math.cos(i * 2.4) * (3 + i * 0.5), 0, 412 + Math.sin(i * 2.4) * (3 + i * 0.5));
+      this.tmp.position.set(5355 + Math.cos(i * 2.4) * (3 + i * 0.5), 0, 450 + Math.sin(i * 2.4) * (3 + i * 0.5));
       this.tmp.rotation.set(0, 0, 0);
       this.tmp.scale.setScalar(1);
       this.tmp.updateMatrix();
@@ -538,7 +570,7 @@ export class Prologue3D {
       [cyl(0.8, 0.8, 22, 5), C.wood, m4(-18, 8, -12, 0.6, 0, 0.3)],
       [cyl(0.8, 0.8, 22, 5), C.wood, m4(18, 4, 12, -1.1, 0, 0)],
     ]), material);
-    shelter.position.set(5462, 0, 432);
+    shelter.position.set(5345, 0, 480);
     this.root.add(standing, fallen, horn, awale, seeds, shelter);
   }
 
@@ -564,8 +596,230 @@ export class Prologue3D {
     this.root.add(group);
   }
 
+  /** Braseros rituels (autel de mémoire, crête) : coupe sur trépied, cauris, calabasse d'eau. */
   private buildFires(material: T.Material) {
-    for (const foyer of Object.values(PROLOGUE_FOYERS)) this.fire(material, foyer.x, foyer.y);
+    for (const foyer of Object.values(PROLOGUE_FOYERS)) {
+      const group = new T.Group();
+      group.position.set(foyer.x, 0, foyer.y);
+      group.add(new T.Mesh(merge([
+        [cyl(5.5, 3.2, 3.5, 9), '#4a3a2c', m4(0, 7.5, 0)],
+        ...[0, 2.1, 4.2].map((a): Part => [cyl(0.5, 0.6, 9, 4), C.darkWood, m4(Math.cos(a) * 3.2, 3.5, Math.sin(a) * 3.2, Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3)]),
+        ...Array.from({ length: 14 }, (_, i): Part => {
+          const a = i / 14 * Math.PI * 2;
+          return [ball(0.7, 0), '#efe6cf', m4(Math.cos(a) * 9, 0.3, Math.sin(a) * 9, 0, 0, 0, 1.2, 0.5, 0.8)];
+        }),
+        [ball(2.6, 1), C.gourd, m4(11, 2, 4, 0, 0, 0, 1, 0.8, 1)],
+        [cyl(2.2, 2.2, 0.3, 8), '#3d5a62', m4(11, 3.6, 4)],
+      ]), material));
+      const flame = new T.Mesh(new T.ConeGeometry(3.4, 10, 6),
+        this.mat(new T.MeshBasicMaterial({ color: '#ff8a3c', transparent: true, opacity: 0.9, depthWrite: false })));
+      flame.position.y = 13;
+      flame.userData['bloom'] = true;
+      group.add(flame);
+      this.flames.push(flame);
+      this.root.add(group);
+    }
+  }
+
+  /**
+   * Lisibilité : ciel de crépuscule qui rougeoie à l'est, soleil bas derrière
+   * la crête (on marche vers la lumière), éperon rocheux de la crête et ses
+   * feux visibles de loin, tisons qui balisent le sentier, eau du ruisseau.
+   */
+  private buildGuidance(material: T.Material) {
+    // Ciel propre à la carte (dessiné par-dessus le ciel d'harmattan des actes suivants).
+    const radius = 2000;
+    const skyGeo = new T.SphereGeometry(radius, 32, 16);
+    const pos = skyGeo.attributes['position'] as T.BufferAttribute;
+    const colors = new Float32Array(pos.count * 3);
+    const zenith = new T.Color('#1d1a24');
+    const mid = new T.Color('#5a2f2a');
+    const horizon = new T.Color('#b4532c');
+    const ground = new T.Color('#2a1d1b');
+    const c = new T.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const h = pos.getY(i) / radius;
+      const east = Math.max(0, pos.getX(i) / radius); // plus rouge vers l'est, là où le soleil se couche
+      if (h <= 0) c.copy(ground);
+      else if (h < 0.18) c.copy(ground).lerp(horizon, h / 0.18);
+      else if (h < 0.5) c.copy(horizon).lerp(mid, (h - 0.18) / 0.32);
+      else c.copy(mid).lerp(zenith, Math.min(1, (h - 0.5) / 0.4));
+      if (h > 0 && h < 0.5) c.lerp(new T.Color('#e0743a'), east * (1 - h * 2) * 0.55);
+      else if (h <= 0.5) c.lerp(horizon, 0);
+      c.toArray(colors, i * 3);
+    }
+    skyGeo.setAttribute('color', new T.BufferAttribute(colors, 3));
+    const sky = new T.Mesh(skyGeo, this.mat(new T.MeshBasicMaterial({ vertexColors: true, side: T.BackSide, fog: false, depthWrite: false })));
+    sky.position.set(PROLOGUE_CENTER.x, 0, PROLOGUE_CENTER.y);
+    sky.renderOrder = -9;
+    sky.frustumCulled = false;
+    const glowTexture = this.soft();
+    const sun = new T.Sprite(this.mat(new T.SpriteMaterial({
+      map: glowTexture, color: '#ff7a3a', fog: false, transparent: true, depthWrite: false, blending: T.AdditiveBlending, opacity: 0.9,
+    })));
+    sun.position.set(PROLOGUE_CENTER.x + 1750, 160, PROLOGUE_CENTER.y - 560);
+    sun.scale.setScalar(900);
+    sun.renderOrder = -8;
+    this.root.add(sky, sun);
+
+    // Éperon rocheux de la crête, derrière l'arène : la silhouette qu'on vise dès le départ.
+    const spur = new T.Mesh(merge([
+      [new T.DodecahedronGeometry(1, 0), '#3b3530', m4(0, 30, 0, 0, 0, 0, 70, 95, 55)],
+      [new T.DodecahedronGeometry(1, 0), '#352f2a', m4(-60, 18, 40, 0, 0.6, 0, 55, 60, 45)],
+      [new T.DodecahedronGeometry(1, 0), '#40382f', m4(50, 12, -50, 0, 1.2, 0, 50, 45, 40)],
+    ]), material);
+    spur.position.set(PROLOGUE_DUEL.x + 330, 0, PROLOGUE_DUEL.y - 40);
+    this.root.add(spur);
+    for (const [dx, y, dz] of [[-10, 132, 0], [-70, 82, 40], [40, 62, -50]]) {
+      const fire = new T.Sprite(this.mat(new T.SpriteMaterial({
+        map: glowTexture, color: '#ff8a3c', fog: false, transparent: true, depthWrite: false, blending: T.AdditiveBlending,
+      })));
+      fire.position.set(spur.position.x + dx, y, spur.position.z + dz);
+      fire.scale.setScalar(70);
+      fire.userData['bloom'] = true;
+      this.beacons.push(fire);
+      this.root.add(fire);
+    }
+
+    // Tisons tombés le long du sentier, tous les ~150 unités, alternés gauche / droite.
+    const brandBody = merge([[cyl(0.8, 1, 9, 5), '#1a120d', m4(0, 0.8, 0, Math.PI / 2 - 0.15, 0, 0)]]);
+    const spots: { x: number; y: number }[] = [];
+    let side = 1;
+    for (let i = 0; i < TRAIL.length - 1; i++) {
+      const a = TRAIL[i];
+      const b = TRAIL[i + 1];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const nx = -(b.y - a.y) / len;
+      const ny = (b.x - a.x) / len;
+      for (let d = 70; d < len; d += 150) {
+        side = -side;
+        const off = TRAIL_HALVES[i] * 0.75 * side;
+        spots.push({ x: a.x + (b.x - a.x) * d / len + nx * off, y: a.y + (b.y - a.y) * d / len + ny * off });
+      }
+    }
+    const logs = new T.InstancedMesh(brandBody, material, spots.length);
+    spots.forEach((s, i) => {
+      this.tmp.position.set(s.x, 0, s.y);
+      this.tmp.rotation.set(0, i * 2.3, 0);
+      this.tmp.scale.setScalar(1);
+      this.tmp.updateMatrix();
+      logs.setMatrixAt(i, this.tmp.matrix);
+      const glow = new T.Sprite(this.mat(new T.SpriteMaterial({
+        map: glowTexture, color: '#ff6a24', transparent: true, depthWrite: false, blending: T.AdditiveBlending,
+      })));
+      glow.position.set(s.x, 3, s.y);
+      glow.scale.setScalar(16);
+      glow.userData['bloom'] = true;
+      this.brands.push(glow);
+      this.root.add(glow);
+    });
+    this.root.add(logs);
+
+    // Ruisseau : une vraie eau peu profonde, sombre et brillante.
+    const water = this.mat(new T.MeshStandardMaterial({
+      color: '#2b3a3a', metalness: 0.35, roughness: 0.18, transparent: true, opacity: 0.9,
+    }));
+    for (let i = 0; i < STREAM.length - 1; i++) {
+      const a = STREAM[i];
+      const b = STREAM[i + 1];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const strip = new T.Mesh(new T.PlaneGeometry(len + 14, 24), water);
+      strip.rotation.set(-Math.PI / 2, 0, Math.atan2(-(b.y - a.y), b.x - a.x));
+      strip.position.set((a.x + b.x) / 2, 0.35, (a.y + b.y) / 2);
+      this.root.add(strip);
+    }
+  }
+
+  /**
+   * Séquences 1 à 4 : charge de porteur renversée, troncs de la ravine,
+   * rocher du tireur, autel profané, tronc du raccourci, grand fromager et
+   * tambourinaire, rochers de la montée, morts aux pieds de Badu.
+   */
+  private buildSequences(material: T.Material) {
+    const o = this.tmp;
+    // Charge de porteur renversée (paniers, ballots) près de l'éclaireur.
+    const load = new T.Mesh(merge([
+      [cyl(6, 4.5, 6, 8), '#8b6d3e', m4(0, 3, 0, 1.3, 0, 0.3)],
+      [box(7, 3, 5), '#6b4a2a', m4(9, 1.5, 4, 0, 0.6, 0)],
+      [ball(2, 0), C.gourd, m4(-6, 1.6, 5)],
+      [box(14, 1, 1), C.wood, m4(2, 0.6, -6, 0, 0.3, 0)],
+    ]), material);
+    load.position.set(3830, 0, 1175);
+    // Troncs brisés de la ravine (couverts contre le tir).
+    const stump = merge([[cyl(1, 1.2, 1, 6), C.trunk, m4(0, 0.5, 0)], [cyl(0.4, 1, 0.25, 5), '#6a5a3a', m4(0.3, 1.1, 0, 0.3, 0, 0.2)]]);
+    const stumps = new T.InstancedMesh(stump, material, COVER_TRUNKS.length);
+    COVER_TRUNKS.forEach((c, i) => {
+      o.position.set(c.x, 0, c.y);
+      o.rotation.set(0, i * 1.7, 0);
+      o.scale.set(c.r, 34 + i * 6, c.r);
+      o.updateMatrix();
+      stumps.setMatrixAt(i, o.matrix);
+    });
+    // Rochers : parois de la ravine, rocher du tireur, montée vers la crête.
+    const rocks: { x: number; y: number; s: number }[] = [];
+    const rand = this.random;
+    const flank = (from: number, to: number, count: number) => {
+      for (let i = from; i < to; i++) {
+        const a = TRAIL[i];
+        const b = TRAIL[i + 1];
+        const nx = -(b.y - a.y);
+        const ny = b.x - a.x;
+        const len = Math.hypot(nx, ny);
+        for (let k = 0; k < count; k++) {
+          const u = rand();
+          const side = (rand() < 0.5 ? -1 : 1) * (TRAIL_HALVES[i] + 8 + rand() * 14);
+          rocks.push({ x: a.x + (b.x - a.x) * u + nx / len * side, y: a.y + (b.y - a.y) * u + ny / len * side, s: 8 + rand() * 12 });
+        }
+      }
+    };
+    flank(2, 4, 16);
+    flank(7, 8, 14);
+    rocks.push({ x: 4418, y: 790, s: 16 }, { x: 4430, y: 752, s: 13 }, { x: 4392, y: 748, s: 10 });
+    const rockMesh = new T.InstancedMesh(merge([[new T.DodecahedronGeometry(1, 0), '#5d5648', m4(0, 0.3, 0, 0, 0, 0, 1, 0.75, 1)]]), material, rocks.length);
+    rocks.forEach((r, i) => {
+      o.position.set(r.x, 0, r.y);
+      o.rotation.set(rand() * 0.4, rand() * 6, 0);
+      o.scale.setScalar(r.s);
+      o.updateMatrix();
+      rockMesh.setMatrixAt(i, o.matrix);
+    });
+    // Autel forestier profané : pierre plate renversée, pots brisés, talisman.
+    const shrine = new T.Mesh(merge([
+      [box(16, 4, 9), '#6c6650', m4(0, 2, 0, 0, 0, 0.18)],
+      [cyl(2.2, 1.6, 4, 7), '#8a5a3a', m4(-9, 1, 6, 1.2, 0, 0)],
+      [cyl(2, 1.5, 3, 7), '#8a5a3a', m4(8, 1.5, 6, 0, 0, 0.4)],
+      [ball(1.4, 0), '#b07a3a', m4(14, 0.8, 13)],
+      [box(3, 0.4, 2), '#b5793a', m4(22, 0.4, 18, 0, 0.4, 0)],
+    ]), material);
+    shrine.position.set(4300, 0, 605);
+    // Tronc du raccourci : debout au bord du ravin, puis couché en travers.
+    const trunk = merge([[cyl(5, 6, 96, 7), C.trunk, m4(0, 48, 0)], [ball(14, 0), C.leaves[1], m4(0, 96, 0)]]);
+    this.trunkStanding = new T.Mesh(trunk, material);
+    this.trunkStanding.position.set(3600, 0, 1440);
+    this.trunkStanding.rotation.z = 0.12;
+    this.trunkBridge = new T.Mesh(merge([[cyl(5, 6, 110, 7), C.trunk, m4(0, 0, 0, Math.PI / 2, 0, 0)]]), material);
+    this.trunkBridge.position.set(3582, 4, 1382);
+    this.trunkBridge.rotation.y = -0.13;
+    // Grand fromager aux contreforts, le tambourinaire adossé, son tambour.
+    const kapok = new T.Mesh(merge([
+      [cyl(KAPOK.r * 0.6, KAPOK.r, 200, 8), '#6e6252', m4(0, 100, 0)],
+      ...Array.from({ length: 5 }, (_, i): Part => [box(2.5, 26, 22), '#6e6252', m4(0, 12, 0, 0, i * 1.26, 0).multiply(m4(0, 0, KAPOK.r))]),
+      [ball(60, 0), C.leaves[0], m4(0, 210, 0, 0, 0, 0, 1, 0.45, 1)],
+    ]), material);
+    kapok.position.set(KAPOK.x, 0, KAPOK.y);
+    const drummer = new T.Mesh(merge([
+      [box(8, 10, 5), C.asanteSmock, m4(0, 7, 0, -0.35, 0, 0)],
+      [ball(2.6, 1), C.skin, m4(0, 14, -1.5)],
+      [box(9, 2.4, 3), C.indigo, m4(0, 1.2, 5)],
+      [cyl(3.4, 2.2, 10, 9), C.darkWood, m4(7, 5, 6, 0, 0, 0.4)],
+      [cyl(3.5, 3.5, 0.4, 9), C.bone, m4(9, 9.5, 6, 0, 0, 0.4)],
+    ]), material);
+    drummer.position.set(5016, 0, 628);
+    drummer.rotation.y = Math.PI * 0.85;
+    this.root.add(load, stumps, rockMesh, shrine, this.trunkStanding, this.trunkBridge, kapok, drummer);
+    // Trois guerriers asante tombés aux pieds de Badu.
+    this.scatter(this.body(false, false), material, CREST_FALLEN.filter((b) => b.variant < 2), () => undefined);
+    this.scatter(this.body(false, true), material, CREST_FALLEN.filter((b) => b.variant >= 2), () => undefined);
   }
 
   // ─── Camp de l'arrière-garde ─────────────────────────────────────────────

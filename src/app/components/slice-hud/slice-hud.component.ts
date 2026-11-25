@@ -3,6 +3,7 @@ import { HOOK_LINES, SPECIALS, SPIRIT, STAT_ORDER, STATS, type StatId } from '..
 import { REST_POINTS } from '../../lib/slice/slice-map';
 import { SliceService } from '../../lib/slice/slice.service';
 import { EquipmentStore } from '../../lib/entities/player/equipment.store';
+import { KeyHintComponent, SkipHintComponent } from '../key-hint/key-hint.component';
 
 /**
  * Interface de la tranche verticale : accroche d'ouverture, menu du foyer
@@ -11,6 +12,7 @@ import { EquipmentStore } from '../../lib/entities/player/equipment.store';
  */
 @Component({
   selector: 'app-slice-hud',
+  imports: [KeyHintComponent, SkipHintComponent],
   templateUrl: './slice-hud.component.html',
   styleUrl: './slice-hud.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -43,3 +43,11 @@ button {
 button:hover { background: #ffe0ab; }
 button:disabled { cursor: default; }
 .choices kbd { margin-right: 4px; color: #674220; }
+
+/* Mobile : dialogue en bulle basse et compacte (les commandes sont masquées pendant la lecture). */
+:host-context(html.touch-input) .dialogue {
+  bottom: calc(env(safe-area-inset-bottom) + 10px); max-width: min(580px, 80%); max-height: 50%;
+  padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.4;
+}
+:host-context(html.touch-input) .dialogue p { margin: 4px 0 8px; }
+:host-context(html.touch-input) .choices button { min-height: 44px; }

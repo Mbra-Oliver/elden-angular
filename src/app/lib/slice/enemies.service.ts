@@ -63,6 +63,15 @@ export class EnemiesService {
   readonly list: Enemy[] = [...ENEMY_SPAWNS, ...PROLOGUE_SPAWNS].map((spawn, id) => this.spawn(id, spawn.kind, spawn.x, spawn.y));
   /** Obstacles de tir (murs + portes fermées), fournis par SliceService. */
   walls: () => readonly Rect[] = () => DUNGEON_WALLS;
+  /** Couverts en plus (troncs du chapitre 1), fournis par PrologueService. */
+  cover: readonly Rect[] = [];
+  private allWalls(): readonly Rect[] {
+    return this.cover.length ? [...this.walls(), ...this.cover] : this.walls();
+  }
+  /** Rappel quand un ennemi touche le joueur (impact, cause de la mort). */
+  onPlayerHit: (enemy: Enemy, dirX: number, dirY: number) => void = () => {};
+  /** Rappel quand le joueur touche un ennemi (étincelles, son, gel d'image). */
+  onEnemyHit: (enemy: Enemy, dirX: number, dirY: number, heavy: boolean) => void = () => {};
   /** Rappel quand un ennemi meurt (cauris, message). */
   onKill: (enemy: Enemy) => void = () => {};
 
@@ -204,21 +213,28 @@ export class EnemiesService {
     const sideX = -toY * enemy.strafe;
     const sideY = toX * enemy.strafe;
 
-    if (enemy.kind === 'fusilier') {
+    if (enemy.kind === 'fusilier' || enemy.kind === 'tireur') {
+      const gun = enemy.kind === 'tireur' ? 'longshot' : 'shot';
       if (gap < 30 && enemy.cooldown <= 0) return this.startMove(enemy, 'butt');
-      const sight = !segmentBlocked(enemy.x, enemy.y, this.player.centerX, this.player.centerY, this.walls()) &&
+      const sight = !segmentBlocked(enemy.x, enemy.y, this.player.centerX, this.player.centerY, this.allWalls()) &&
         !this.moundBetween(enemy.x, enemy.y, this.player.centerX, this.player.centerY);
-      if (sight && enemy.cooldown <= 0 && gap < ENEMY_MOVES.shot.reach - 20) return this.startMove(enemy, 'shot');
+      if (sight && enemy.cooldown <= 0 && gap < ENEMY_MOVES[gun].reach - 20) return this.startMove(enemy, gun);
+      // Le tireur posté ne quitte pas son rocher.
+      if (enemy.kind === 'tireur') return;
       // Garde ses distances : recule si on s'approche, contourne sinon.
       const back = gap < 160 ? -1 : gap > 290 ? 1 : 0;
       this.walk(enemy, toX * back + sideX * 0.6, toY * back + sideY * 0.6, config.speed, dt);
       return;
     }
 
-    const reach = enemy.kind === 'noye' ? ENEMY_MOVES.claw.reach : ENEMY_MOVES.slash.reach;
+    const melee: EnemyMoveId = enemy.kind === 'noye' ? 'claw'
+      : enemy.kind === 'eclaireur' || enemy.kind === 'lancier' ? 'spear'
+      : enemy.kind === 'garde' ? 'club' : 'slash';
+    const reach = ENEMY_MOVES[melee].reach;
     if (gap < reach + 6 && enemy.cooldown <= 0) {
+      if (enemy.kind === 'garde') return this.startMove(enemy, gap < 18 || this.rand() < 0.35 ? 'bash' : 'club');
       const slam = enemy.kind === 'noye' && this.rand() < 0.4;
-      return this.startMove(enemy, enemy.kind === 'noye' ? slam ? 'slam' : 'claw' : 'slash');
+      return this.startMove(enemy, slam ? 'slam' : melee);
     }
     // Entre deux attaques : tourne autour au lieu de coller au joueur.
     if (enemy.cooldown > 0 && gap < 80) {
@@ -268,14 +284,14 @@ export class EnemiesService {
 
   /** Coup de mousquet : ligne figée pendant le verrouillage, une roulade passe dessous. */
   private fire(enemy: Enemy) {
-    const reach = ENEMY_MOVES.shot.reach;
+    const reach = ENEMY_MOVES[enemy.move === 'longshot' ? 'longshot' : 'shot'].reach;
     let endX = enemy.x + enemy.aimX * reach;
     let endY = enemy.y + enemy.aimY * reach;
     // Le tir s'arrête sur le premier mur ou la première termitière.
     for (let t = 12; t < reach; t += 8) {
       const x = enemy.x + enemy.aimX * t;
       const y = enemy.y + enemy.aimY * t;
-      const wall = segmentBlocked(enemy.x, enemy.y, x, y, this.walls());
+      const wall = segmentBlocked(enemy.x, enemy.y, x, y, this.allWalls());
       const mound = MOUNDS.some((m) => Math.hypot(x - m.x, y - m.y) < m.r);
       if (wall || mound) { endX = x; endY = y; break; }
     }
@@ -287,7 +303,7 @@ export class EnemiesService {
     const across = Math.abs(px * enemy.aimY - py * enemy.aimX);
     const shotLength = Math.hypot(endX - enemy.x, endY - enemy.y);
     if (along > 0 && along < shotLength + 4 && across < PLAYER_RADIUS - 2) {
-      this.damagePlayer(enemy, ENEMY_MOVES.shot.damage, enemy.aimX, enemy.aimY);
+      this.damagePlayer(enemy, ENEMY_MOVES[enemy.move === 'longshot' ? 'longshot' : 'shot'].damage, enemy.aimX, enemy.aimY);
     }
   }
 
@@ -307,6 +323,7 @@ export class EnemiesService {
     const player = this.playerStore.getData();
     if (player.state === 'dead' || player.invicible) return;
     this.player.takeDamage(Math.round(damage * this.progression.armor()), dirX * 200, dirY * 200);
+    this.onPlayerHit(enemy, dirX, dirY);
     this.effects.emit(this.player.centerX, this.player.centerY, 7, dirX, dirY);
     this.renderer.shake(enemy.kind === 'noye' ? 12 : 8);
     this.loop.freeze(45);
@@ -358,8 +375,16 @@ export class EnemiesService {
   /** Dégâts reçus par un ennemi (lance, afena, flèche). */
   damageEnemy(enemy: Enemy, damage: number, dirX: number, dirY: number, heavy: boolean) {
     if (enemy.state === 'dead') return;
+    // Garde d'élite : son bouclier en peau de buffle arrête les coups de face,
+    // sauf les coups lourds ; il faut le prendre de flanc.
+    if (enemy.kind === 'garde' && !heavy && enemy.state !== 'recover' &&
+        -(dirX * enemy.facingX + dirY * enemy.facingY) > 0.35) {
+      damage *= 0.15;
+      this.renderer.shake(2);
+    }
     enemy.hp = Math.max(0, enemy.hp - damage);
     enemy.flash = 140;
+    this.onEnemyHit(enemy, dirX, dirY, heavy);
     enemy.engaged = true;
     this.effects.emit(enemy.x, enemy.y, 6, dirX, dirY);
     if (enemy.hp <= 0) {

@@ -6,6 +6,8 @@ import { InputDeviceService, PAD } from './input-device.service';
 })
 export class InputService {
   private keys = new Map<string, boolean>();
+  /** Touches virtuelles : boutons tactiles, joystick, clics de souris (même codes que le clavier). */
+  private readonly virtualKeys = new Set<string>();
   /** Manette (lue en plus du clavier : les deux marchent en même temps). */
   private readonly pad = inject(InputDeviceService);
 
@@ -15,7 +17,7 @@ export class InputService {
       this.keys.set(e.code, true);
     });
 
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => { this.keys.clear(); this.virtualKeys.clear(); });
 
     window.addEventListener('keyup', (e) => {
       this.keys.set(e.code, false);
@@ -23,7 +25,17 @@ export class InputService {
   }
 
   private isPressed(code: string): boolean {
-    return this.keys.get(code) === true;
+    return this.keys.get(code) === true || this.virtualKeys.has(code);
+  }
+
+  /** Appui virtuel (contrôles tactiles, souris) sous le code d'une touche du clavier. */
+  setVirtual(code: string, pressed: boolean) {
+    if (pressed) this.virtualKeys.add(code);
+    else this.virtualKeys.delete(code);
+  }
+
+  clearVirtual() {
+    this.virtualKeys.clear();
   }
 
   //===============

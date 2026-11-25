@@ -27,6 +27,10 @@ interface Mood {
 /** Ambiance d'une carte hors arène (prologue), en couleurs CSS. */
 export interface RegionMood {
   fog: string; fogDensity: number; background: string; hemi: number; sun: number; sunColor: string;
+  /** Direction d'où vient le soleil (lumière rasante), et couleurs du ciel/sol de l'hémisphère. */
+  sunPosition?: [number, number, number];
+  hemiSky?: string;
+  hemiGround?: string;
 }
 
 interface Flicker { index: number; base: T.Matrix4; phase: number }
@@ -170,7 +174,20 @@ export class ArenaDressing {
 
   // ─── Ambiance ────────────────────────────────────────────────────────────
 
+  private basePose?: { sun: T.Vector3; sky: T.Color; ground: T.Color };
+
   setRegionMood(mood: RegionMood | null) {
+    // Direction du soleil et teintes de l'hémisphère : propres à la carte, rendues à sa sortie.
+    this.basePose ??= {
+      sun: this.sun?.position.clone() ?? new T.Vector3(),
+      sky: this.hemi?.color.clone() ?? new T.Color(),
+      ground: this.hemi?.groundColor.clone() ?? new T.Color(),
+    };
+    if (this.sun) this.sun.position.copy(mood?.sunPosition ? new T.Vector3(...mood.sunPosition) : this.basePose.sun);
+    if (this.hemi) {
+      this.hemi.color.copy(mood?.hemiSky ? new T.Color(mood.hemiSky) : this.basePose.sky);
+      this.hemi.groundColor.copy(mood?.hemiGround ? new T.Color(mood.hemiGround) : this.basePose.ground);
+    }
     this.region = mood && {
       fog: new T.Color(mood.fog), fogDensity: mood.fogDensity, background: new T.Color(mood.background),
       hemi: mood.hemi, sun: mood.sun, sunColor: new T.Color(mood.sunColor),

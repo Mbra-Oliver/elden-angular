@@ -1,46 +1,144 @@
-<main class="title-screen" (keydown.escape)="controlsOpen.set(false)">
-  <img class="cover-image" src="assets/passage-de-l-ouest.jpg" alt="" fetchpriority="high">
+<main #stage class="title-screen" [class.live]="live()" [class.leaving]="leaving()">
+  @if (!live()) {
+    <img class="cover-image" src="assets/passage-de-l-ouest.jpg" alt="" fetchpriority="high">
+  }
   <div class="backdrop" aria-hidden="true"></div>
+
   <div class="title-content">
-    <h1>Les Sentiers<br><span>de Terre Rouge</span></h1>
+    <header class="title">
+      <h1>Les Sentiers <span>de Terre Rouge</span></h1>
+      <!-- Akofena, l'épée du courage : deux afena croisées, entre deux filets. -->
+      <svg class="adinkra" viewBox="0 0 240 28" aria-hidden="true">
+        <path d="M4 14H96M144 14H236" />
+        <path d="M4 18H70M170 18H236" class="thin" />
+        <g transform="translate(120 14)">
+          <path d="M-13 -11 L11 11 M13 -11 L-11 11" />
+          <circle cx="-13" cy="-11" r="3.2" /><circle cx="13" cy="-11" r="3.2" />
+          <path d="M-9 -3 L-4 -8 M9 -3 L4 -8" class="thin" />
+          <path d="M-20 0 L-24 0 M20 0 L24 0" />
+          <circle cx="-28" cy="0" r="1.8" class="dot" /><circle cx="28" cy="0" r="1.8" class="dot" />
+        </g>
+      </svg>
+      <p class="era">Feyiase · 1701</p>
+    </header>
+
     @if (challenge.incoming(); as received) {
       <section class="challenge-card" aria-label="Défi reçu">
         <strong>Défi reçu</strong>
         <p>Un voyageur a vaincu {{ bossNames[received.boss] }} en {{ formatTime(received.time) }}, {{ received.hits }} coup{{ received.hits > 1 ? 's' : '' }} reçu{{ received.hits > 1 ? 's' : '' }}, {{ received.flasks }} Bandji.</p>
         <div>
-          <button type="button" class="primary" (click)="acceptChallenge(received)">Relever le défi</button>
-          <button type="button" (click)="challenge.dismissIncoming()">Plus tard</button>
+          <button type="button" class="link" (click)="acceptChallenge(received)">Relever le défi</button>
+          <button type="button" class="link" (click)="challenge.dismissIncoming()">Plus tard</button>
         </div>
       </section>
     }
-    <nav aria-label="Menu principal">
+
+    <nav #nav aria-label="Menu principal" [attr.inert]="panel() ? '' : null">
       @if (hasSave()) {
-        <button type="button" class="primary" (click)="continue()">Continuer</button>
+        <button type="button" (click)="continue()">Continuer</button>
       }
-      <button type="button" class="primary" (click)="start()">Nouvelle partie</button>
-      <button type="button" (click)="bossRush()" [disabled]="!challenge.rushUnlocked()"
-        [attr.title]="challenge.rushUnlocked() ? null : 'Termine l’histoire pour débloquer le Boss Rush'">
-        {{ challenge.rushUnlocked() ? 'Boss Rush' : 'Boss Rush · verrouillé' }}
-      </button>
-      <button type="button" (click)="controlsOpen.set(!controlsOpen())" [attr.aria-expanded]="controlsOpen()">
-        Commandes
-      </button>
+      <button type="button" (click)="newLineage()">Nouvelle lignée</button>
+      <button type="button" data-panel="codex" (click)="openPanel('codex')">Chroniques et reliques</button>
+      <button type="button" data-panel="settings" (click)="openPanel('settings')">Paramètres</button>
     </nav>
-    @if (controlsOpen()) {
-      <section class="bindings" aria-label="Commandes du jeu">
-        <dl>
-          <dt>Déplacement</dt><dd>Flèches ou ZQSD</dd>
-          <dt>Combo</dt><dd>Espace</dd>
-          <dt>Attaque lourde</dt><dd>E</dd>
-          <dt>Esquive</dt><dd>Maj (appui bref) · sans direction en combat : pas en arrière</dd>
-          <dt>Sprint</dt><dd>Maj maintenue</dd>
-          <dt>Changer d’arme (lance / arc)</dt><dd>R</dd>
-          <dt>Tir rapide / tir bandé (arc)</dt><dd>Espace / E</dd>
-          <dt>Boire du Bandji</dt><dd>B</dd>
-          <dt>Interaction</dt><dd>F</dd>
-          <dt>Choix de dialogue</dt><dd>1 ou 2</dd>
-        </dl>
+  </div>
+
+  @switch (panel()) {
+    @case ('codex') {
+      <section class="menu-panel" role="dialog" aria-modal="true" aria-labelledby="codex-title">
+        <header>
+          <h2 id="codex-title">Chroniques et reliques</h2>
+          <button type="button" class="close" (click)="closePanel()" aria-label="Fermer">✕</button>
+        </header>
+        <p class="count">{{ codex.entries().length }} / {{ codex.total }} souvenirs recueillis</p>
+        @if (codex.entries().length === 0) {
+          <p class="empty">Rien encore. Ce que tu lis, ramasses ou vaincs sur le chemin sera gardé ici, d’une lignée à l’autre.</p>
+        }
+        <ul class="entries">
+          @for (entry of codex.entries(); track entry.id) {
+            <li>
+              <button type="button" class="entry" [attr.aria-expanded]="openEntry() === entry.id"
+                (click)="openEntry.set(openEntry() === entry.id ? null : entry.id)">
+                <span class="kind">{{ entry.kind }}</span>
+                <strong>{{ entry.title }}</strong>
+                @if (entry.subtitle) { <small>{{ entry.subtitle }}</small> }
+              </button>
+              @if (openEntry() === entry.id) {
+                @for (paragraph of entry.text; track $index) { <p>{{ paragraph }}</p> }
+              }
+            </li>
+          }
+        </ul>
+        @if (challenge.rushUnlocked()) {
+          <div class="trial">
+            <p>Les gardiens du Pra t’attendent encore, l’un après l’autre.</p>
+            <button type="button" class="link" (click)="bossRush()">Épreuve des gardiens (Boss Rush)</button>
+          </div>
+        }
       </section>
     }
-  </div>
+    @case ('settings') {
+      @let s = settings.settings();
+      <section class="menu-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header>
+          <h2 id="settings-title">Paramètres</h2>
+          <button type="button" class="close" (click)="closePanel()" aria-label="Fermer">✕</button>
+        </header>
+        <fieldset>
+          <legend>Qualité graphique</legend>
+          <div class="segmented">
+            @for (q of qualities; track q.id) {
+              <button type="button" [class.on]="s.quality === q.id" [attr.aria-pressed]="s.quality === q.id"
+                (click)="setQuality(q.id)">{{ q.label }}</button>
+            }
+          </div>
+        </fieldset>
+        <label>Musique <span>{{ (s.music * 100).toFixed(0) }}</span>
+          <input type="range" min="0" max="100" [value]="s.music * 100" (input)="setVolume('music', $event)">
+        </label>
+        <label>Bruitages <span>{{ (s.sfx * 100).toFixed(0) }}</span>
+          <input type="range" min="0" max="100" [value]="s.sfx * 100" (input)="setVolume('sfx', $event)">
+        </label>
+        <label>Sensibilité de la caméra <span>{{ (s.sensitivity * 100).toFixed(0) }} %</span>
+          <input type="range" min="40" max="200" step="5" [value]="s.sensitivity * 100" (input)="setSensitivity($event)">
+        </label>
+        <label class="toggle">
+          <input type="checkbox" [checked]="s.autoLock" (change)="settings.update({ autoLock: $any($event.target).checked })">
+          Verrouiller la cible au premier coup reçu
+        </label>
+        <details>
+          <summary>Commandes</summary>
+          @if (touch) {
+            <dl>
+              <dt>Déplacement</dt><dd>Joystick à gauche</dd>
+              <dt>Esquive</dt><dd>Bouton du bas</dd>
+              <dt>Frappe légère</dt><dd>Bouton central</dd>
+              <dt>Frappe lourde</dt><dd>Bouton du haut</dd>
+              <dt>Bandji (soin)</dt><dd>Bouton de côté</dd>
+              <dt>Caméra</dt><dd>Glisser au doigt</dd>
+              <dt>Verrouiller la cible</dt><dd>Bouton ⌖</dd>
+              <dt>Changer de cible</dt><dd>Glisser vite à gauche ou à droite</dd>
+              <dt>Pause</dt><dd>Icône en haut à droite</dd>
+            </dl>
+          } @else {
+            <dl>
+              <dt>Déplacement</dt><dd>ZQSD / WASD ou flèches</dd>
+              <dt>Frappe légère</dt><dd>Clic gauche ou Espace</dd>
+              <dt>Frappe lourde</dt><dd>Clic droit ou E</dd>
+              <dt>Esquive</dt><dd>Maj (appui bref)</dd>
+              <dt>Sprint</dt><dd>Maj maintenue</dd>
+              <dt>Lance / arc</dt><dd>R</dd>
+              <dt>Bandji (soin)</dt><dd>B</dd>
+              <dt>Interaction</dt><dd>F</dd>
+              <dt>Verrouiller la cible</dt><dd>A (Q en QWERTY)</dd>
+              <dt>Changer de cible</dt><dd>Molette</dd>
+              <dt>Pause</dt><dd>Échap</dd>
+            </dl>
+          }
+        </details>
+      </section>
+    }
+  }
+
+  <div class="veil" [class.on]="veil()" aria-hidden="true"></div>
 </main>

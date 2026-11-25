@@ -9,7 +9,7 @@ import { ACTION_GLYPHS, InputAction, InputDeviceService } from '../../lib/servic
 @Component({
   selector: 'app-key-hint',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<kbd [class]="'key ' + devices.device()" [class.wide]="glyph().length > 2" [attr.aria-label]="glyph()">{{ glyph() }}</kbd>`,
+  template: `@if (glyph()) {<kbd [class]="'key ' + devices.device()" [class.wide]="glyph().length > 2" [attr.aria-label]="glyph()">{{ glyph() }}</kbd>}`,
   styles: [`
     :host { display: inline-flex; vertical-align: middle; }
     .key {
@@ -19,6 +19,7 @@ import { ACTION_GLYPHS, InputAction, InputDeviceService } from '../../lib/servic
       border-bottom-width: 3px; border-radius: 5px; box-sizing: border-box;
       transition: border-radius 160ms ease, background 160ms ease;
     }
+    .key.touch { border-radius: 50%; background: #0f0a08b3; color: #efe6d4; border: 1px solid #e5c17b99; font-weight: 400; }
     .key.gamepad { border-radius: 999px; background: radial-gradient(circle at 35% 30%, #4b4c52, #17181c); color: #f2ead6; border-color: #050506; }
   `],
 })
@@ -26,4 +27,14 @@ export class KeyHintComponent {
   readonly action = input.required<InputAction>();
   readonly devices = inject(InputDeviceService);
   readonly glyph = computed(() => ACTION_GLYPHS[this.action()][this.devices.device()]);
+}
+
+/** « Espace pour passer » au clavier, « Touche l'écran pour passer » au doigt. */
+@Component({
+  selector: 'app-skip-hint',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `{{ devices.device() === 'touch' ? 'Touche l’écran pour passer' : devices.device() === 'gamepad' ? 'A pour passer' : 'Espace pour passer' }}`,
+})
+export class SkipHintComponent {
+  readonly devices = inject(InputDeviceService);
 }

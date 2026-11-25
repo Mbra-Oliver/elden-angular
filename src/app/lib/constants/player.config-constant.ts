@@ -14,7 +14,7 @@ export const PLAYER_CONFIG = {
 
   //Souffle stamina.
 
-  staminaRegen: 38, // Regenere 25 stamina par seconde
+  staminaRegen: 66, // Barre pleine en ~1,5 s (cahier des charges du chapitre 1)
 
   staminaRegenDelay: 360, // Temps en millisecondes avant de pouvoir regenerer de la stamina
 
@@ -25,7 +25,7 @@ export const PLAYER_CONFIG = {
   rollCost: 10, //Coût en stamina,
   rollDuration: 400, //Durée totale (ms) : élan, invincibilité puis récupération
   rollSpeed: 560, // Vitesse de pointe (px/s), décroît jusqu'à 0 en fin de roulade (~150 px)
-  rollIFrames: 260, // Invincibilité dès le début de la roulade (ms)
+  rollIFrames: 300, // Invincibilité dès le début de la roulade (ms)
   rollCancel: 310, // Après ce temps, une attaque ou une roulade tamponnée coupe la récupération
   perfectDodgeWindow: 125, // Début de roulade où esquiver un coup ouvre la riposte
 
@@ -41,8 +41,8 @@ export const PLAYER_CONFIG = {
   sprintStaminaPerSecond: 16,
 
   //Inertie et verrouillage
-  acceleration: 16, // Réactivité vers la vitesse voulue (1/s)
-  deceleration: 24,
+  acceleration: 24, // Réactivité vers la vitesse voulue (1/s)
+  deceleration: 34,
   lockedSpeedFactor: 0.82, // Marche plus posée quand on tourne autour de l'ennemi
 
   //Attaque

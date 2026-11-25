@@ -15,6 +15,7 @@ import { AssetLoaderService } from '../../engine/asset-loader.service';
 import { Animator } from '../../engine/sprite';
 import {
   BOSS_ATTACKS,
+  BOSS_STRIKES,
   BossAttackData,
   BossAttackType,
   attackProgress,
@@ -33,6 +34,8 @@ import { BACKSTAB, HIT_WEIGHT, HitWeight, POISE } from '../../constants/immersio
 export interface HitImpact {
   weight?: HitWeight;
   backstab?: boolean;
+  /** Multiplicateur d'usure de la garde (kaolin sur la lame). */
+  poise?: number;
 }
 
 type Attack = Exclude<BossAttackType, 'none'>;
@@ -52,7 +55,7 @@ export interface BossHud {
   hp: number;
   maxHp: number;
   phase: BossPhase;
-  thresholds: [number, number];
+  thresholds: number[];
   /** Fenêtre de punition affichée sous la barre. */
   opening: string | null;
   banner: { phase: BossPhase; title: string; line: string; duration: number } | null;
@@ -91,6 +94,15 @@ export class BossEntity {
   /** Recul physique en cours (unités/s), amorti en ~0,12 s. */
   private knockVX = 0;
   private knockVY = 0;
+  /**
+   * Lecture du joueur par Badu Ofosu (chapitre 1) : temps passé dans son dos,
+   * roulades récentes, état précédent (pour voir naître une attaque).
+   */
+  private readonly read = { behind: 0, rolls: [] as number[], lastState: '', evadeCooldown: 0, clock: 0 };
+  /** Pas de côté en cours (unités/s), amorti. */
+  private sideVX = 0;
+  private sideVY = 0;
+
   /** Sursaut du haut du corps (1 → 0) et direction du coup reçu (monde). */
   flinch = 0;
   flinchX = 0;
@@ -134,6 +146,11 @@ export class BossEntity {
     this.knockVX = 0;
     this.knockVY = 0;
     this.flinch = 0;
+    this.read.behind = 0;
+    this.read.rolls.length = 0;
+    this.read.lastState = '';
+    this.read.evadeCooldown = 0;
+    this.sideVX = this.sideVY = 0;
   }
 
   /** Change d'état en gardant la durée totale (pour l'avancement des animations). */
@@ -169,6 +186,11 @@ export class BossEntity {
     // Horloge du boss accélérée par le profil de phase (timeScale) : états,
     // coups et animations (pilotées par l'avancement) vont plus vite.
     const clock = deltaTime * this.profile(data).timeScale;
+    if (this.kind === 'champion' && this.readPlayer(deltaTime)) {
+      this.tickImpact(deltaTime);
+      this.resolveMovement(data.x, data.y);
+      return;
+    }
     switch (data.state) {
       case 'idle':
         this.handleIdle(clock);
@@ -265,7 +287,9 @@ export class BossEntity {
     }
 
     const len = distance || 1;
-    const speed = BOSS_CONFIG.speed * this.tempo().speed * intent.speed;
+    // Badu : marche lente et intimidante en phase 1, traque sans relâche en phase 2.
+    const gait = this.kind === 'champion' ? (boss.phase === 1 ? 0.6 : 1.2) : 1;
+    const speed = BOSS_CONFIG.speed * this.tempo().speed * intent.speed * gait;
     const step = this.steer(intent.dirX, intent.dirY, speed * deltaTime, deltaTime);
     // Il garde toujours le joueur en face, même en tournant ou en reculant.
     this.store.update({
@@ -326,7 +350,8 @@ export class BossEntity {
     const len = distance || 1;
     const newTimer = data.stateTimer - deltaTime * 1000;
     // Le regard se verrouille juste avant le coup : c'est ce qui rend l'esquive lisible.
-    const locked = data.currentAttack === 'charge' || newTimer < 160;
+    const locked = data.currentAttack === 'charge' || data.currentAttack === 'furrow' ||
+      data.currentAttack === 'leap' || newTimer < 160;
     const facingX = locked ? data.facingX : dx / len;
     const facingY = locked ? data.facingY : dy / len;
 
@@ -351,8 +376,29 @@ export class BossEntity {
         const step = Math.min(len, BOSS_CONFIG.chargeSpeed * this.tempo().speed * deltaTime);
         this.store.update({ x: data.x + (cx / len) * step, y: data.y + (cy / len) * step });
       }
-    } else if (data.currentAttack === 'combo') {
-      const step = comboStepAt(attackProgress('combo', Math.max(0, newTimer)));
+    } else if (data.currentAttack === 'furrow' || data.currentAttack === 'leap') {
+      // Sillon : course vers la cible verrouillée ; saut : vol jusqu'au point d'impact.
+      const progress = attackProgress(data.currentAttack, Math.max(0, newTimer));
+      const moving = data.currentAttack === 'furrow' ? progress < 0.8 : progress < 0.72;
+      const cx = data.chargeTargetX - this.centerX;
+      const cy = data.chargeTargetY - this.centerY;
+      const len = Math.hypot(cx, cy);
+      if (moving && len > 4) {
+        const rate = data.currentAttack === 'furrow' ? BOSS_CONFIG.chargeSpeed * 1.1 : len / Math.max(0.05, (0.72 - progress) * BOSS_ATTACKS.leap.attackDuration / 1000);
+        const step = Math.min(len, rate * this.tempo().speed * deltaTime);
+        this.store.update({ x: data.x + (cx / len) * step, y: data.y + (cy / len) * step });
+      }
+    } else if (data.currentAttack === 'feint') {
+      // La feinte : pas de côté vif au moment où la hache devait tomber.
+      const progress = attackProgress('feint', Math.max(0, newTimer));
+      if (progress < 0.4) {
+        const side = this.attackCount % 2 ? 1 : -1;
+        const step = 190 * deltaTime * (1 - progress / 0.4);
+        this.store.update({ x: data.x - data.facingY * side * step, y: data.y + data.facingX * side * step });
+      }
+    } else if (data.currentAttack === 'combo' || data.currentAttack === 'reap' || data.currentAttack === 'mill') {
+      const strikes = BOSS_STRIKES[data.currentAttack] ?? 3;
+      const step = comboStepAt(attackProgress(data.currentAttack, Math.max(0, newTimer)), strikes);
       if (step !== data.comboStep) {
         // Chaque coup du combo se réaligne sur le joueur et fait un pas en avant.
         const { dx, dy, distance } = this.toPlayer();
@@ -470,14 +516,16 @@ export class BossEntity {
     const guardMultiplier = counter ? 1.1 : this.isExposed(data) ? 1.4 : recovering ? 1 : 0.22;
     // Dans le dos, la garde ne protège plus.
     const multiplier = impact.backstab ? Math.max(guardMultiplier, 1) * BACKSTAB.multiplier : guardMultiplier;
-    const poiseBroken = this.react(amount, x, y, impact.weight ?? (counter ? 'counter' : 'light'));
+    const poiseBroken = this.react(amount * (impact.poise ?? 1), x, y, impact.weight ?? (counter ? 'counter' : 'light'));
     const newHp = Math.max(0, data.hp - Math.max(1, Math.round(amount * multiplier)));
     this.store.update({ hp: newHp });
 
     if (newHp <= 0) {
       this.queued = null;
       this.pending = null;
-      this.enter('dead', BOSS_CONFIG.deathDuration, { vx: 0, vy: 0, currentAttack: 'none', comboStep: 0 });
+      // Badu pose un genou à terre tourné vers l'ouest, vers le royaume vaincu.
+      const west = this.kind === 'champion' ? { facingX: -1, facingY: 0 } : {};
+      this.enter('dead', BOSS_CONFIG.deathDuration, { vx: 0, vy: 0, currentAttack: 'none', comboStep: 0, ...west });
       return;
     }
 
@@ -803,12 +851,13 @@ export class BossEntity {
       hp: Math.round(data.hp * fill),
       maxHp: data.maxHp,
       phase: data.phase,
-      thresholds: lore.thresholds,
+      thresholds: lore.thresholds.filter((t) => t > 0),
       opening: intro !== null ? null
         : data.state === 'stunned' ? 'Étourdi'
         : data.state !== 'recover' ? null
         : this.isExposed(data) ? 'Carapace ouverte'
-        : data.currentAttack === 'shot' ? 'Il recharge' : 'Ouverture',
+        : data.currentAttack === 'shot' ? 'Il recharge'
+        : data.currentAttack === 'mill' ? 'Essoufflé' : 'Ouverture',
       banner: this.banner > 0 && data.phase > 1 && intro === null
         ? { phase: data.phase, title: phase.title, line: phase.line, duration: BOSS_CONFIG.shiftDuration + BANNER_TIME }
         : null,
@@ -861,25 +910,7 @@ export class BossEntity {
     const last = this.lastAttack;
     const turn = this.attackCount;
 
-    if (this.kind === 'champion') {
-      // Phase 1 : hache. Phase 2 : mousquet ensorcelé tiré de loin, hache de près.
-      // Phase 3 : sabre, tir en éventail, charge enchaînée sur un enchaînement.
-      if (phase === 3) {
-        if (opening) return { attack: 'combo' };
-        if (dist > 150 && last !== 'shot') return { attack: 'shot' };
-        if (dist > 105 && last !== 'charge') return { attack: 'charge', chain: 'combo' };
-        if (dist < 75 && last !== 'sweep') return { attack: 'sweep' };
-        return turn % 2 ? { attack: 'combo' } : { attack: 'slash', chain: 'slash' };
-      }
-      if (phase === 2) {
-        if (opening || (dist > 120 && last !== 'shot')) return { attack: 'shot' };
-        if (dist < 70) return last === 'sweep' ? { attack: 'slam' } : { attack: 'sweep' };
-        return turn % 3 === 0 ? { attack: 'charge', chain: 'slam' } : { attack: 'shot' };
-      }
-      if (opening) return { attack: 'slam' };
-      if (dist > 115 && last !== 'charge') return { attack: 'charge' };
-      return dist < 72 && last !== 'sweep' ? { attack: 'sweep' } : { attack: 'slam' };
-    }
+    if (this.kind === 'champion') return this.planBadu(dist, opening);
 
     if (this.duelist) {
       if (phase === 3) {
@@ -909,6 +940,108 @@ export class BossEntity {
     return { attack: dist > 128 ? 'charge' : 'slam' };
   }
 
+  /**
+   * Badu Ofosu, maître d'armes. Phase 1 : il garde ses distances, tire de
+   * loin, alterne double faucheuse, jugement retardé et feinte à la crosse.
+   * Phase 2 (mousquet brisé) : sillon, saut, moulinet, estoc, feinte du bond.
+   * Il varie ses coups et lit le joueur (voir readPlayer).
+   */
+  private planBadu(dist: number, opening: boolean): AttackPlan {
+    const phase = this.store.getData().phase;
+    const last = this.lastAttack;
+    const turn = this.attackCount;
+    const panicky = this.recentRolls() >= 2;
+    if (phase === 1) {
+      if (opening) return { attack: 'shot' };
+      if (dist > 125) return last === 'shot' && turn % 3 ? { attack: 'reap' } : { attack: 'shot' };
+      // Le joueur roule par réflexe : le coup retardé l'attrape.
+      if (panicky && last !== 'judgment') return { attack: 'judgment' };
+      const melee: Attack[] = ['reap', 'judgment', 'feint', 'reap', 'feint', 'judgment'];
+      const pick = melee[turn % melee.length];
+      return { attack: pick === last ? 'reap' : pick };
+    }
+    if (opening) return { attack: 'furrow' };
+    if (dist > 150) return last === 'furrow' ? { attack: 'leap' } : { attack: 'furrow' };
+    if (dist > 95) return last === 'leap' || panicky ? { attack: 'feint' } : { attack: 'leap' };
+    if (panicky && last !== 'feint') return { attack: 'feint' };
+    return last === 'mill' ? { attack: 'thrust' } : turn % 3 === 2 ? { attack: 'thrust', chain: 'mill' } : { attack: 'mill' };
+  }
+
+  private recentRolls() {
+    const now = this.read.clock;
+    this.read.rolls = this.read.rolls.filter((t) => now - t < 5);
+    return this.read.rolls.length;
+  }
+
+  /**
+   * Lecture du joueur (Badu seulement). Renvoie vrai si Badu a réagi cette
+   * image (pas de côté, punition), ce qui remplace sa mise à jour normale.
+   * - Soin à découvert : tir rapide (phase 1) ou ruée (phase 2).
+   * - Plus d'une seconde dans son dos : revers de crosse (phase 1) ou moulinet.
+   * - Le joueur lance un coup de près : pas de côté puis contre (une fois sur trois environ).
+   */
+  private readPlayer(deltaTime: number): boolean {
+    const data = this.store.getData();
+    const player = this.playerStore.getData();
+    const r = this.read;
+    r.clock += deltaTime;
+    r.evadeCooldown = Math.max(0, r.evadeCooldown - deltaTime);
+    if (player.state === 'rolling' && r.lastState !== 'rolling') r.rolls.push(r.clock);
+    const startedAttack = player.state === 'attacking' && r.lastState !== 'attacking';
+    r.lastState = player.state;
+
+    const { dx, dy, distance } = this.toPlayer();
+    const len = distance || 1;
+    const facing = (dx * data.facingX + dy * data.facingY) / len;
+    r.behind = distance < 95 && facing < -0.15 ? r.behind + deltaTime : Math.max(0, r.behind - deltaTime * 2);
+
+    // Pas de côté en cours : il glisse latéralement, puis contre-attaque.
+    if (Math.abs(this.sideVX) + Math.abs(this.sideVY) > 8) {
+      this.store.update({ x: data.x + this.sideVX * deltaTime, y: data.y + this.sideVY * deltaTime });
+      const decay = Math.exp(-9 * deltaTime);
+      this.sideVX *= decay;
+      this.sideVY *= decay;
+      if (Math.abs(this.sideVX) + Math.abs(this.sideVY) <= 8) {
+        this.sideVX = this.sideVY = 0;
+        this.pending = null;
+        this.startAttack({ attack: data.phase === 1 ? 'reap' : 'thrust' }, 0.8);
+      }
+      return true;
+    }
+
+    const free = data.state === 'chase' || data.state === 'idle';
+    if (!free) return false;
+    const phase = data.phase;
+
+    if (player.state === 'drinking') {
+      const plan: AttackPlan = phase === 1
+        ? { attack: distance > 100 ? 'shot' : 'reap' }
+        : { attack: distance > 115 ? 'furrow' : 'thrust' };
+      if (inReach(plan.attack, distance)) {
+        this.pending = null;
+        this.startAttack(plan, 0.75);
+        return true;
+      }
+      this.pending = plan;
+      return false;
+    }
+    if (r.behind > 1) {
+      r.behind = 0;
+      this.pending = null;
+      this.startAttack({ attack: phase === 1 ? 'backhand' : 'mill' }, 0.8);
+      return true;
+    }
+    if (startedAttack && distance < 80 && r.evadeCooldown <= 0 && Math.random() < (phase === 1 ? 0.3 : 0.4)) {
+      r.evadeCooldown = 2.8;
+      const side = Math.random() < 0.5 ? 1 : -1;
+      this.sideVX = (-dy / len * side - dx / len * 0.4) * 300;
+      this.sideVY = (dx / len * side - dy / len * 0.4) * 300;
+      this.store.update({ facingX: dx / len, facingY: dy / len });
+      return true;
+    }
+    return false;
+  }
+
   private startAttack(plan: AttackPlan, windupScale = 1) {
     // Seules les attaques débloquées par le profil de phase sont jouées.
     const unlocked = this.profile().attacks;
@@ -931,7 +1064,7 @@ export class BossEntity {
       facingY: dy / len,
     });
 
-    if (attack === 'charge') {
+    if (attack === 'charge' || attack === 'furrow' || attack === 'leap') {
       const player = this.playerStore.getData();
       this.store.update({
         chargeTargetX: player.x + PLAYER_CONFIG.size / 2,

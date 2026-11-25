@@ -5,7 +5,7 @@ import { CROSSING, GATE, VILLAGE_STOPS } from '../constants/village';
 import type { DuelArena } from './duel-fog';
 import { ArenaDressing, type RegionMood } from './arena-3d';
 import { GuardianRig, animateDuelist } from './boss-rig-3d';
-import { BossFx } from './boss-fx-3d';
+import { BossFx, attachHeroRim } from './boss-fx-3d';
 import { CombatFeel3D } from './combat-feel-3d';
 import { PostFx } from './post-fx';
 import { CombatFx3D, HitFlash } from './combat-fx-3d';
@@ -24,9 +24,11 @@ import { Destructibles3D } from './destructibles-3d';
 import { Souls3D } from './souls-3d';
 import { Slice3D } from '../slice/slice-3d';
 import { Prologue3D } from '../prologue/prologue-3d';
-import { ChampionGear } from './champion-rig-3d';
+import { ChampionGear, animateBadu } from './champion-rig-3d';
 import type { BossId } from '../constants/boss-lore';
 import type { WeaponId } from '../constants/equipment.config-constant';
+import { renderPixelRatio } from '../platform/display';
+import { currentSettings } from '../platform/settings.service';
 
 interface Point { x: number; y: number }
 export interface Actor3D extends Point {
@@ -125,6 +127,15 @@ export class World3D {
   private viewYaw = Math.PI / 2;
   private targetYaw = Math.PI / 2;
   private dragging?: Point;
+  /** Sensibilité de la caméra (Paramètres), relue à chaque prise. */
+  private dragSensitivity = 1;
+  /** Doigt (ou souris) qui tient la caméra : un seul à la fois, suivi par pointerId. */
+  private dragPointer: number | null = null;
+  /** Rotation demandée par le geste, appliquée en douceur image par image (amortissement). */
+  private pendingYaw = 0;
+  private pendingPitch = 0;
+  /** Temps passé à courir de côté par rapport à la caméra (recentrage doux). */
+  private lateralTime = 0;
   private pitch = 0;
   /** Secondes depuis le dernier geste de caméra (souris, stick droit). */
   private manualLook = 99;
@@ -135,6 +146,17 @@ export class World3D {
    * (troncs et feuillage du prologue), en coordonnées monde (x, z, hauteur).
    */
   cameraBlocker: ((x: number, z: number, y: number) => boolean) | null = null;
+  /** Ennemi verrouillé hors duel (GameStateService) : la caméra le cadre comme un boss. */
+  private lockPoint: Point | null = null;
+  /** Changement de cible demandé par un geste (souris, doigt, stick droit) : -1 gauche, 1 droite. */
+  onLockFlick: ((direction: number) => void) | null = null;
+  /** Clic du stick droit : verrouiller / déverrouiller. */
+  onLockButton: (() => void) | null = null;
+  private flickDrag = 0;
+  private flickReady = true;
+  private lockPressed = false;
+  private readonly lockMarker = new T.Mesh(new T.OctahedronGeometry(1.6, 0),
+    new T.MeshBasicMaterial({ color: '#ff5a2e', transparent: true, opacity: 0.85, depthTest: false, fog: false }));
   private readonly controller = new AbortController();
   private readonly mistTexture: T.CanvasTexture;
   private readonly mistMaterial: T.SpriteMaterial;
@@ -156,7 +178,7 @@ export class World3D {
   private readonly togas: { kwabena: T.Group; ama: T.Group };
   private hero: 'kwabena' | 'ama' | null = null;
 
-  constructor(host: HTMLElement) {
+  constructor(private readonly host: HTMLElement) {
     this.renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(VIEWPORT.WIDTH, VIEWPORT.HEIGHT, false);
     this.renderer.outputColorSpace = T.SRGBColorSpace;
@@ -169,25 +191,49 @@ export class World3D {
 
     const { signal } = this.controller;
     canvas.addEventListener('pointerdown', (event) => {
+      // Un deuxième doigt sur l'image ne vole pas la caméra au premier.
+      if (this.dragPointer !== null) return;
+      this.dragPointer = event.pointerId;
       this.dragging = { x: event.clientX, y: event.clientY };
-      canvas.setPointerCapture(event.pointerId);
+      this.dragSensitivity = currentSettings().sensitivity * (event.pointerType === 'touch' ? 1.35 : 1);
+      try { canvas.setPointerCapture(event.pointerId); } catch { /* pointeur déjà relâché */ }
     }, { signal });
     canvas.addEventListener('pointermove', (event) => {
-      if (this.dragging === undefined) return;
+      if (this.dragging === undefined || event.pointerId !== this.dragPointer) return;
+      // Cible verrouillée : un geste latéral franc (souris, doigt) passe à la cible voisine.
+      if (this.lockPoint && !this.arena) {
+        this.flickDrag += event.clientX - this.dragging.x;
+        if (Math.abs(this.flickDrag) > 70) {
+          this.onLockFlick?.(Math.sign(this.flickDrag));
+          this.flickDrag = 0;
+        }
+        this.dragging = { x: event.clientX, y: event.clientY };
+        return;
+      }
       if (!this.arena) {
-        this.orbit -= (event.clientX - this.dragging.x) * 0.008;
-        this.pitch = T.MathUtils.clamp(this.pitch + (event.clientY - this.dragging.y) * 0.34, -24, 40);
+        const dx = event.clientX - this.dragging.x;
+        // Accélération : un grand balayage tourne plus vite (regarder derrière soi d'un geste).
+        const boost = 1 + T.MathUtils.clamp((Math.abs(dx) - 4) / 24, 0, 1) * 0.9;
+        this.pendingYaw -= dx * 0.008 * this.dragSensitivity * boost;
+        this.pendingPitch += (event.clientY - this.dragging.y) * 0.34 * this.dragSensitivity;
         this.manualLook = 0;
         this.recenter = false;
       }
       this.dragging = { x: event.clientX, y: event.clientY };
     }, { signal });
-    const endDrag = () => { this.dragging = undefined; };
+    const endDrag = (event: PointerEvent) => {
+      if (event.pointerId !== this.dragPointer) return;
+      this.dragging = undefined;
+      this.dragPointer = null;
+    };
+    canvas.addEventListener('pointerup', endDrag, { signal });
+    canvas.addEventListener('pointercancel', endDrag, { signal });
+    // Rotation du téléphone, plein écran, changement de qualité : nouveau tampon.
+    window.addEventListener('resize', () => this.fit(), { signal });
+    const observer = new ResizeObserver(() => this.fit());
+    observer.observe(host);
+    signal.addEventListener('abort', () => observer.disconnect());
     canvas.addEventListener('lostpointercapture', endDrag, { signal });
-    // Q (A en AZERTY) : la caméra revient derrière le héros, comme le verrouillage sans cible.
-    window.addEventListener('keydown', (event) => {
-      if (event.code === 'KeyQ' && !event.repeat) this.recenter = true;
-    }, { signal });
 
     this.scene.fog = new T.FogExp2('#93866e', 0.0021);
     this.scene.add(new T.HemisphereLight('#ffdfb0', '#576962', 2.05));
@@ -213,6 +259,12 @@ export class World3D {
     this.champion = new ChampionGear(this.scene, this.duelist, this.duelist.arms[1].children.at(-1));
     this.layerWarmables.push(...this.champion.warmables);
     this.makeVeille();
+    // Badu : sa tenue (torse nu, pagne) prend aussi le liseré du boss.
+    this.champion.setActive(true);
+    this.bossFx.attachRim(this.duelist.root, 'duelist');
+    this.champion.setActive(false);
+    // Liseré du héros : il se détache du sol sombre et de la brume.
+    attachHeroRim(this.player.root);
     this.mistTexture = this.makeMistTexture();
     this.mistMaterial = new T.SpriteMaterial({
       map: this.mistTexture, transparent: true, depthWrite: false, opacity: 0.62,
@@ -226,6 +278,9 @@ export class World3D {
     this.scene.add(this.mist);
     this.marker = new T.Mesh(new T.OctahedronGeometry(5), new T.MeshBasicMaterial({ color: '#ffdb82' }));
     this.scene.add(this.marker);
+    this.lockMarker.renderOrder = 10;
+    this.lockMarker.visible = false;
+    this.scene.add(this.lockMarker);
     this.wave = new T.Mesh(new T.RingGeometry(0.86, 1.03, 64),
       new T.MeshBasicMaterial({ color: '#9bd7c6', transparent: true, depthWrite: false, opacity: 0.55 }));
     this.wave.rotation.x = -Math.PI / 2;
@@ -245,6 +300,7 @@ export class World3D {
     this.arenaDressing = new ArenaDressing(this.scene, this.renderer, this.camera);
     this.scene.add(this.feel.root);
     this.post = new PostFx(this.renderer, VIEWPORT.WIDTH, VIEWPORT.HEIGHT);
+    this.fit();
     this.fx = new CombatFx3D(this.scene);
     this.duelistFlash = new HitFlash(this.duelist.root);
     this.guardianFlash = new HitFlash(this.veille);
@@ -530,8 +586,9 @@ export class World3D {
     this.veille.visible = !!enemy && !duelist;
     if (enemy && duelist) {
       this.animate(this.duelist, enemy, dt);
-      animateDuelist(this.duelist, enemy, now);
-      this.champion.update(this.bossKind === 'champion' ? enemy : null, now, dt);
+      if (this.bossKind === 'champion') animateBadu(this.duelist, enemy, now);
+      else animateDuelist(this.duelist, enemy, now);
+      this.champion.update(this.bossKind === 'champion' ? enemy : null, now, dt, player);
       this.applyGlow(enemy);
       this.feel.applyFlinch(this.duelist.root, this.duelist.torso, enemy);
     } else {
@@ -636,6 +693,12 @@ export class World3D {
     }
   }
 
+  private introDuration = 3800;
+  /** Durée de l'entrée du boss en cours (ms), pour caler le plan de caméra. */
+  setIntroDuration(ms: number) {
+    this.introDuration = ms;
+  }
+
   /** Boss incarné par le rig humain : Kofi ('duelist') ou le porte-hache ('champion'). */
   setBossKind(kind: BossId) {
     this.bossKind = kind;
@@ -679,16 +742,27 @@ export class World3D {
     } else if (!this.introStarted && enemy) {
       this.introStarted = true;
       // L'intro de GameStateService dure 3,8 s ; la caméra rend la main à 88 %.
-      this.cine.play(SHOTS.bossIntro(enemy, player, 3800 * 0.88 * (1 - this.intro)));
+      this.cine.play(SHOTS.bossIntro(enemy, player, this.introDuration * 0.88 * (1 - this.intro)));
     }
     return this.cine.drive(this.camera, dt);
   }
 
-  private updateCamera(player: Actor3D, enemy: Point | null, dt: number) {
-    if (this.cinematicCamera(player, enemy, dt)) return;
+  private updateCamera(player: Actor3D, boss: Point | null, dt: number) {
+    if (this.cinematicCamera(player, boss, dt)) return;
+    // Cible cadrée : le boss du duel, sinon l'ennemi verrouillé.
+    const enemy = boss ?? this.lockPoint;
+    // Pas de marqueur sur un boss qui tombe.
+    this.lockMarker.visible = !!enemy && (boss as Actor3D | null)?.state !== 'dead';
+    if (enemy) {
+      this.lockMarker.position.set(enemy.x, boss ? 40 : 30, enemy.y);
+      this.lockMarker.rotation.y += dt * 2;
+      this.padFlick();
+    }
     if (enemy) {
       this.targetYaw = Math.atan2(enemy.x - player.x, enemy.y - player.y);
       this.orbit = this.targetYaw;
+      this.pendingYaw = 0;
+      this.pendingPitch = 0;
     } else if (!this.initialized) {
       this.orbit = Math.atan2(player.facingX, player.facingY);
       this.targetYaw = this.orbit;
@@ -759,9 +833,19 @@ export class World3D {
   private followHero(player: Actor3D, dt: number) {
     this.manualLook += dt;
     this.padLook(dt);
+    // Geste de caméra lissé : un doigt qui tremble ne fait pas sauter le cadre.
+    const ease = 1 - Math.exp(-16 * dt);
+    const yawStep = this.pendingYaw * ease;
+    const pitchStep = this.pendingPitch * ease;
+    this.orbit += yawStep;
+    this.pitch = T.MathUtils.clamp(this.pitch + pitchStep, -24, 40);
+    this.pendingYaw -= yawStep;
+    this.pendingPitch -= pitchStep;
     const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
     const behind = Math.atan2(player.facingX, player.facingY);
     const gap = wrap(behind - this.orbit);
+    // Course de côté (au joystick surtout) : au bout de 0,6 s, la caméra pivote doucement dans le dos.
+    this.lateralTime = player.state === 'moving' && Math.abs(gap) > 0.45 && Math.abs(gap) < 2.1 ? this.lateralTime + dt : 0;
     if (this.recenter) {
       this.orbit += gap * (1 - Math.exp(-11 * dt));
       this.pitch += (0 - this.pitch) * (1 - Math.exp(-8 * dt));
@@ -772,7 +856,8 @@ export class World3D {
     // Course vers la caméra : on garde le cadre (pas de demi-tour brutal).
     if (Math.abs(gap) > 2.1) return;
     const forward = Math.max(0, Math.cos(gap));
-    const rate = (player.sprint ? 2.2 : 1.5) * (0.12 + 0.88 * forward);
+    let rate = (player.sprint ? 2.2 : 1.5) * (0.12 + 0.88 * forward);
+    if (this.lateralTime > 0.6) rate = Math.max(rate, 1.2);
     this.orbit += gap * (1 - Math.exp(-rate * dt));
   }
 
@@ -790,7 +875,43 @@ export class World3D {
       this.manualLook = 0;
       this.recenter = false;
     }
-    if (pad.buttons[11]?.pressed) this.recenter = true;
+    this.padButton(pad);
+  }
+
+  /** Clic du stick droit (RS) : verrouille s'il y a une cible, sinon recentre. */
+  private padButton(pad: Gamepad) {
+    const pressed = !!pad.buttons[11]?.pressed;
+    if (pressed && !this.lockPressed) {
+      if (this.onLockButton) this.onLockButton();
+      else this.recenter = true;
+    }
+    this.lockPressed = pressed;
+  }
+
+  /** Cible verrouillée : un coup sec du stick droit change de cible. */
+  private padFlick() {
+    if (typeof navigator === 'undefined' || typeof navigator.getGamepads !== 'function') return;
+    const pad = [...navigator.getGamepads()].find((p) => p?.connected);
+    if (!pad) return;
+    this.padButton(pad);
+    const x = pad.axes[2] ?? 0;
+    if (Math.abs(x) > 0.7 && this.flickReady) {
+      this.flickReady = false;
+      this.onLockFlick?.(Math.sign(x));
+    } else if (Math.abs(x) < 0.3) {
+      this.flickReady = true;
+    }
+  }
+
+  /** Q sans cible à verrouiller : la caméra revient dans le dos du héros. */
+  requestRecenter() {
+    this.recenter = true;
+  }
+
+  /** Ennemi verrouillé hors duel (null : caméra libre). */
+  setLockTarget(point: Point | null) {
+    this.lockPoint = point ? { x: point.x, y: point.y } : null;
+    if (!point) this.flickDrag = 0;
   }
 
   /** Ambiance d'une carte hors arène (prologue) ; null : ambiance de base. */
@@ -825,12 +946,34 @@ export class World3D {
     this.gear.setArrows(arrows);
   }
 
+  /**
+   * L'écran de jeu remplit tout l'écran, quel que soit son format (16:9, 20:9,
+   * 4:3) : 540 lignes internes, largeur selon le format, champ vertical
+   * inchangé (un écran allongé voit plus large). Densité plafonnée à 1,5.
+   */
+  private fit() {
+    const width = this.host.clientWidth;
+    const height = this.host.clientHeight;
+    if (!width || !height) return;
+    const aspect = width / height;
+    const internalWidth = Math.round(VIEWPORT.HEIGHT * aspect);
+    this.renderer.setSize(internalWidth, VIEWPORT.HEIGHT, false);
+    this.renderer.setPixelRatio(renderPixelRatio(this.host, internalWidth));
+    this.camera.aspect = aspect;
+    this.camera.updateProjectionMatrix();
+    this.post?.setAspect(aspect);
+  }
+
+  /** Repère d'objectif, en coordonnées du canvas 2D 16:9 centré sur l'écran de jeu. */
   objectiveOnScreen() {
     if (!this.focus) return null;
     this.projection.set(this.focus.x, 26, this.focus.y).project(this.camera);
     const behind = this.projection.z > 1;
-    const x = behind ? -this.projection.x : this.projection.x;
-    const y = behind ? -1 : this.projection.y;
+    let x = behind ? -this.projection.x : this.projection.x;
+    let y = behind ? -1 : this.projection.y;
+    const stretch = this.camera.aspect / (VIEWPORT.WIDTH / VIEWPORT.HEIGHT);
+    if (stretch >= 1) x *= stretch;
+    else y /= stretch;
     return { x: (x + 1) * 0.5 * VIEWPORT.WIDTH, y: (1 - y) * 0.5 * VIEWPORT.HEIGHT };
   }
 

@@ -1,4 +1,8 @@
 @if (hud(); as h) {
+  @if (h.fade > 0) {
+    <!-- Mort du joueur : l'image s'éteint pendant la chute. -->
+    <div class="death-fade" aria-hidden="true" [style.opacity]="h.fade"></div>
+  }
   @if (playing() && h.defeated; as fallen) {
     <!-- Hors du HUD masqué : l'annonce reste visible pendant le plan de caméra. -->
     <section class="banner defeat" role="status">
@@ -20,7 +24,7 @@
       </section>
 
       @if (h.counter) {
-        <p class="counter" role="status">Esquive parfaite · Espace pour riposter</p>
+        <p class="counter" role="status">Esquive parfaite · <app-key-hint action="attack" /> pour riposter</p>
       }
 
       @if (h.boss; as boss) {

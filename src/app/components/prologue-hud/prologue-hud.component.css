@@ -16,3 +16,34 @@
 .reading strong { display: block; color: #ffdc9a; font: 600 16px Georgia, serif; }
 .reading em { display: block; color: #a7fff0; font-style: normal; margin: 2px 0 4px; }
 .reading p { margin: 4px 0 0; color: #e8d6b4; }
+.fade { position: absolute; inset: 0; background: #000; animation: fade-in 2.4s ease-out forwards; }
+@keyframes fade-in { from { opacity: 1; } to { opacity: 0; visibility: hidden; } }
+.hint, .kaolin {
+  position: absolute; left: 50%; transform: translateX(-50%); margin: 0; padding: 5px 12px;
+  background: #0d0907c0; border: 1px solid #b9845466; font-size: 12px; letter-spacing: 0.04em; white-space: nowrap;
+}
+.hint { bottom: 112px; color: #f3dcae; }
+.kaolin { top: 150px; color: #e8e2d4; }
+.reading p.speech { font-style: italic; color: #f3dcae; }
+.kaolin { pointer-events: auto; cursor: pointer; font: inherit; }
+
+/* --- Mobile : texte narratif en bulle compacte, une phrase à la fois, en bas de l'écran. --- */
+:host-context(html.touch-input) .lines {
+  inset: auto 0 0; align-content: end; justify-items: center; gap: 6px;
+  padding: 40px 12% calc(env(safe-area-inset-bottom) + 16px);
+  background: linear-gradient(0deg, #050302e6 0%, #05030299 55%, transparent);
+}
+:host-context(html.touch-input) .lines p { display: none; }
+:host-context(html.touch-input) .lines p.shown:not(:has(~ p.shown)) {
+  display: block; max-width: 560px; padding: 8px 14px; border: 1px solid #b9845466; border-radius: 10px;
+  background: #120c08e6; font-size: 14px; line-height: 1.45; text-align: center;
+}
+:host-context(html.touch-input) .lines small { position: static; font-size: 11px; }
+
+/* Mobile : fiche d'examen en infobulle en haut, loin des boutons d'action ; indice en haut aussi. */
+:host-context(html.touch-input) .reading {
+  top: calc(env(safe-area-inset-top) + 8px); right: auto; left: 50%; transform: translateX(-50%);
+  width: min(460px, 62%); max-height: 46%; overflow: auto; padding: 8px 12px; font-size: 12px; border-radius: 10px;
+}
+:host-context(html.touch-input) .reading strong { font-size: 14px; }
+:host-context(html.touch-input) .hint { bottom: auto; top: calc(env(safe-area-inset-top) + 10px); white-space: normal; text-align: center; max-width: 70%; }

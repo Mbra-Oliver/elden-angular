@@ -1,6 +1,7 @@
 import {
   AfterViewInit,
   Component,
+  computed,
   ElementRef,
   inject,
   HostListener,
@@ -28,10 +29,21 @@ import { SliceService } from '../../lib/slice/slice.service';
 import { SocialHudComponent } from '../social-hud/social-hud.component';
 import { AsyncWorldService } from '../../lib/social/async-world.service';
 import { InputDeviceService, PAD } from '../../lib/services/input-device.service';
+import { InputService } from '../../lib/services/input.service';
+import { AudioEngineService } from '../../lib/audio/audio-engine.service';
+import { isTouchDevice } from '../../lib/platform/display';
+import { TouchControlsComponent } from '../touch-controls/touch-controls.component';
+import { PauseMenuComponent } from '../pause-menu/pause-menu.component';
+import { PlayerStore } from '../../lib/entities/player/player.store';
+import { currentSettings } from '../../lib/platform/settings.service';
+
+/** Un clic de souris tient la touche virtuelle ce temps (une image de jeu au moins). */
+const CLICK_PULSE_MS = 90;
 
 @Component({
   selector: 'app-game-canva',
-  imports: [CombatHudComponent, DialogueBoxComponent, KeyHintComponent, SocialHudComponent, SliceHudComponent, PrologueHudComponent],
+  imports: [CombatHudComponent, DialogueBoxComponent, KeyHintComponent, SocialHudComponent, SliceHudComponent, PrologueHudComponent,
+    TouchControlsComponent, PauseMenuComponent],
   templateUrl: './game-canva.component.html',
   styleUrl: './game-canva.component.css',
 })
@@ -49,7 +61,24 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
   private readonly environment = inject(EnvironmentService);
   private readonly social = inject(AsyncWorldService);
   /** Manette : A interagit / choix 1, X choix 2 (le clavier passe par onKeydown). */
+  private readonly input = inject(InputService);
+  private readonly audio = inject(AudioEngineService);
+  /** Téléphone ou tablette : joystick et boutons à l'écran. */
+  readonly touch = isTouchDevice();
+  /** Pause : la logique s'arrête, l'image reste, le son est étouffé. */
+  readonly paused = signal(false);
+  private click: { x: number; y: number; at: number } | null = null;
+  private readonly player = inject(PlayerStore);
+  private lastHp = Number.POSITIVE_INFINITY;
+  /**
+   * Texte narratif à l'écran (ouverture, accroche, dialogue, foyer) : sur
+   * mobile, les commandes et l'équipement s'effacent pour laisser lire.
+   */
+  readonly narrating = computed(() => this.gameState.prologue.blocking() || this.slice.blocking() ||
+    !!this.gameState.dialogue());
   private readonly offPad = inject(InputDeviceService).onPadPressed((button) => {
+    if (button === PAD.MENU) { this.togglePause(); return; }
+    if (this.paused()) return;
     const dialogue = this.gameState.dialogue();
     const choice = dialogue?.choices[button === PAD.A ? 0 : button === PAD.X ? 1 : -1];
     if (choice) this.gameState.choose(choice);
@@ -60,8 +89,89 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
   private destroyed = false;
   private warming = false;
 
+  constructor() {
+    // Phase de capture : on lit l'état avant que les HUD ne ferment leur panneau sur Échap.
+    document.addEventListener('keydown', this.onEscape, true);
+    document.addEventListener('visibilitychange', this.onHidden);
+  }
+
+  private readonly onEscape = (event: KeyboardEvent) => {
+    if (event.code !== 'Escape' || event.repeat) return;
+    if (this.paused()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.zone.run(() => this.resume());
+      return;
+    }
+    if (this.canPause()) this.zone.run(() => this.pause());
+  };
+
+  /** Onglet masqué ou téléphone verrouillé : pause automatique. */
+  private readonly onHidden = () => {
+    if (document.hidden && this.canPause()) this.zone.run(() => this.pause());
+  };
+
+  /** Pas de pause par-dessus un dialogue, une lecture ou un message en cours d'écriture. */
+  private canPause() {
+    return this.engineStatus() === 'ready' && !this.gameState.dialogue() && !this.gameState.uiLock() &&
+      !this.gameState.prologue.reading() && !this.gameState.prologue.blocking();
+  }
+
+  togglePause() {
+    if (this.paused()) this.resume();
+    else if (this.canPause()) this.pause();
+  }
+
+  pause() {
+    if (this.paused()) return;
+    this.paused.set(true);
+    this.input.clearVirtual();
+    this.audio.muffle(0.85);
+  }
+
+  resume() {
+    this.paused.set(false);
+    this.audio.muffle(0);
+  }
+
+  quitToMenu() {
+    this.resume();
+    this.gameState.returnToMainMenu();
+  }
+
+  /** Premier coup reçu hors duel : l'ennemi le plus en face est verrouillé (option des Paramètres). */
+  private autoLock() {
+    const hp = this.player.getData().hp;
+    const hit = hp < this.lastHp && hp > 0;
+    this.lastHp = hp;
+    if (!hit || this.gameState.lockActive) return;
+    if (currentSettings().autoLock) this.gameState.toggleLock();
+  }
+
+  /** Souris : clic gauche = frappe légère, clic droit = frappe lourde. */
+  onPointerDown(event: PointerEvent) {
+    if (event.pointerType !== 'mouse' || this.paused()) return;
+    if (event.button === 2) this.pulse('KeyE');
+    // Clic gauche : frappe au relâcher si la souris n'a pas glissé (glisser = tourner la caméra).
+    if (event.button === 0) this.click = { x: event.clientX, y: event.clientY, at: performance.now() };
+  }
+
+  onPointerUp(event: PointerEvent) {
+    const click = this.click;
+    this.click = null;
+    if (!click || event.pointerType !== 'mouse' || event.button !== 0 || this.paused()) return;
+    const moved = Math.hypot(event.clientX - click.x, event.clientY - click.y);
+    if (moved < 8 && performance.now() - click.at < 350) this.pulse('Space');
+  }
+
+  private pulse(code: string) {
+    this.input.setVirtual(code, true);
+    window.setTimeout(() => this.input.setVirtual(code, false), CLICK_PULSE_MS);
+  }
+
   @HostListener('window:keydown', ['$event'])
   onKeydown(event: KeyboardEvent) {
+    if (this.paused()) return;
     const dialogue = this.gameState.dialogue();
     const choice = dialogue?.choices[event.code === 'Digit1' ? 0 : event.code === 'Digit2' ? 1 : -1];
     if (choice && !event.repeat) {
@@ -128,7 +238,8 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
               try {
                 world = new World3D(this.viewport.nativeElement);
                 game.canvas.setAttribute('aria-hidden', 'true');
-                Object.assign(game.canvas.style, { position: 'absolute', inset: '0', pointerEvents: 'none' });
+                // Le canvas 2D (repères, barres) reste en 16:9 au centre de l'écran de jeu.
+                Object.assign(game.canvas.style, { position: 'absolute', inset: '0', pointerEvents: 'none', objectFit: 'contain' });
               } catch (error) {
                 console.warn('WebGL indisponible, vue 2D utilisée.', error);
               }
@@ -156,7 +267,11 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
               });
             },
           },
-          scene: { update: (_time: number, delta: number) => { if (!this.warming) this.loop.update(delta); } },
+          scene: { update: (_time: number, delta: number) => {
+            if (this.warming || this.paused()) return;
+            this.loop.update(delta);
+            this.autoLock();
+          } },
         });
       });
     } catch (error) {
@@ -168,6 +283,10 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
+    document.removeEventListener('keydown', this.onEscape, true);
+    document.removeEventListener('visibilitychange', this.onHidden);
+    this.input.clearVirtual();
+    this.audio.muffle(0);
     this.offPad();
     this.social.detach();
     this.gameState.stopGame();

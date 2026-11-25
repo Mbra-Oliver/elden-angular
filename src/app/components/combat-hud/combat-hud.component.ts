@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { GameStateService } from '../../lib/services/game-state.service';
+import { KeyHintComponent } from '../key-hint/key-hint.component';
 
 /**
  * HUD de combat en HTML/CSS par-dessus le canvas 3D : texte net à toutes les
@@ -11,6 +12,7 @@ import { GameStateService } from '../../lib/services/game-state.service';
  */
 @Component({
   selector: 'app-combat-hud',
+  imports: [KeyHintComponent],
   templateUrl: './combat-hud.component.html',
   styleUrl: './combat-hud.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

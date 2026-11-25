@@ -1,4 +1,7 @@
-export type BossAttackType = 'slash' | 'slam' | 'charge' | 'combo' | 'surge' | 'sweep' | 'tide' | 'shot' | 'none';
+export type BossAttackType = 'slash' | 'slam' | 'charge' | 'combo' | 'surge' | 'sweep' | 'tide' | 'shot'
+  // Badu Ofosu (chapitre 1) : hache et mousquet.
+  | 'reap' | 'judgment' | 'feint' | 'backhand' | 'furrow' | 'leap' | 'mill' | 'thrust'
+  | 'none';
 
 export const BOSS_COMBO_STEP = 3;
 
@@ -85,16 +88,35 @@ export const BOSS_ATTACKS: Record<
     range: 2.7,
   },
 
-  // Mousquet ensorcelé (porte-hache du Denkyira) : longue visée lisible, balle
-  // instantanée en ligne droite, long rechargement à punir. range en tailles de boss.
+  // Coup de foudre (mousquet de Badu) : 1,2 s de visée lisible, balle
+  // instantanée en ligne droite, 2,5 s de rechargement à punir. range en tailles de boss.
+  // Dégâts : 70 % de la vie max du joueur (voir SHOT_DAMAGE_RATIO).
   shot: {
-    damage: 28,
-    windupDuration: 1250,
-    attackDuration: 420,
-    recoverDuration: 1500,
+    damage: 0,
+    windupDuration: 1200,
+    attackDuration: 300,
+    recoverDuration: 2500,
     hitBoxType: 'directional',
     range: 6,
   },
+
+  // ── Badu Ofosu. [SUPPOSITION] durées et dégâts tirés de la fiche, à régler en jeu.
+  // Double faucheuse : épaule armée (0,6 s), deux balayages larges.
+  reap: { damage: 24, windupDuration: 600, attackDuration: 1000, recoverDuration: 950, hitBoxType: 'directional', range: 1.9 },
+  // Jugement retardé : hache levée, figée 0,8 s, puis abattue (attrape les roulades paniquées).
+  judgment: { damage: 48, windupDuration: 1300, attackDuration: 260, recoverDuration: 1500, hitBoxType: 'aoe', range: 1.7 },
+  // Feinte : même départ que le jugement, annulée à 0,4 s, pas de côté et coup de crosse (P1) ou estoc (P2).
+  feint: { damage: 20, windupDuration: 420, attackDuration: 380, recoverDuration: 750, hitBoxType: 'directional', range: 1.8 },
+  // Revers de crosse : frappe vers l'arrière quand le joueur reste dans son dos.
+  backhand: { damage: 18, windupDuration: 400, attackDuration: 260, recoverDuration: 650, hitBoxType: 'aoe', range: 1.6 },
+  // Sillon d'étincelles : hache traînée au sol, course, uppercut.
+  furrow: { damage: 32, windupDuration: 800, attackDuration: 1100, recoverDuration: 1250, hitBoxType: 'directional', range: 8 },
+  // Chute du roi : bond, écrasement, onde courte autour de l'impact.
+  leap: { damage: 36, windupDuration: 900, attackDuration: 760, recoverDuration: 1300, hitBoxType: 'aoe', range: 2.4 },
+  // Moulinet de Feyiase : 2 diagonales, 1 circulaire, 1 écrasement, puis 1,5 s d'essoufflement.
+  mill: { damage: 21, windupDuration: 700, attackDuration: 1900, recoverDuration: 1500, hitBoxType: 'directional', range: 1.9 },
+  // Estocade brise-garde : ultra-rapide, vide l'endurance.
+  thrust: { damage: 26, windupDuration: 500, attackDuration: 220, recoverDuration: 850, hitBoxType: 'directional', range: 2.3 },
 
   // Double vague : deux anneaux décalés, deux esquives à rythmer.
   tide: {
@@ -112,10 +134,18 @@ export function attackProgress(attack: Exclude<BossAttackType, 'none'>, remainin
   return Math.max(0, Math.min(1, 1 - remainingMs / BOSS_ATTACKS[attack].attackDuration));
 }
 
+/** Nombre de coups dans les attaques à plusieurs frappes. */
+export const BOSS_STRIKES: Partial<Record<Exclude<BossAttackType, 'none'>, number>> = {
+  combo: BOSS_COMBO_STEP, reap: 2, mill: 4,
+};
+
 /** Indice du coup en cours dans un combo (0..BOSS_COMBO_STEP-1). */
-export function comboStepAt(progress: number) {
-  return Math.min(BOSS_COMBO_STEP - 1, Math.floor(progress * BOSS_COMBO_STEP));
+export function comboStepAt(progress: number, strikes = BOSS_COMBO_STEP) {
+  return Math.min(strikes - 1, Math.floor(progress * strikes));
 }
+
+/** Part de la vie max du joueur qu'emporte une balle de Badu. */
+export const SHOT_DAMAGE_RATIO = 0.7;
 
 /**
  * Fenêtre où l'attaque blesse réellement. En dehors, l'arme est en
@@ -123,10 +153,19 @@ export function comboStepAt(progress: number) {
  * touche pas : l'animation et la hitbox racontent la même chose.
  */
 export function isBossHitActive(attack: BossAttackType, progress: number) {
-  if (attack === 'combo') {
-    const local = (progress * BOSS_COMBO_STEP) % 1;
-    return local >= 0.18 && local <= 0.62;
+  const strikes = attack === 'none' ? undefined : BOSS_STRIKES[attack];
+  if (strikes) {
+    // Chaque coup : armement, lame qui fend l'air, retour. Seul le passage de
+    // la lame blesse (calé sur l'animation : la lame est à mi-course vers 0,3).
+    const local = (progress * strikes) % 1;
+    return local >= 0.28 && local <= 0.58;
   }
+  // Jugement : seulement quand la hache touche le sol (k ≈ 0,25), pas pendant qu'elle y reste.
+  if (attack === 'judgment') return progress >= 0.2 && progress <= 0.42;
+  if (attack === 'feint') return progress >= 0.5 && progress <= 0.75;
+  if (attack === 'backhand' || attack === 'thrust') return progress >= 0.2 && progress <= 0.75;
+  // Saut : seule la réception blesse ; sillon : la course et l'uppercut final.
+  if (attack === 'leap') return progress >= 0.72 && progress <= 0.92;
   if (attack === 'sweep') return progress >= 0.15 && progress <= 0.82;
   if (attack === 'slash') return progress <= 0.72;
   // La balle part au début : seul le départ du coup blesse, la fumée non.

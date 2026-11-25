@@ -3,14 +3,33 @@
     @for (text of prologue.lines(); track $index) {
       <p [class.shown]="$index <= prologue.line()!">{{ text }}</p>
     }
-    <small>Espace pour passer</small>
+    <small><app-skip-hint /></small>
   </section>
+} @else if (opened()) {
+  <!-- Fondu depuis le noir sur Kwadwo, au sortir du texte d'ouverture. -->
+  <div class="fade" aria-hidden="true"></div>
+}
+@if (prologue.hint(); as hint) {
+  <p class="hint" role="status">
+    <app-key-hint action="dodge" /> Esquive · <app-key-hint action="attack" /> Frappe légère ·
+    <app-key-hint action="heavy" /> Frappe lourde · <app-key-hint action="lock" /> Verrouiller
+  </p>
+}
+@if (prologue.kaolin(); as k) {
+  @if (k.left > 0) {
+    <p class="kaolin" role="status">Kaolin sur la lame · {{ ceil(k.left) }} s</p>
+  } @else if (k.owned) {
+    <button type="button" class="kaolin" (click)="prologue.applyKaolin()">
+      <app-key-hint action="kaolin" /> Enduire la lame de kaolin
+    </button>
+  }
 }
 @if (prologue.reading(); as item) {
   <aside class="reading" aria-live="polite">
     <strong>{{ item.title }}</strong>
     @if (item.gives?.arrows; as arrows) { <em>+{{ arrows }} flèches</em> }
-    @if (item.gives?.bandji; as bandji) { <em>+{{ bandji }} gourde de Bandji</em> }
-    <p>{{ item.text }}</p>
+    @if (item.gives?.bandji; as bandji) { <em>+{{ bandji }} gourde de soin</em> }
+    @if (item.gives?.kaolin) { <em>Poudre de kaolin : <app-key-hint action="kaolin" /> enduire la lame (30 s)</em> }
+    <p [class.speech]="!!item.speaker">{{ item.text }}</p>
   </aside>
 }

@@ -62,6 +62,29 @@ function addRim(root: T.Object3D, uniforms: RimUniforms) {
   });
 }
 
+/**
+ * Liseré de découpe du héros (lisibilité contre le sol sombre et la brume).
+ * Ne touche pas aux matériaux qui ont déjà leur propre shader (pagnes au vent).
+ */
+export function attachHeroRim(root: T.Object3D, color = '#ffb070', strength = 0.42) {
+  const uniforms: RimUniforms = { uRim: { value: strength }, uRimPow: { value: 2.6 }, uRimColor: { value: new T.Color(color) } };
+  root.traverse((object) => {
+    if (!(object instanceof T.Mesh) || !(object.material instanceof T.MeshStandardMaterial)) return;
+    const material = object.material;
+    if (material.userData['rim'] || material.onBeforeCompile !== T.Material.prototype.onBeforeCompile) return;
+    material.userData['rim'] = true;
+    material.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms);
+      shader.fragmentShader = 'uniform float uRim;\nuniform float uRimPow;\nuniform vec3 uRimColor;\n' +
+        shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        totalEmissiveRadiance += uRimColor * uRim * pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), uRimPow);`);
+    };
+    material.customProgramCacheKey = () => 'hero-rim';
+    material.needsUpdate = true;
+  });
+  return uniforms.uRim;
+}
+
 const EMBERS = 140;
 
 /** Attaques à esquiver (pas de garde possible) : même liste que les sons d'éclat. */

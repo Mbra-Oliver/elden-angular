@@ -1,0 +1,126 @@
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Moitié gauche : le joystick naît sous le pouce. */
+.stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  /* Moitié gauche réservée au déplacement ; le reste de l'écran tourne la caméra. */
+  width: 45%;
+  height: 100%;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.stick-ghost {
+  position: absolute;
+  left: calc(env(safe-area-inset-left) + 64px);
+  bottom: calc(env(safe-area-inset-bottom) + 40px);
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  border: 1px solid #efe6d433;
+  background: radial-gradient(circle, #efe6d40d, transparent 70%);
+}
+
+.stick-base {
+  position: absolute;
+  width: 104px;
+  height: 104px;
+  margin: -52px 0 0 -52px;
+  border-radius: 50%;
+  border: 1px solid #e5c17b66;
+  background: radial-gradient(circle, #0c080655, #0c080622 70%);
+}
+
+.stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: #e5c17bcc;
+  box-shadow: 0 0 12px #000a;
+}
+
+/* Arc d'actions à droite, ancré dans le coin (pouce droit). */
+.arc {
+  position: absolute;
+  right: calc(env(safe-area-inset-right) + 18px);
+  bottom: calc(env(safe-area-inset-bottom) + 14px);
+  width: 214px;
+  height: 214px;
+}
+
+.pad {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #e5c17b88;
+  background: #0f0a08a6;
+  color: #efe6d4;
+  font: 22px/1 system-ui, sans-serif;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.06s, background 0.06s;
+}
+
+.pad.held { transform: scale(0.92); background: #e5c17b55; }
+
+/* Esquive en bas (la plus grosse), frappe légère au centre, lourde au-dessus, Bandji sur le côté. */
+.pad.dodge { right: 4px; bottom: 0; width: 74px; height: 74px; font-size: 26px; }
+.pad.attack { right: 88px; bottom: 34px; width: 70px; height: 70px; }
+.pad.heavy { right: 26px; bottom: 96px; }
+.pad.drink { right: 154px; bottom: 112px; width: 52px; height: 52px; font-size: 19px; }
+.pad.switch { right: 98px; bottom: 150px; width: 44px; height: 44px; font-size: 16px; opacity: 0.8; }
+
+.pad.lock {
+  right: calc(env(safe-area-inset-right) + 22px);
+  bottom: calc(env(safe-area-inset-bottom) + 182px);
+  width: 46px;
+  height: 46px;
+  font-size: 22px;
+}
+
+.pad.interact {
+  right: calc(env(safe-area-inset-right) + 236px);
+  bottom: calc(env(safe-area-inset-bottom) + 100px);
+  width: 58px;
+  height: 58px;
+  border-color: #e5c17b;
+  color: #e5c17b;
+  animation: appear 0.2s ease both;
+}
+
+@keyframes appear { from { opacity: 0; transform: scale(0.8); } }
+
+.pause {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 8px);
+  right: calc(env(safe-area-inset-right) + 8px);
+  width: 48px;
+  height: 48px;
+  padding: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: #0f0a0866;
+  pointer-events: auto;
+}
+
+.pause path { fill: none; stroke: #efe6d4; stroke-width: 1.6; stroke-linecap: round; }

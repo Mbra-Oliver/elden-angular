@@ -1,11 +1,13 @@
 import { Injectable, NgZone, inject, signal } from '@angular/core';
 
-export type InputDevice = 'keyboard' | 'gamepad';
+export type InputDevice = 'keyboard' | 'gamepad' | 'touch';
 
 /** Actions du jeu qui ont une icône de touche. */
 export type InputAction =
   | 'move' | 'attack' | 'heavy' | 'dodge' | 'sprint' | 'interact'
-  | 'switch' | 'drink' | 'message' | 'choice1' | 'choice2' | 'confirm' | 'back';
+  | 'switch' | 'drink' | 'message' | 'choice1' | 'choice2' | 'confirm' | 'back'
+  // Chapitre 1 : poudre de kaolin sur la lame, verrouillage de cible.
+  | 'kaolin' | 'lock';
 
 /** Boutons manette (disposition standard W3C, noms façon Xbox). */
 export const PAD = {
@@ -13,21 +15,30 @@ export const PAD = {
   VIEW: 8, MENU: 9, LS: 10, RS: 11, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15,
 } as const;
 
+/**
+ * Tactile : l'icône du bouton à l'écran (touch-controls) ; vide quand on
+ * touche directement l'invite ou le choix (rien à afficher).
+ */
 export const ACTION_GLYPHS: Record<InputAction, Record<InputDevice, string>> = {
-  move: { keyboard: 'ZQSD', gamepad: 'L' },
-  attack: { keyboard: 'Espace', gamepad: 'RB' },
-  heavy: { keyboard: 'E', gamepad: 'RT' },
-  dodge: { keyboard: 'Maj', gamepad: 'B' },
-  sprint: { keyboard: 'Maj ⟳', gamepad: 'B ⟳' },
-  interact: { keyboard: 'F', gamepad: 'A' },
-  switch: { keyboard: 'R', gamepad: 'Y' },
-  drink: { keyboard: 'B', gamepad: 'X' },
-  message: { keyboard: 'N', gamepad: '▤' },
-  choice1: { keyboard: '1', gamepad: 'A' },
-  choice2: { keyboard: '2', gamepad: 'X' },
-  confirm: { keyboard: 'Entrée', gamepad: 'A' },
-  back: { keyboard: 'Échap', gamepad: 'B' },
+  move: { keyboard: 'ZQSD', gamepad: 'L', touch: '◎' },
+  attack: { keyboard: 'Espace', gamepad: 'RB', touch: '⟋' },
+  heavy: { keyboard: 'E', gamepad: 'RT', touch: '⟱' },
+  dodge: { keyboard: 'Maj', gamepad: 'B', touch: '↺' },
+  sprint: { keyboard: 'Maj ⟳', gamepad: 'B ⟳', touch: '↺' },
+  interact: { keyboard: 'F', gamepad: 'A', touch: '◈' },
+  switch: { keyboard: 'R', gamepad: 'Y', touch: '⇄' },
+  drink: { keyboard: 'B', gamepad: 'X', touch: '⚱' },
+  message: { keyboard: 'N', gamepad: '▤', touch: '✎' },
+  choice1: { keyboard: '1', gamepad: 'A', touch: '' },
+  choice2: { keyboard: '2', gamepad: 'X', touch: '' },
+  confirm: { keyboard: 'Entrée', gamepad: 'A', touch: '' },
+  back: { keyboard: 'Échap', gamepad: 'B', touch: '' },
+  kaolin: { keyboard: 'T', gamepad: 'LB', touch: '◌' },
+  lock: { keyboard: 'Q', gamepad: 'RS', touch: '⊙' },
 };
+
+/** Écran tactile principal au démarrage (avant tout geste). */
+const startsOnTouch = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
 const STICK_DEADZONE = 0.35;
 
@@ -39,7 +50,7 @@ const STICK_DEADZONE = 0.35;
 @Injectable({ providedIn: 'root' })
 export class InputDeviceService {
   private readonly zone = inject(NgZone);
-  private readonly _device = signal<InputDevice>('keyboard');
+  private readonly _device = signal<InputDevice>(startsOnTouch() ? 'touch' : 'keyboard');
   readonly device = this._device.asReadonly();
 
   private pad: Gamepad | null = null;
@@ -48,9 +59,18 @@ export class InputDeviceService {
 
   constructor() {
     if (typeof window === 'undefined') return;
-    const toKeyboard = () => { if (this._device() !== 'keyboard') this.zone.run(() => this._device.set('keyboard')); };
-    window.addEventListener('keydown', toKeyboard);
-    window.addEventListener('pointerdown', (event) => { if (event.pointerType === 'mouse') toKeyboard(); });
+    const toKeyboard = () => setDevice('keyboard');
+    // Les appuis simulés par les boutons tactiles (isTrusted faux) ne changent pas d'appareil.
+    window.addEventListener('keydown', (event) => { if (event.isTrusted) toKeyboard(); });
+    const setDevice = (device: InputDevice) => {
+      document.documentElement.classList.toggle('touch-input', device === 'touch');
+      if (this._device() !== device) this.zone.run(() => this._device.set(device));
+    };
+    setDevice(this._device());
+    window.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse') setDevice('keyboard');
+      else if (event.pointerType === 'touch') setDevice('touch');
+    }, { capture: true });
     window.addEventListener('gamepaddisconnected', () => { this.pad = null; toKeyboard(); });
     if (typeof navigator.getGamepads !== 'function') return;
     this.zone.runOutsideAngular(() => {
@@ -92,6 +112,9 @@ export class InputDeviceService {
       }
       this.previous[index] = pressed;
     });
-    if (active && this._device() !== 'gamepad') this.zone.run(() => this._device.set('gamepad'));
+    if (active && this._device() !== 'gamepad') {
+      document.documentElement.classList.remove('touch-input');
+      this.zone.run(() => this._device.set('gamepad'));
+    }
   }
 }

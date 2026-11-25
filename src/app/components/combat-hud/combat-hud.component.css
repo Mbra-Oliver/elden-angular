@@ -131,3 +131,5 @@
 @media (prefers-reduced-motion: reduce) {
   .bar .lag, .bar .fill, .hud { transition: none; }
 }
+
+.death-fade { position: absolute; inset: 0; background: #000; transition: opacity 0.25s linear; pointer-events: none; }

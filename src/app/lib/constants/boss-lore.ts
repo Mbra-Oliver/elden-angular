@@ -36,31 +36,32 @@ export const BOSS_LORE: Record<BossId, BossLore> = {
   // Chapitre 1 (prologue, 1701) : personnage inventé ; le roi Ntim Gyakari reste hors champ.
   champion: {
     name: 'Badu Ofosu',
-    epithet: 'Porte-hache du roi du Denkyira',
-    chapter: 'Chapitre 1 · 1701 · La route de Feyiase',
+    epithet: 'Porte-hache de Ntim Gyakari',
+    chapter: 'Chapitre 1 · 1701 · La crête de Feyiase',
     lore: [
-      'Badu Ofosu porte la grande hache de guerre devant le roi Ntim Gyakari. Il a juré de tenir la crête tant que l’abri du roi n’aurait pas été vidé, et il la tient encore quand toute l’armée du Denkyira a fui.',
-      'Il porte le mousquet de traite des fusiliers du roi, mais il ne le charge pas comme eux : les prêtres du Denkyira ont mêlé à sa poudre la cendre d’un suman, un charme de guerre. Ses balles laissent une fumée noire qui brûle l’herbe, et les siens disent qu’elle ne manque jamais un homme qui fuit.',
-      'Quand il n’a plus le temps de recharger, il tire son sabre. Il ne recule pas : un porte-hache qui revient sans son roi n’a plus de nom.',
+      'Badu Ofosu est le porte-insigne et le bourreau du roi du Denkyira. Quand l’armée s’effondre à Feyiase et que Ntim Gyakari est sur le point d’être pris, il refuse de fuir : il tient seul la crête pour couvrir la retraite des derniers fidèles.',
+      'Ce n’est pas un furieux. C’est un vétéran froid, qui jauge son adversaire, économise ses gestes et cherche à briser son rythme. Dans la main droite, une hache de guerre au large fer courbe, manche cerclé de laiton ; dans la gauche, un long mousquet de traite.',
+      'À mi-combat, quand il comprend que le duel est à mort, il brise la crosse de son mousquet contre la roche et prend sa hache à deux mains.',
     ],
     phases: {
       1: {
-        title: 'La grande hache',
-        line: '« Personne ne passe tant que l’abri du roi n’est pas vide. »',
-        design: 'Hache à deux mains : coup vertical lent (onde au sol), moulinet, charge épaule en avant. Longues fenêtres après la hache.',
+        title: 'Le maître d’armes',
+        line: '« Approche, Asante. Je t’ai entendu venir depuis le ravin. »',
+        design: 'Il garde ses distances : tir de mousquet (1,2 s de visée, 2,5 s de rechargement), double faucheuse, jugement retardé, feinte à la crosse, revers de crosse si on reste dans son dos.',
       },
       2: {
-        title: 'La poudre des prêtres',
-        line: 'Il verse dans le canon une poudre noire mêlée de cendre. La fumée ne monte pas : elle rampe.',
-        design: 'Mousquet ensorcelé : longue visée (ligne au sol), tir en ligne qui brûle l’herbe. Hache entre deux tirs. Punir pendant le rechargement.',
+        title: 'La fureur du dernier bastion',
+        line: 'Il fracasse la crosse de son mousquet contre la roche et prend sa hache à deux mains.',
+        design: 'Il traque sans relâche : sillon d’étincelles, chute du roi, moulinet de quatre coups (puis 1,5 s d’essoufflement), estocade brise-garde, feinte du bond.',
       },
+      // Pas de troisième phase : seuil négatif, jamais atteint.
       3: {
-        title: 'Le sabre du serment',
-        line: '« Un porte-hache sans son roi n’a plus de nom. »',
-        design: 'Sabre rapide (coupe, enchaînement de trois), tir en éventail de trois balles, charge enchaînée. Récupérations courtes.',
+        title: 'La fureur du dernier bastion',
+        line: '',
+        design: 'Inutilisé.',
       },
     },
-    thresholds: [0.66, 0.33],
+    thresholds: [0.5, -1],
   },
 
   duelist: {
