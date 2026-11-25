@@ -1,4 +1,5 @@
 import { inject, Injectable } from '@angular/core';
+import { inPrologue } from '../../prologue/prologue-map';
 import { EQUIPMENT_CONFIG } from '../../constants/equipment.config-constant';
 import { WORLD } from '../../constants/terrain-constant';
 import type { DuelArena } from '../../engine/duel-fog';
@@ -99,7 +100,8 @@ export class ArrowService {
           break;
         }
         const outOfArena = arena && Math.hypot(arrow.x - arena.x, arrow.y - arena.y) > arena.radius - 6;
-        const outOfWorld = arrow.x < 4 || arrow.y < 4 || arrow.x > WORLD.WIDTH - 4 || arrow.y > WORLD.HEIGHT - 4;
+        const outOfWorld = !inPrologue(arrow.x, arrow.y, -4) &&
+          (arrow.x < 4 || arrow.y < 4 || arrow.x > WORLD.WIDTH - 4 || arrow.y > WORLD.HEIGHT - 4);
         if (outOfArena || outOfWorld) {
           arrow.x -= arrow.dirX * 6;
           arrow.y -= arrow.dirY * 6;

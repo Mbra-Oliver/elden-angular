@@ -23,6 +23,7 @@ import { DialogueBoxComponent } from '../dialogue-box/dialogue-box.component';
 import { EquipmentStore } from '../../lib/entities/player/equipment.store';
 import { KeyHintComponent } from '../key-hint/key-hint.component';
 import { SliceHudComponent } from '../slice-hud/slice-hud.component';
+import { PrologueHudComponent } from '../prologue-hud/prologue-hud.component';
 import { SliceService } from '../../lib/slice/slice.service';
 import { SocialHudComponent } from '../social-hud/social-hud.component';
 import { AsyncWorldService } from '../../lib/social/async-world.service';
@@ -30,7 +31,7 @@ import { InputDeviceService, PAD } from '../../lib/services/input-device.service
 
 @Component({
   selector: 'app-game-canva',
-  imports: [CombatHudComponent, DialogueBoxComponent, KeyHintComponent, SocialHudComponent, SliceHudComponent],
+  imports: [CombatHudComponent, DialogueBoxComponent, KeyHintComponent, SocialHudComponent, SliceHudComponent, PrologueHudComponent],
   templateUrl: './game-canva.component.html',
   styleUrl: './game-canva.component.css',
 })

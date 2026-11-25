@@ -95,6 +95,11 @@ export class AttackTelegraph3D {
 
   private readonly coneRadius: Record<'slash' | 'combo', number>;
 
+  /** Zones cachées hors anticipation : précompilées par World3D.warmUp. */
+  get warmables(): T.Object3D[] {
+    return [...this.shapes.values()].flatMap(({ fill, edge }) => [fill, edge]);
+  }
+
   update(dt: number) {
     const pose = this.read();
     const windup = pose?.state === 'windup' && pose.attack !== 'none';

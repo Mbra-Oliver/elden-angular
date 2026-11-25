@@ -55,6 +55,23 @@ export class EquipmentStore {
     this.data.update((d) => ({ ...d, maxBandji, bandji: Math.min(d.bandji, maxBandji) }));
   }
 
+  /** Taille du carquois (prologue : arc limité). Le carquois est rempli. */
+  setMaxArrows(maxArrows: number) {
+    this.data.update((d) => ({ ...d, maxArrows, arrows: maxArrows }));
+  }
+
+  /** Flèches trouvées (carquois d'un mort) : elles agrandissent le carquois. */
+  addArrows(count: number) {
+    this.data.update((d) => ({ ...d, maxArrows: Math.max(d.maxArrows, d.arrows + count), arrows: d.arrows + count }));
+    this.say(`+${count} flèches`);
+  }
+
+  /** Gourde trouvée : une gorgée de plus jusqu'au prochain repos. */
+  addBandji(count: number) {
+    this.data.update((d) => ({ ...d, maxBandji: Math.max(d.maxBandji, d.bandji + count), bandji: d.bandji + count }));
+    this.say(`+${count} Bandji`);
+  }
+
   /** Retire une flèche du carquois. Renvoie false s'il n'y en a plus. */
   consumeArrow(): boolean {
     if (this.data().arrows <= 0) {

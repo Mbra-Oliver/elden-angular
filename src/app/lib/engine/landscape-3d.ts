@@ -17,6 +17,8 @@ export class Landscape3D {
   private readonly root = new T.Group();
   private readonly sky: T.Mesh;
   private readonly sunGlow: T.Sprite;
+  /** Centre de la carte en cours (monde principal, ou prologue à l'est). */
+  readonly center = new T.Vector2(WORLD.WIDTH / 2, WORLD.HEIGHT / 2);
   private readonly near: T.Group;
   private readonly far: T.Group;
   private readonly mid: T.Group;
@@ -56,9 +58,13 @@ export class Landscape3D {
     const p = camera.position;
     this.sky.position.copy(p);
     this.sunGlow.position.copy(p).addScaledVector(this.sunDirection, 2300);
-    this.near.position.set((p.x - WORLD.WIDTH / 2) * 0.3, 0, (p.z - WORLD.HEIGHT / 2) * 0.3);
-    this.mid.position.set((p.x - WORLD.WIDTH / 2) * 0.6, 0, (p.z - WORLD.HEIGHT / 2) * 0.6);
-    this.far.position.set((p.x - WORLD.WIDTH / 2) * 0.85, 0, (p.z - WORLD.HEIGHT / 2) * 0.85);
+    // Les anneaux sont construits autour du centre du monde : on les décale
+    // vers la carte en cours (prologue à l'est), puis parallaxe autour d'elle.
+    const cx = this.center.x - WORLD.WIDTH / 2;
+    const cz = this.center.y - WORLD.HEIGHT / 2;
+    this.near.position.set(cx + (p.x - this.center.x) * 0.3, 0, cz + (p.z - this.center.y) * 0.3);
+    this.mid.position.set(cx + (p.x - this.center.x) * 0.6, 0, cz + (p.z - this.center.y) * 0.6);
+    this.far.position.set(cx + (p.x - this.center.x) * 0.85, 0, cz + (p.z - this.center.y) * 0.85);
     const t = now / 1000;
     this.smoke.forEach((puff, i) => {
       const life = (t * 0.035 + i / this.smoke.length) % 1;

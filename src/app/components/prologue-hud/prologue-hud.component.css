@@ -1,0 +1,18 @@
+:host { position: absolute; inset: 0; pointer-events: none; font-family: system-ui, sans-serif; color: #fff0d1; }
+.lines {
+  position: absolute; inset: 0; display: grid; align-content: center; gap: 14px; padding: 8%;
+  background: radial-gradient(ellipse at center, #0b0806d9, #050302f7); pointer-events: auto; cursor: pointer;
+}
+.lines p {
+  margin: 0; font: italic clamp(15px, 2.6vw, 24px)/1.4 Georgia, serif; color: #f3dcae;
+  opacity: 0; transform: translateY(6px); transition: opacity 0.9s ease, transform 0.9s ease;
+}
+.lines p.shown { opacity: 1; transform: none; }
+.lines small { position: absolute; right: 18px; bottom: 14px; opacity: 0.6; font-size: 12px; }
+.reading {
+  position: absolute; right: 16px; top: 34%; width: min(340px, 42%);
+  padding: 12px 16px; background: #1a130ef0; border: 1px solid #b98454; font-size: 13px; line-height: 1.5;
+}
+.reading strong { display: block; color: #ffdc9a; font: 600 16px Georgia, serif; }
+.reading em { display: block; color: #a7fff0; font-style: normal; margin: 2px 0 4px; }
+.reading p { margin: 4px 0 0; color: #e8d6b4; }

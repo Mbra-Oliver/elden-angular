@@ -24,6 +24,11 @@ interface Mood {
   glowIntensity: number;
 }
 
+/** Ambiance d'une carte hors arène (prologue), en couleurs CSS. */
+export interface RegionMood {
+  fog: string; fogDensity: number; background: string; hemi: number; sun: number; sunColor: string;
+}
+
 interface Flicker { index: number; base: T.Matrix4; phase: number }
 
 interface Dressing {
@@ -56,6 +61,8 @@ export class ArenaDressing {
   private readonly matrix = new T.Matrix4();
   private readonly rotation = new T.Matrix4();
   private active?: Dressing;
+  /** Ambiance de la carte en cours hors arène (setRegionMood). */
+  private region: Mood | null = null;
 
   constructor(private readonly scene: T.Scene, renderer: T.WebGLRenderer, camera: T.Camera) {
     this.hemi = scene.children.find((o): o is T.HemisphereLight => o instanceof T.HemisphereLight);
@@ -105,7 +112,7 @@ export class ArenaDressing {
         this.glowLight.color.copy(next.mood.glow);
       }
     }
-    this.blendMood(this.active?.mood ?? this.base, dt);
+    this.blendMood(this.active?.mood ?? this.region ?? this.base, dt);
     if (!this.active) return;
 
     const d = this.active;
@@ -162,6 +169,14 @@ export class ArenaDressing {
   }
 
   // ─── Ambiance ────────────────────────────────────────────────────────────
+
+  setRegionMood(mood: RegionMood | null) {
+    this.region = mood && {
+      fog: new T.Color(mood.fog), fogDensity: mood.fogDensity, background: new T.Color(mood.background),
+      hemi: mood.hemi, sun: mood.sun, sunColor: new T.Color(mood.sunColor),
+      glow: this.base.glow, glowIntensity: 0,
+    };
+  }
 
   private blendMood(target: Mood, dt: number) {
     const k = 1 - Math.exp(-1.6 * dt);

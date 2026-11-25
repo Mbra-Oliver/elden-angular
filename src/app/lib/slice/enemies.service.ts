@@ -9,6 +9,7 @@ import { GameLoopService } from '../services/game-loop.service';
 import { RendererService } from '../services/renderer.service';
 import { ProgressionStore } from './progression.store';
 import { ENEMIES, ENEMY_MOVES, SHOT_LOCK_MS, SPIRIT, type EnemyMoveId } from './slice-content';
+import { PROLOGUE_SPAWNS } from '../prologue/prologue-map';
 import { DUNGEON_WALLS, ENEMY_SPAWNS, MOUNDS, segmentBlocked, type EnemyKind, type Rect } from './slice-map';
 
 export type EnemyState = 'idle' | 'chase' | 'windup' | 'active' | 'recover' | 'hurt' | 'dead' | 'return';
@@ -58,7 +59,8 @@ export class EnemiesService {
   private readonly renderer = inject(RendererService);
   private readonly effects = inject(GroundEffectsService);
 
-  readonly list: Enemy[] = ENEMY_SPAWNS.map((spawn, id) => this.spawn(id, spawn.kind, spawn.x, spawn.y));
+  // Les soldats du Denkyira du prologue (1701) réutilisent les profils pillard et fusilier.
+  readonly list: Enemy[] = [...ENEMY_SPAWNS, ...PROLOGUE_SPAWNS].map((spawn, id) => this.spawn(id, spawn.kind, spawn.x, spawn.y));
   /** Obstacles de tir (murs + portes fermées), fournis par SliceService. */
   walls: () => readonly Rect[] = () => DUNGEON_WALLS;
   /** Rappel quand un ennemi meurt (cauris, message). */

@@ -36,6 +36,8 @@ import { SoulsLoopService, type SoulsPrompt } from './souls-loop.service';
 import { FOYERS, SOULS, type Foyer, type FoyerId } from '../constants/souls-world';
 import { ruinBlocks } from '../constants/landscape';
 import { SLICE_DIALOGUES } from '../slice/slice-content';
+import { PrologueService } from '../prologue/prologue.service';
+import { PROLOGUE_CENTER, PROLOGUE_MOOD } from '../prologue/prologue-map';
 import { AttackData } from '../interfaces/AttackData';
 import { PlayerData } from '../interfaces/PlayerData';
 import { CollisionService } from './collision.service';
@@ -102,10 +104,13 @@ export class GameStateService {
     view.addLayer((scene) => new L.Slice3D(scene, this.slice, this.slice.enemies, this.playerEntity));
     view.addLayer((scene) => new L.Souls3D(scene, () => this.souls.stash()));
     view.addLayer((scene) => new L.AttackTelegraph3D(scene, () => this.threatPose()));
+    view.addLayer((scene) => new L.Prologue3D(scene, () => this.chapter() === 'prologue', (id) => this.prologue.hasRead(id)));
+    view.cameraBlocker = (x, z, y) => this.prologue.blocksCamera(x, z, y);
   }
 
   setWorld3D(view: World3D | null) {
     this.view3d = view;
+    this.prologueView = null;
     view?.setFxSource(this.fx);
     this.playerEntity.setCameraHeading(view?.heading ?? null);
   }
@@ -125,9 +130,12 @@ export class GameStateService {
   private readonly visited = signal(0);
   private readonly dialogueId = signal<string | null>(null);
   private readonly decision = signal<'seal' | 'expose' | null>(null);
-  private readonly chapter = signal<'battle' | 'crossing' | 'village'>('village');
+  private readonly chapter = signal<'prologue' | 'battle' | 'crossing' | 'village'>('village');
+  /** Prologue 1701 : le champ de bataille de Feyiase (lib/prologue). */
+  readonly prologue = inject(PrologueService);
   private readonly inCombat = computed(() => this.chapter() === 'battle' || this.decision() !== null);
   readonly objective = computed(() => {
+    if (this.chapter() === 'prologue') return this.prologue.goal();
     if (this.chapter() === 'battle') return BATTLE;
     if (this.chapter() === 'crossing') return CROSSING;
     return this.decision() ? CLEARING : (VILLAGE_STOPS.at(this.visited()) ?? this.slice.objective() ?? GATE);
@@ -154,9 +162,10 @@ export class GameStateService {
   readonly souls = inject(SoulsLoopService);
   /** Foyer à portée (touche F), hors combat. */
   private readonly restPrompt = signal<SoulsPrompt | null>(null);
-  readonly canTalk = computed(() => (this.near() || !!this.restPrompt()) && !this.dialogue() && !this.decision());
+  readonly canTalk = computed(() => (this.near() || !!this.restPrompt() || !!this.prologue.prompt()) &&
+    !this.dialogue() && !this.decision());
   /** Libellé du bouton d'interaction. */
-  readonly interactLabel = computed(() => this.restPrompt()?.label ?? 'Interagir');
+  readonly interactLabel = computed(() => this.restPrompt()?.label ?? this.prologue.prompt()?.label ?? 'Interagir');
   /** Boss affronté en ce moment (chronomètre des défis), null hors combat. */
   readonly encounter = computed<'ford' | 'sluice' | null>(() =>
     this.chapter() === 'battle' ? 'ford' : this.decision() ? 'sluice' : null);
@@ -168,6 +177,9 @@ export class GameStateService {
   private rushNext: ('ford' | 'sluice')[] = [];
   private rushTransition = 0;
   readonly story = computed(() => {
+    if (this.chapter() === 'prologue') {
+      return 'Prologue, 1701. La guerre de libération contre le Denkyira. Kwadwo Ofori, de l’arrière-garde, est resté en arrière. Suis le sentier laissé par la colonne jusqu’au camp, à l’est. Des soldats du Denkyira rôdent encore parmi les morts.';
+    }
     if (this.chapter() === 'battle') {
       return 'Acte I, 1824. Le Pra est en crue. Kwabena Ofori, de la lignée de Pokou, fait passer les familles de son clan qui fuient la guerre. Kofi Brempong, capitaine asafo, a l’ordre de ne laisser passer personne. Esquive ses charges et frappe quand il reprend son souffle.';
     }
@@ -192,6 +204,10 @@ export class GameStateService {
     const rest = this.restPrompt();
     if (rest) {
       this.rest(rest.foyer);
+      return;
+    }
+    if (this.chapter() === 'prologue') {
+      this.prologue.interact();
       return;
     }
     const gate = this.slice.progression.has('lever') ? 'gate' : 'gate-blocked';
@@ -263,6 +279,7 @@ export class GameStateService {
     if (screen !== 'playing' && screen !== 'paused') return { zone: 'silence' };
     const paused = screen === 'paused';
     const chapter = this.chapter();
+    if (chapter === 'prologue') return { zone: 'depths', paused };
     if (chapter === 'battle') return { zone: 'duel-ford', paused };
     if (chapter === 'crossing') return { zone: 'river', paused };
     if (this.decision()) return { zone: 'duel-sluice', paused };
@@ -354,6 +371,50 @@ export class GameStateService {
     this.gameloop.onUpdate(this.updateCallback);
     this.gameloop.onRender(this.renderCallback);
     this.gameloop.start();
+  }
+
+  /**
+   * Nouvelle partie : prologue de 1701, puis le gué de 1824 (finishPrologue).
+   * Même mise en place que startGame, sans duel ni entrée de boss.
+   */
+  startPrologue() {
+    this.startGame();
+    this.introPending = false;
+    this.introTime = 0;
+    this.enterPrologue();
+    this.prologue.begin();
+    this.prologue.placeAtStart();
+    this.camera.snapTo(this.playerEntity.centerX, this.playerEntity.centerY);
+    this.souls.enterChapter('prologue', 0);
+  }
+
+  private enterPrologue() {
+    this.chapter.set('prologue');
+    this.terrain.setArena(null);
+    this.bossStore.reset();
+    this.bossEntity.configure(false);
+    // Les soldats du Denkyira sont des ennemis de terrain (EnemiesService).
+    this.slice.resetWorld();
+    // L'accroche du gué (1824) attend la fin du prologue.
+    this.slice.hookLine.set(null);
+    this.prologue.resume();
+    this.prologue.equip();
+  }
+
+  private prologueEnding = false;
+
+  /** Arrivée au camp lue : on enchaîne sur l'acte I, accroche du gué comprise. */
+  private finishPrologue() {
+    if (this.prologueEnding) return;
+    this.prologueEnding = true;
+    // Hors de la boucle en cours : startGame la redémarre.
+    setTimeout(() => {
+      this.prologueEnding = false;
+      this.prologue.finished.set(false);
+      this.startGame();
+      this.slice.hookLine.set(0);
+      this.souls.enterChapter('battle', 0);
+    });
   }
 
   stopGame() {
@@ -550,6 +611,11 @@ export class GameStateService {
     if (this.dialogue() || this.uiLock()) return;
     // Accroche d'ouverture et menu du foyer : le monde attend.
     if (this.slice.tickHook(deltaTime) || this.slice.blocking()) return;
+    if (this.chapter() === 'prologue') {
+      this.prologue.update(deltaTime);
+      if (this.prologue.finished()) this.finishPrologue();
+      if (this.prologue.blocking()) return;
+    }
     if (this.rushTransition > 0) {
       this.rushTransition -= deltaTime;
       if (this.rushTransition <= 0) this.enterSluice();
@@ -576,7 +642,8 @@ export class GameStateService {
     }
     const px = this.playerEntity.centerX;
     const py = this.playerEntity.centerY;
-    this.slice.setFieldActive(this.mode() === 'story' && this.chapter() === 'village' && !inCombat);
+    this.slice.setFieldActive(this.mode() === 'story' &&
+      (this.chapter() === 'village' || this.chapter() === 'prologue') && !inCombat);
     this.playerEntity.update(deltaTime, inCombat
       ? { x: this.bossEntity.centerX, y: this.bossEntity.centerY }
       : this.slice.aimTarget());
@@ -634,7 +701,7 @@ export class GameStateService {
       this.checkBossAttack();
       this.checkEndConditions();
     } else {
-      const near = !this.slice.objective() && Math.hypot(target.x - this.playerEntity.centerX, target.y - this.playerEntity.centerY) < 75;
+      const near = this.chapter() !== 'prologue' && !this.slice.objective() && Math.hypot(target.x - this.playerEntity.centerX, target.y - this.playerEntity.centerY) < 75;
       this.near.set(near);
     }
 
@@ -832,7 +899,14 @@ export class GameStateService {
   /** Repos : soin complet, gourdes et flèches, point de retour, sauvegarde. */
   private rest(foyer: Foyer) {
     const first = this.souls.rest(foyer.id, this.chapter(), this.visited());
-    if (foyer.id !== 'gue') this.slice.onRest(foyer.id);
+    if (foyer.id === 'kyidom' || foyer.id === 'tambours') {
+      // Feux du prologue : les soldats du Denkyira reviennent, pas de menu de niveaux.
+      this.slice.enemies.respawnAll();
+      this.arrows.reset();
+      this.prologue.onRest();
+    } else if (foyer.id !== 'gue') {
+      this.slice.onRest(foyer.id);
+    }
     const data = this.playerStore.getData();
     this.playerStore.update({ hp: data.maxHp, stamina: data.maxStamina });
     this.equipment.refill();
@@ -861,6 +935,11 @@ export class GameStateService {
     // Pas de nouvelle entrée cinématique à chaque retour.
     this.introPending = false;
     this.introTime = 0;
+    if (chapter === 'prologue') {
+      this.enterPrologue();
+      this.placeAtFoyer(foyer.id);
+      return;
+    }
     if (chapter === 'battle') return;
     this.chapter.set(chapter);
     this.visited.set(visited);
@@ -920,6 +999,8 @@ export class GameStateService {
     }
   }
 
+  private prologueView: boolean | null = null;
+
   private render3D(view: World3D, combat: boolean, duelist: boolean) {
     const player = this.playerStore.getData();
     const boss = this.bossStore.getData();
@@ -949,7 +1030,15 @@ export class GameStateService {
     };
     // Acte I (gué, 1824) : Kwabena ; acte II (village, 1874) : Ama Serwaa.
     view.setHero(this.chapter() === 'village' ? 'ama' : 'kwabena');
-    view.setEquipment(this.equipment.getData().weapon, this.arrows.all, this.slice.look());
+    // Prologue 1701 : Kwadwo porte le batakari de guerre à talismans.
+    const prologue = this.chapter() === 'prologue';
+    const look = this.slice.look();
+    view.setEquipment(this.equipment.getData().weapon, this.arrows.all, prologue ? { ...look, batakari: true } : look);
+    if (prologue !== this.prologueView) {
+      this.prologueView = prologue;
+      view.setRegionMood(prologue ? PROLOGUE_MOOD : null);
+      view.setLandscapeCenter(prologue ? PROLOGUE_CENTER.x : 1200, prologue ? PROLOGUE_CENTER.y : 800);
+    }
     const waves = boss.state !== 'attacking' ? []
       : boss.currentAttack === 'surge' ? [surgeRadius(BOSS_CONFIG.size, boss.stateTimer)]
       : boss.currentAttack === 'tide' ? tideRadii(BOSS_CONFIG.size, boss.stateTimer) : [];

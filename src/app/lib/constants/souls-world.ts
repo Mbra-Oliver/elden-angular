@@ -1,5 +1,6 @@
 import type { DestructibleKind } from './destructibles.config-constant';
 import { REST_POINTS, type RestId } from '../slice/slice-map';
+import { PROLOGUE_FOYERS } from '../prologue/prologue-map';
 
 /**
  * Boucle soulslike : foyers (repos + sauvegarde) et cauris perdus à la mort.
@@ -10,8 +11,8 @@ import { REST_POINTS, type RestId } from '../slice/slice-map';
  * siècle : ce sont eux qu'Ama ramasse dans les jarres et sur les vaincus.
  */
 
-export type FoyerId = 'gue' | RestId;
-export type Chapter = 'battle' | 'crossing' | 'village';
+export type FoyerId = 'gue' | RestId | keyof typeof PROLOGUE_FOYERS;
+export type Chapter = 'prologue' | 'battle' | 'crossing' | 'village';
 
 export interface Foyer {
   id: FoyerId;
@@ -30,10 +31,13 @@ export const FOYERS: Record<FoyerId, Foyer> = {
   gue: { id: 'gue', name: 'Foyer du gué', x: 512, y: 296 },
   goli: { id: 'goli', name: 'Foyer du Goli', x: REST_POINTS.goli.x, y: REST_POINTS.goli.y },
   digue: { id: 'digue', name: 'Foyer de la digue', x: REST_POINTS.digue.x, y: REST_POINTS.digue.y },
+  // Prologue 1701 (prologue-map.ts) : feux laissés par la colonne.
+  kyidom: { id: 'kyidom', ...PROLOGUE_FOYERS.kyidom },
+  tambours: { id: 'tambours', ...PROLOGUE_FOYERS.tambours },
 };
 
 /** Foyer où l'on revient pour chaque chapitre tant qu'aucun autre n'a servi. */
-export const CHAPTER_FOYER: Record<Chapter, FoyerId> = { battle: 'gue', crossing: 'gue', village: 'goli' };
+export const CHAPTER_FOYER: Record<Chapter, FoyerId> = { prologue: 'kyidom', battle: 'gue', crossing: 'gue', village: 'goli' };
 
 export const SOULS = {
   /** Distance pour se reposer au foyer. */

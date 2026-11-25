@@ -1,0 +1,16 @@
+@if (prologue.line() !== null) {
+  <section class="lines" aria-live="polite" (click)="prologue.skipLine()">
+    @for (text of prologue.lines(); track $index) {
+      <p [class.shown]="$index <= prologue.line()!">{{ text }}</p>
+    }
+    <small>Espace pour passer</small>
+  </section>
+}
+@if (prologue.reading(); as item) {
+  <aside class="reading" aria-live="polite">
+    <strong>{{ item.title }}</strong>
+    @if (item.gives?.arrows; as arrows) { <em>+{{ arrows }} flèches</em> }
+    @if (item.gives?.bandji; as bandji) { <em>+{{ bandji }} gourde de Bandji</em> }
+    <p>{{ item.text }}</p>
+  </aside>
+}

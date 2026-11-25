@@ -1,5 +1,5 @@
 <div class="stage">
-  <div #viewport class="game-viewport"><app-combat-hud /><app-social-hud /><app-slice-hud /></div>
+  <div #viewport class="game-viewport"><app-combat-hud /><app-social-hud /><app-slice-hud /><app-prologue-hud /></div>
   @if (engineStatus() === 'loading') {
     <p class="engine-message" role="status">Chargement du terrain…</p>
   } @else if (engineStatus() === 'failed') {

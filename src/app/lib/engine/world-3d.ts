@@ -3,7 +3,7 @@ import { HUTS, ROCKS, TREES, WATER } from '../constants/scenery';
 import { VIEWPORT, WORLD } from '../constants/terrain-constant';
 import { CROSSING, GATE, VILLAGE_STOPS } from '../constants/village';
 import type { DuelArena } from './duel-fog';
-import { ArenaDressing } from './arena-3d';
+import { ArenaDressing, type RegionMood } from './arena-3d';
 import { GuardianRig, animateDuelist } from './boss-rig-3d';
 import { BossFx } from './boss-fx-3d';
 import { CombatFeel3D } from './combat-feel-3d';
@@ -23,6 +23,7 @@ import { addOutlines, AttackTelegraph3D } from './attack-readability-3d';
 import { Destructibles3D } from './destructibles-3d';
 import { Souls3D } from './souls-3d';
 import { Slice3D } from '../slice/slice-3d';
+import { Prologue3D } from '../prologue/prologue-3d';
 import type { WeaponId } from '../constants/equipment.config-constant';
 
 interface Point { x: number; y: number }
@@ -72,7 +73,7 @@ interface Fighter extends HumanoidRig {
  * Couches 3D pilotées par GameStateService. Réexportées ici pour rester dans
  * le chunk paresseux de world-3d (avec three.js) au lieu du bundle initial.
  */
-export const GameLayers3D = { Destructibles3D, Slice3D, Souls3D, AttackTelegraph3D };
+export const GameLayers3D = { Destructibles3D, Slice3D, Souls3D, AttackTelegraph3D, Prologue3D };
 
 export class World3D {
   private readonly renderer: T.WebGLRenderer;
@@ -120,6 +121,15 @@ export class World3D {
   private targetYaw = Math.PI / 2;
   private dragging?: Point;
   private pitch = 0;
+  /** Secondes depuis le dernier geste de caméra (souris, stick droit). */
+  private manualLook = 99;
+  /** Recentrage derrière le héros demandé (Q / clic du stick droit). */
+  private recenter = false;
+  /**
+   * Obstacles qui raccourcissent le bras de caméra en plus des cases
+   * (troncs et feuillage du prologue), en coordonnées monde (x, z, hauteur).
+   */
+  cameraBlocker: ((x: number, z: number, y: number) => boolean) | null = null;
   private readonly controller = new AbortController();
   private readonly mistTexture: T.CanvasTexture;
   private readonly mistMaterial: T.SpriteMaterial;
@@ -162,11 +172,17 @@ export class World3D {
       if (!this.arena) {
         this.orbit -= (event.clientX - this.dragging.x) * 0.008;
         this.pitch = T.MathUtils.clamp(this.pitch + (event.clientY - this.dragging.y) * 0.34, -24, 40);
+        this.manualLook = 0;
+        this.recenter = false;
       }
       this.dragging = { x: event.clientX, y: event.clientY };
     }, { signal });
     const endDrag = () => { this.dragging = undefined; };
     canvas.addEventListener('lostpointercapture', endDrag, { signal });
+    // Q (A en AZERTY) : la caméra revient derrière le héros, comme le verrouillage sans cible.
+    window.addEventListener('keydown', (event) => {
+      if (event.code === 'KeyQ' && !event.repeat) this.recenter = true;
+    }, { signal });
 
     this.scene.fog = new T.FogExp2('#93866e', 0.0021);
     this.scene.add(new T.HemisphereLight('#ffdfb0', '#576962', 2.05));
@@ -655,6 +671,7 @@ export class World3D {
       this.orbit = Math.atan2(player.facingX, player.facingY);
       this.targetYaw = this.orbit;
     } else {
+      this.followHero(player, dt);
       this.targetYaw = this.orbit;
     }
     const distance = enemy ? Math.hypot(enemy.x - player.x, enemy.y - player.y) : 0;
@@ -688,7 +705,7 @@ export class World3D {
       const y = T.MathUtils.lerp(33, this.cameraGoal.y, fraction);
       const z = T.MathUtils.lerp(player.y, this.cameraGoal.z, fraction);
       if (HUTS.some(([hx, hz, radius]) => y < 49 &&
-          (x - hx) ** 2 + (z - hz - 5) ** 2 < (radius * 0.9) ** 2)) {
+          (x - hx) ** 2 + (z - hz - 5) ** 2 < (radius * 0.9) ** 2) || this.cameraBlocker?.(x, z, y)) {
         this.cameraGoal.lerp(this.cameraArmBase, 1 - Math.max(0.18, fraction - 0.1));
         break;
       }
@@ -707,6 +724,61 @@ export class World3D {
     this.camera.lookAt(this.cameraLook);
     this.cine.blend(this.camera, this.cameraLook);
     this.initialized = true;
+  }
+
+  /**
+   * Caméra d'exploration façon soulslike : épaule droite, derrière le héros.
+   * La souris (glisser) ou le stick droit tournent librement ; un peu après
+   * le dernier geste, la caméra se replace d'elle-même dans le dos du héros
+   * quand il avance (lentement s'il court de côté, jamais s'il revient vers
+   * l'objectif). Q ou le clic du stick droit la recentrent tout de suite.
+   * [SUPPOSITION] vitesses et délais à régler en jeu.
+   */
+  private followHero(player: Actor3D, dt: number) {
+    this.manualLook += dt;
+    this.padLook(dt);
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    const behind = Math.atan2(player.facingX, player.facingY);
+    const gap = wrap(behind - this.orbit);
+    if (this.recenter) {
+      this.orbit += gap * (1 - Math.exp(-11 * dt));
+      this.pitch += (0 - this.pitch) * (1 - Math.exp(-8 * dt));
+      if (Math.abs(gap) < 0.03) this.recenter = false;
+      return;
+    }
+    if (this.manualLook < 0.9 || player.state !== 'moving') return;
+    // Course vers la caméra : on garde le cadre (pas de demi-tour brutal).
+    if (Math.abs(gap) > 2.1) return;
+    const forward = Math.max(0, Math.cos(gap));
+    const rate = (player.sprint ? 2.2 : 1.5) * (0.12 + 0.88 * forward);
+    this.orbit += gap * (1 - Math.exp(-rate * dt));
+  }
+
+  /** Stick droit de la manette : orbite et hauteur ; clic (RS) pour recentrer. */
+  private padLook(dt: number) {
+    if (typeof navigator === 'undefined' || typeof navigator.getGamepads !== 'function') return;
+    const pad = [...navigator.getGamepads()].find((p) => p?.connected);
+    if (!pad) return;
+    const dead = (v: number) => Math.abs(v) < 0.18 ? 0 : (v - Math.sign(v) * 0.18) / 0.82;
+    const lx = dead(pad.axes[2] ?? 0);
+    const ly = dead(pad.axes[3] ?? 0);
+    if (lx || ly) {
+      this.orbit -= lx * 2.6 * dt;
+      this.pitch = T.MathUtils.clamp(this.pitch + ly * 60 * dt, -24, 40);
+      this.manualLook = 0;
+      this.recenter = false;
+    }
+    if (pad.buttons[11]?.pressed) this.recenter = true;
+  }
+
+  /** Ambiance d'une carte hors arène (prologue) ; null : ambiance de base. */
+  setRegionMood(mood: RegionMood | null) {
+    this.arenaDressing.setRegionMood(mood);
+  }
+
+  /** Centre autour duquel les collines lointaines glissent (carte en cours). */
+  setLandscapeCenter(x: number, z: number) {
+    this.landscape.center.set(x, z);
   }
 
   /** Arme en main et flèches (en vol ou au sol), mises à jour avant render(). */

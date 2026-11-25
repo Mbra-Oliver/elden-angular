@@ -44,7 +44,8 @@ export class MainMenuComponent {
     // Nouvelle partie : progression de la tranche remise à zéro, accroche de 30 s.
     this.slice.newGame();
     this.gameState.souls.newGame();
-    this.gameState.startGame();
+    // Prologue de 1701 (Feyiase), puis l'acte I au gué du Pra.
+    this.gameState.startPrologue();
   }
 
   /** Reprend au dernier foyer (cauris, tache, progression de la tranche). */

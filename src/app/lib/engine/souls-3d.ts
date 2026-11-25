@@ -66,6 +66,11 @@ export class Souls3D {
     scene.add(this.root);
   }
 
+  /** Colonne de cauris cachée tant qu'aucune tache n'existe : précompilée par World3D.warmUp. */
+  get warmables(): T.Object3D[] {
+    return [this.beacon];
+  }
+
   update(dt: number) {
     this.time += dt;
     const t = this.time;
