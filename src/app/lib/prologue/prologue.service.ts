@@ -15,7 +15,7 @@ import {
 export const PROLOGUE_INTRO: readonly string[] = [
   'Chapitre 1 · La crête de Feyiase',
   'Feyiase, 1701. Les Asante d’Osei Tutu se lèvent contre le Denkyira, à qui ils payaient tribut depuis des décennies.',
-  'Kwadwo Ofori, guerrier de l’arrière-garde. Sa sœur portera la lignée dont naîtra un jour Abla Pokou.',
+  'Kwadwo Ofori, guerrier de l’arrière-garde, n’a plus que sa lance. Sa sœur portera la lignée dont naîtra un jour Abla Pokou.',
   'Une décharge de plomb l’a jeté dans la boue. Quand il rouvre les yeux, la colonne est passée.',
   'Devant lui brûle l’autel de mémoire. À l’est, sur la crête, les feux du campement.',
 ];
@@ -35,8 +35,10 @@ export const PROLOGUE_OUTRO: readonly string[] = [
   'Fin du chapitre 1.',
 ]
 
-/** Taille du carquois au réveil : quelques flèches seulement. [SUPPOSITION] */
+/** Taille du carquois quand l'arc est trouvé. [SUPPOSITION] */
 const START_ARROWS = 6;
+/** Gourdes de Bandji transmises par le blessé. [SUPPOSITION] */
+const BANDJI_GIFT = 3;
 const LINE_SECONDS = 4.6;
 
 /**
@@ -63,6 +65,14 @@ export class PrologueService {
   readonly kaolin = signal<{ owned: boolean; left: number }>({ owned: false, left: 0 });
   /** Le tronc du raccourci est poussé : pont vers l'autel de départ. */
   bridged = false;
+  /** Le blessé a transmis sa gourde de Bandji (sans lui, pas de soin). */
+  bandjiGiven = false;
+  /** L'arc de l'archer tombé a été ramassé. */
+  bowFound = false;
+  /** Kwadwo a bu du Bandji pendant le chapitre (trophée « L'Éternel » perdu). */
+  healed = false;
+  /** Nombre d'entrées dans le duel contre Badu (trophée du premier coup). */
+  duelTries = 0;
   /** Carte de lecture ouverte après F. */
   readonly reading = signal<Remains | null>(null);
   /** Arrivée au camp et fin lue : la partie passe à 1824. */
@@ -116,6 +126,10 @@ export class PrologueService {
   begin() {
     this.read.clear();
     this.bridged = false;
+    this.bandjiGiven = false;
+    this.bowFound = false;
+    this.healed = false;
+    this.duelTries = 0;
     this.hinted = false;
     this.hint.set(null);
     this.kaolin.set({ owned: false, left: 0 });
@@ -140,10 +154,11 @@ export class PrologueService {
 
   /** Équipement d'un soldat de 1701 : afena, lance, arc et quelques flèches, Bandji. */
   equip() {
-    // Afena ébréchée en main, la lance en réserve, l'arc et quelques flèches.
-    this.equipment.setOwned(['afena', 'spear', 'bow']);
-    this.equipment.setWeapon('afena');
+    // Rien que sa lance : l'arc se trouve sur un archer tombé, le Bandji auprès du blessé.
+    this.equipment.setOwned(this.bowFound ? ['spear', 'bow'] : ['spear']);
+    this.equipment.setWeapon('spear');
     this.equipment.setMaxArrows(START_ARROWS);
+    this.equipment.setMaxBandji(this.bandjiGiven ? BANDJI_GIFT : 0);
     this.equipment.refill();
   }
 
@@ -252,7 +267,16 @@ export class PrologueService {
     const target = prompt.remains!;
     if (!this.read.has(target.id)) {
       this.read.add(target.id);
+      if (target.gives?.bow) {
+        this.bowFound = true;
+        this.equipment.setOwned(['spear', 'bow']);
+      }
       if (target.gives?.arrows) this.equipment.addArrows(target.gives.arrows);
+      if (target.gives?.bandjiGift) {
+        this.bandjiGiven = true;
+        this.equipment.setMaxBandji(BANDJI_GIFT);
+        this.equipment.addBandji(BANDJI_GIFT);
+      }
       if (target.gives?.bandji) this.equipment.addBandji(target.gives.bandji);
       if (target.gives?.kaolin) {
         this.kaolin.set({ owned: true, left: 0 });

@@ -51,6 +51,7 @@ import { CombatFxService, type ImpactMaterial, type StrikeStyle } from './combat
 import { MusicCue, MusicDirectorService } from '../audio/music-director.service';
 import { AudioEngineService } from '../audio/audio-engine.service';
 import { BaduSfx } from '../audio/badu-sfx';
+import { TrophyService } from '../trophies/trophy.service';
 
 export interface CombatHud {
   /** Cinématique en cours : le HUD de combat est masqué. */
@@ -486,6 +487,7 @@ export class GameStateService {
   /** Le héros arrive sur la crête : entrée du porte-hache, arène fermée. */
   private startPrologueDuel() {
     this.prologueDuel.set(true);
+    this.prologue.duelTries++;
     this.terrain.setArena(PROLOGUE_DUEL);
     this.bossStore.reset();
     this.bossEntity.configure('champion');
@@ -843,6 +845,10 @@ export class GameStateService {
     // Accroche d'ouverture et menu du foyer : le monde attend.
     if (this.slice.tickHook(deltaTime) || this.slice.blocking()) return;
     if (this.chapter() === 'prologue') {
+      // Une gorgée de Bandji : le trophée « L'Éternel » est perdu pour ce chapitre.
+      const bandji = this.equipment.getData().bandji;
+      if (bandji < this.lastBandji && this.playerStore.getData().state === 'drinking') this.prologue.healed = true;
+      this.lastBandji = bandji;
       this.prologue.update(deltaTime);
       if (this.prologue.finished()) this.finishPrologue();
       if (this.prologue.blocking()) return;
@@ -1315,6 +1321,9 @@ export class GameStateService {
     this.lockedId = null;
   }
 
+  readonly trophies = inject(TrophyService);
+  private lastBandji = 0;
+
   /** Dernier coup reçu (cause affichée à la mort). */
   private lastHitBy = '';
 
@@ -1435,7 +1444,9 @@ export class GameStateService {
         this.prologue.championSpot = { x: this.bossEntity.centerX, y: this.bossEntity.centerY,
           yaw: Math.atan2(fallen.facingX, fallen.facingY) };
         this.terrain.setArena(null);
-        // Fin du chapitre 1 : texte sur fond sombre, puis l'acte suivant.
+        // Trophées du chapitre 1, puis texte sur fond sombre et l'acte suivant.
+        if (!this.prologue.healed) this.trophies.unlock('eternel');
+        if (this.prologue.duelTries === 1) this.trophies.unlock('premier-coup');
         this.prologue.startOutro();
       } else if (this.chapter() === 'battle') {
         this.terrain.setArena(null);

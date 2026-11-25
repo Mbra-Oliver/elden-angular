@@ -136,7 +136,7 @@ export interface Remains extends Spot {
   title: string;
   text: string;
   /** Ce que l'on ramasse, s'il y a quelque chose. */
-  gives?: { arrows?: number; bandji?: number; kaolin?: boolean };
+  gives?: { arrows?: number; bandji?: number; kaolin?: boolean; bow?: boolean; bandjiGift?: boolean };
   /** Parole d'un personnage (affichée comme une réplique). */
   speaker?: string;
 }
@@ -165,8 +165,8 @@ export const REMAINS: readonly Remains[] = [
   {
     id: 'archer', x: 4125, y: 930, label: 'Fouiller le carquois',
     title: 'Carquois d’un archer',
-    text: 'Un archer de ta compagnie, tombé sur son arc. Quelqu’un est déjà passé fouiller les morts. Il reste quatre flèches dans le carquois.',
-    gives: { arrows: 4 },
+    text: 'Un archer de ta compagnie, tombé sur son arc. Quelqu’un est déjà passé fouiller les morts, mais l’arc est intact et il reste quatre flèches dans le carquois.',
+    gives: { bow: true, arrows: 4 },
   },
   {
     id: 'ruisseau', x: 4245, y: 845, label: 'Regarder le ruisseau',
@@ -190,17 +190,16 @@ export const REMAINS: readonly Remains[] = [
     text: 'Talisman portant le sceau de Ntim Gyakari. Pendant des décennies, l’or, les récoltes et les fils du royaume furent livrés en tribut au Denkyira. Ce soir, le tribut se paie par le sang.',
   },
   {
-    id: 'tambourinaire', x: 5012, y: 618, label: 'Parler au tambourinaire',
-    title: 'Le tambourinaire mourant',
+    id: 'tambourinaire', x: 5012, y: 618, label: 'S’approcher du blessé',
+    title: 'Le tambourinaire agonisant',
     speaker: 'Le tambourinaire',
-    text: '« Ofori… tu es vivant. La colonne principale a percé vers l’est… Ntim Gyakari est encerclé. Mais son porte-hache, Badu Ofosu, refuse de plier. Il tient la crête avec son mousquet et sa hache… Ne te laisse pas abuser par sa lenteur. Il frappe comme la foudre. » Il te tend une poudre de kaolin, puis ferme les yeux.',
-    gives: { kaolin: true },
+    text: '« Ofori… tu es vivant. Ils nous attendaient ici : la plupart des leurs étaient embusqués dans la gorge, et ils nous ont taillés en pièces avant de tomber à leur tour. La guerre est presque gagnée. Le Denkyira a fui, et les nôtres ont tous suivi Osei Tutu vers l’est. Moi, je n’irai pas plus loin. Prends ma gourde : c’est du Bandji, il te rendra des forces. Et cette poudre de kaolin pour ta lame. Sur la crête, le porte-hache de Ntim Gyakari refuse de plier… Il frappe comme la foudre. » Il ferme les yeux.',
+    gives: { kaolin: true, bandjiGift: true },
   },
   {
-    id: 'gourde', x: 4885, y: 615, label: 'Ramasser la gourde',
-    title: 'Gourde de vin de palme',
-    text: 'Bouchée de feuilles, encore pleine. Un porteur l’a laissée tomber en courant derrière les soldats.',
-    gives: { bandji: 1 },
+    id: 'gourde', x: 4885, y: 615, label: 'Examiner la gourde',
+    title: 'Gourde percée',
+    text: 'Une gourde de porteur, percée d’une balle. Le vin de palme a coulé dans la boue. Rien à boire ici.',
   },
   {
     id: 'tambours', x: 5165, y: 445, label: 'Examiner les tambours',

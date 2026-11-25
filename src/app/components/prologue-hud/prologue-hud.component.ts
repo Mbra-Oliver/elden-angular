@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, HostListener, computed, inject, signal } from '@angular/core';
 import { PrologueService } from '../../lib/prologue/prologue.service';
+import { TrophyService } from '../../lib/trophies/trophy.service';
 import { KeyHintComponent, SkipHintComponent } from '../key-hint/key-hint.component';
 
 /**
@@ -15,6 +16,7 @@ import { KeyHintComponent, SkipHintComponent } from '../key-hint/key-hint.compon
 })
 export class PrologueHudComponent {
   readonly prologue = inject(PrologueService);
+  readonly trophies = inject(TrophyService);
   /** Vrai une fois que le texte d'ouverture a été montré (pour le fondu). */
   private readonly seenLines = signal(false);
   readonly opened = computed(() => {

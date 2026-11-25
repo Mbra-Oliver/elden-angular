@@ -15,7 +15,7 @@
     <app-key-hint action="heavy" /> Frappe lourde · <app-key-hint action="lock" /> Verrouiller
   </p>
 }
-@if (prologue.kaolin(); as k) {
+@if (prologue.line() === null && prologue.kaolin(); as k) {
   @if (k.left > 0) {
     <p class="kaolin" role="status">Kaolin sur la lame · {{ ceil(k.left) }} s</p>
   } @else if (k.owned) {
@@ -31,5 +31,12 @@
     @if (item.gives?.bandji; as bandji) { <em>+{{ bandji }} gourde de soin</em> }
     @if (item.gives?.kaolin) { <em>Poudre de kaolin : <app-key-hint action="kaolin" /> enduire la lame (30 s)</em> }
     <p [class.speech]="!!item.speaker">{{ item.text }}</p>
+  </aside>
+}
+@if (trophies.toast(); as trophy) {
+  <aside class="trophy" role="status">
+    <small>Trophée obtenu</small>
+    <strong>{{ trophy.name }}</strong>
+    <p>{{ trophy.description }}</p>
   </aside>
 }
