@@ -12,6 +12,7 @@ import { FORD_DUEL } from '../engine/duel-fog';
 import { CameraService } from '../engine/camera.service';
 import { VIEWPORT } from '../constants/terrain-constant';
 import { PLAYER_CONFIG } from '../constants/player.config-constant';
+import { ProgressionStore } from '../slice/progression.store';
 
 describe('GameStateService', () => {
   let game: GameStateService;
@@ -67,11 +68,16 @@ describe('GameStateService', () => {
     choose(1);
     choose(0);
     choose(0);
+    // L'expédition de la tranche jouable (plaine, chambres, levier) est
+    // testée à part : on la considère faite pour atteindre le choix de la vanne.
+    const progression = TestBed.inject(ProgressionStore);
+    progression.setFlag('metYao');
+    progression.setFlag('lever');
     visit(GATE);
     game.talk();
   };
 
-  it('locks movement into the fog ring and releases it when Kwadwo gives up', () => {
+  it('locks movement into the fog ring and releases it when Kofi gives up', () => {
     const terrain = TestBed.inject(TerrainCollisionService);
     const { x, y, radius } = FORD_DUEL;
     const stopped = terrain.move(x, y, x + radius + 55, y, 10);
@@ -83,7 +89,7 @@ describe('GameStateService', () => {
     expect(open.x).toBeGreaterThan(stopped.x + 10);
   });
 
-  it('makes light spam ineffective against Kwadwo but rewards recovery hits', () => {
+  it('makes light spam ineffective against Kofi but rewards recovery hits', () => {
     const entity = TestBed.inject(BossEntity);
     const initial = boss.getData().hp;
     for (let hit = 0; hit < 4; hit++) entity.takeDamage(10, 150, 0);
@@ -108,7 +114,8 @@ describe('GameStateService', () => {
     game.update(1 / 60);
     expect(game.currentScreen()).toBe('victory');
 
-    game.retry();
+    // retry() relance depuis le dernier foyer (boucle soulslike) : nouvelle partie ici.
+    game.startGame();
     expect(game.objective()).toBe(BATTLE);
     finishPrologue();
     reachGate();
@@ -141,7 +148,7 @@ describe('GameStateService', () => {
     expect(boss.getData().hp).toBeLessThan(225);
   });
 
-  it('lets the Veille hold its ground during a surge and exposes it during recovery', () => {
+  it('lets the Guardian hold its ground during a surge and exposes it during recovery', () => {
     finishPrologue();
     reachGate();
     choose(1);

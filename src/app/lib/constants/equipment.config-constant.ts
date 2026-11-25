@@ -1,6 +1,6 @@
 import { AttackData } from '../interfaces/AttackData';
 
-export type WeaponId = 'spear' | 'bow';
+export type WeaponId = 'spear' | 'bow' | 'afena';
 
 export interface WeaponInfo {
   id: WeaponId;
@@ -14,6 +14,11 @@ export const WEAPONS: Record<WeaponId, WeaponInfo> = {
     id: 'spear',
     name: 'Lance',
     description: 'Corps à corps : combo rapide (Espace) et coup lourd (E).',
+  },
+  afena: {
+    id: 'afena',
+    name: 'Afena',
+    description: 'Épée courte : combo plus rapide, moins d’allonge. Trouvée dans les chambres de la digue.',
   },
   bow: {
     id: 'bow',

@@ -6,8 +6,38 @@
         <div class="death-text">{{ gameService.currentScreen() === 'victory' ? 'L’EAU REVIENT' : 'TU ES TOMBÉ' }}</div>
       </div>
 
+      @if (gameService.currentScreen() === 'death' && gameService.deathNote(); as note) {
+        <p class="epilogue">{{ note }}</p>
+      }
       @if (gameService.currentScreen() === 'victory') {
-        <p class="epilogue">{{ gameService.ending() }}</p>
+        @if (gameService.mode() === 'story') {
+          <p class="epilogue">{{ gameService.ending() }}</p>
+        } @else if (gameService.mode() === 'rush') {
+          <p class="epilogue">Boss Rush terminé en {{ formatTime(challenge.rushTotal()) }}.</p>
+        } @else {
+          @let target = challenge.target();
+          @let last = challenge.results().at(-1);
+          @if (target && last) {
+            <p class="epilogue">{{ beats(last, target) ? 'Défi relevé !' : 'Défi manqué.' }}
+              Objectif : {{ formatTime(target.time) }} · toi : {{ formatTime(last.time) }}.</p>
+          }
+        }
+        @if (challenge.results().length) {
+          <ul class="results" aria-label="Défis à partager">
+            @for (result of challenge.results(); track $index) {
+              <li>
+                <span>{{ describe(result) }}</span>
+                <button type="button" (click)="challenge.share(result)">Partager le défi</button>
+              </li>
+            }
+          </ul>
+          @if (challenge.copied(); as url) {
+            <p class="copied">Lien copié : <input readonly [value]="url" (focus)="$any($event.target).select()" aria-label="Lien du défi"></p>
+          }
+        }
+        @if (gameService.mode() === 'story' && challenge.rushUnlocked()) {
+          <p class="unlock">Boss Rush débloqué dans le menu principal.</p>
+        }
       }
       <nav class="death-options">
         @for (item of menusItems; track item.label; let i = $index) {

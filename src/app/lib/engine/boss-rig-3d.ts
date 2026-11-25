@@ -1,5 +1,6 @@
 import * as T from 'three';
 import type { Actor3D } from './world-3d';
+import { TripodGait } from './gait';
 
 /**
  * Animations de combat des boss en 3D.
@@ -242,6 +243,10 @@ export class GuardianRig {
   private readonly body = new T.Group();
   private readonly lid = new T.Group();
   private readonly legs: T.Group[] = [];
+  /** Pieds plantés au sol, marche en trépied alterné (voir gait.ts). */
+  private tripod?: TripodGait;
+  private lastNow = 0;
+  private readonly knots: T.Mesh[] = [];
   private readonly pincers: { arm: T.Group; jaw: T.Group; side: number }[] = [];
   private readonly coreMaterial: T.MeshStandardMaterial;
   private readonly shellMaterial: T.MeshStandardMaterial;
@@ -263,6 +268,21 @@ export class GuardianRig {
     // Plaque dorsale séparée : elle se soulève quand la carapace s'ouvre.
     this.lid.position.set(0, 6, 14); // charnière à l'avant : la plaque se relève vers l'arrière
     this.body.add(this.lid);
+    // Corde d'Ampem et ses trois nœuds (motif inspiré du mpatapo, le nœud de la
+    // réconciliation) : un nœud se défait à chaque phase, le dernier à la libération.
+    const brass = new T.MeshStandardMaterial({ color: '#9C7A3C', metalness: 0.6, roughness: 0.45, flatShading: true });
+    const rope = new T.Mesh(new T.TorusGeometry(19, 0.9, 5, 28), brass);
+    rope.rotation.x = Math.PI / 2;
+    rope.scale.set(1, 1.25, 1);
+    rope.position.y = 1;
+    this.body.add(rope);
+    for (let i = 0; i < 3; i++) {
+      const angle = Math.PI * (0.65 + i * 0.35);
+      const knot = new T.Mesh(new T.TorusKnotGeometry(2.2, 0.7, 24, 4, 2, 3), brass);
+      knot.position.set(Math.cos(angle) * 19, 1.5, Math.sin(angle) * 23.75);
+      this.body.add(knot);
+      this.knots.push(knot);
+    }
     const plate = new T.Mesh(new T.IcosahedronGeometry(17, 1), this.shellMaterial);
     plate.position.set(0, 2, -15);
     plate.scale.set(0.95, 0.42, 1.1);
@@ -320,6 +340,11 @@ export class GuardianRig {
     this.aura.rotation.x = -Math.PI / 2;
     this.aura.position.y = 0.6;
     this.root.add(this.aura);
+  }
+
+  /** Corps porté par les pattes : reçoit le sursaut quand le Gardien est touché. */
+  get torso(): T.Object3D {
+    return this.body;
   }
 
   update(pose: Actor3D, now: number) {
@@ -414,12 +439,25 @@ export class GuardianRig {
     // Orientation : suit le regard, sauf pendant le tourbillon qui ajoute un tour complet.
     const facing = Math.atan2(pose.facingX, pose.facingY);
     this.root.rotation.y = facing + twist;
-    this.body.position.y = 10 + lift;
-    this.body.rotation.set(pitch, 0, roll);
+    // Pattes : chaque pied reste planté et le groupe en trépied fait un pas
+    // quand il traîne trop loin (aussi en tournant sur place). Pendant les
+    // armements et la carapace ouverte, les pattes restent ancrées.
+    this.tripod ??= new TripodGait(this.legs.map((leg, i) => ({
+      x: leg.position.x, z: leg.position.z, side: i < 3 ? -1 : 1,
+    })));
+    const dt = this.lastNow ? Math.min(0.05, (now - this.lastNow) / 1000) : 0;
+    this.lastNow = now;
+    const anchored = (pose.state === 'windup' && attack !== 'charge') || pose.state === 'shift' ||
+      (pose.state === 'recover' && !!pose.exposed);
+    this.tripod.update(pose.x, pose.y, this.root.rotation.y, dt, anchored);
+    // legSwing ne sert plus qu'à un frémissement des pattes (plus vif à la charge).
+    this.body.position.y = 10 + lift + this.tripod.bob * 1.4;
+    this.body.rotation.set(pitch, 0, roll + this.tripod.roll);
     this.lid.rotation.x = -lid;
     this.legs.forEach((leg, i) => {
-      leg.rotation.y = Math.sin(now * 0.022 + i * 2.3) * legSwing;
-      leg.rotation.z = (i < 3 ? -1 : 1) * (pose.state === 'recover' && pose.exposed ? 0.35 : 0);
+      const side = i < 3 ? -1 : 1;
+      leg.rotation.y = this.tripod!.yaw[i] + Math.sin(now * 0.022 + i * 2.3) * legSwing * 0.12;
+      leg.rotation.z = side * ((pose.state === 'recover' && pose.exposed ? 0.35 : 0) + 0.5 * this.tripod!.lift[i]);
     });
     for (const { arm, jaw: jawGroup, side } of this.pincers) {
       const snap = side < 0 ? snapLeft : snapRight;
@@ -433,6 +471,15 @@ export class GuardianRig {
     this.coreMaterial.emissive.set(core.emissive);
     this.coreMaterial.emissiveIntensity = glow;
     this.shellMaterial.emissive.set(phase === 3 ? '#16303a' : '#000000');
+    // Nœuds défaits : un par phase passée ; pendant la transition, le nœud qui cède tremble puis tombe.
+    this.knots.forEach((knot, i) => {
+      const undone = i < phase - 1;
+      const loosening = pose.state === 'shift' && i === phase - 2;
+      knot.visible = !undone || (loosening && k < 0.5);
+      const loose = loosening ? k * 2 : 0;
+      knot.scale.setScalar(1 + loose * 0.6);
+      knot.rotation.z = loose * 2 + Math.sin(now * 0.003 + i) * 0.1;
+    });
 
     const auraStrength = pose.state === 'shift' ? Math.sin(k * Math.PI) : phase === 3 ? 0.15 : 0;
     this.aura.material.opacity = auraStrength * 0.6;
@@ -451,5 +498,8 @@ export class GuardianRig {
 
   hide() {
     this.ringMeshes.forEach((ring) => { ring.visible = false; });
+    // Prochain combat : les pieds se replacent sous le corps au lieu de marcher depuis l'ancien.
+    this.tripod?.reset();
+    this.lastNow = 0;
   }
 }

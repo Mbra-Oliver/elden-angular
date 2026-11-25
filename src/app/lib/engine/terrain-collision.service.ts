@@ -43,6 +43,13 @@ export class TerrainCollisionService {
     this.dynamicBlocker = blocker;
   }
 
+  /** Obstacles permanents ajoutés par d'autres systèmes (palissade, ruines…). */
+  private readonly blockers: ((x: number, y: number, radius: number) => boolean)[] = [];
+
+  addBlocker(blocker: (x: number, y: number, radius: number) => boolean) {
+    if (!this.blockers.includes(blocker)) this.blockers.push(blocker);
+  }
+
   move(fromX: number, fromY: number, toX: number, toY: number, radius: number): Point {
     let x = fromX;
     let y = fromY;
@@ -70,6 +77,7 @@ export class TerrainCollisionService {
       }
     }
     if (this.dynamicBlocker?.(x, y, radius)) return true;
+    if (this.blockers.some((blocker) => blocker(x, y, radius))) return true;
     return WATER.some((water) => {
       const edgeX = Math.max(water.x, Math.min(x, water.x + water.w));
       const edgeY = Math.max(water.y, Math.min(y, water.y + water.h));

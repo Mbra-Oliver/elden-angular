@@ -36,11 +36,11 @@ export const BOSS_LORE: Record<BossId, BossLore> = {
   duelist: {
     name: 'Kofi Brempong',
     epithet: 'Capitaine asafo du gué',
-    chapter: 'Chapitre 5 · Le gué du Pra en crue',
+    chapter: 'Acte I · 1824 · Le gué du Pra en crue',
     lore: [
       'Kofi Brempong commande une compagnie asafo de Cape Coast. Sa compagnie a son drapeau, ses chants et ses morts, et il connaît chacun d’eux par son nom. Son nom dit qu’il est né un vendredi.',
-      'En 1824, des rumeurs disent que l’Asante prépare un massacre sur la côte. Kofi a reçu l’ordre de tenir le gué du Pra et de n’y laisser passer aucun homme de Kumasi. Il ne sait pas encore que ces rumeurs viennent d’Okomfo Ampem, ni que les fusils qu’on lui a promis sortent du même marché.',
-      'Il se bat au sabre et à la crosse de son mousquet de traite, les pieds dans l’eau qui monte. Il ne cherche pas la gloire : il veut rentrer avec autant d’hommes qu’il en a emmené. C’est pour cela qu’il finit par baisser son arme, quand il comprend qui l’a trompé.',
+      'En 1824, des rumeurs disent qu’une armée de Kumasi va traverser le Pra pour frapper la côte. Kofi a reçu l’ordre de tenir le gué et de n’y laisser passer personne. Il ne sait pas encore que ces rumeurs viennent d’Okomfo Ampem, ni que ceux qui arrivent sont les familles de Kwabena Ofori, de la lignée de Pokou, qui fuient la guerre comme leur aïeule a fui avant eux.',
+      'Il se bat au sabre et à la crosse de son mousquet de traite, les pieds dans l’eau qui monte. Il ne cherche pas la gloire : il veut rentrer avec autant d’hommes qu’il en a emmené. C’est pour cela qu’il finit par baisser son arme et tenir la corde du gué, quand il comprend qui l’a trompé.',
     ],
     phases: {
       1: {
@@ -65,26 +65,26 @@ export const BOSS_LORE: Record<BossId, BossLore> = {
   guardian: {
     name: 'Le Gardien noyé',
     epithet: 'Esprit lié par Okomfo Ampem',
-    chapter: 'Chapitre 2 · Le lac des adieux',
+    chapter: 'Acte II · 1874 · L’ancienne retenue',
     lore: [
-      'Sur la rive du lac Bosomtwe, on raconte que les âmes des morts viennent dire adieu avant de partir. Une créature de pierre et d’eau gardait ce passage pour qu’aucun vivant ne les dérange. Les anciens ne lui donnaient pas de nom, seulement des offrandes. Ce n’est pas un dieu : c’est un gardien au service du lac.',
-      'Okomfo Ampem a volé son nom secret et l’a noué dans une corde à trois nœuds. Tant que les nœuds tiennent, le Gardien obéit et frappe ceux qui approchent. Chaque nœud qui cède lui rend une part de sa colère, et une part de lui-même.',
-      'Il ne faut pas le tuer mais le libérer. Quand le troisième nœud tombe, le Gardien retourne sous l’eau, et la rive redevient silencieuse.',
+      'Les anciens racontaient qu’une créature de pierre et d’eau gardait les gués du Pra, là où les morts traversent pour la dernière fois. Ils ne lui donnaient pas de nom, seulement des offrandes. Ce n’est pas un dieu : c’est un gardien au service du fleuve.',
+      'En 1824, Okomfo Ampem a volé son nom secret et l’a noué dans une corde à trois nœuds. Kwabena n’a pas pu le libérer : il l’a noyé sous la digue que les familles du gué ont bâtie, et la corde du gué sert depuis à surveiller l’eau. En 1874, le conseil du village détourne le canal, la chambre s’assèche, et le Gardien se réveille, toujours lié.',
+      'Ama Serwaa ne doit pas le tuer mais le libérer. Chaque nœud qui cède lui rend une part de sa colère, et une part de lui-même. Quand le troisième tombe, le Gardien retourne au fleuve.',
     ],
     phases: {
       1: {
-        title: 'Premier nœud · La rive des adieux',
+        title: 'Premier nœud · La chambre asséchée',
         line: '« Il frappe trois fois avant de se lever. » — Nana Yaa Dufie',
         design: 'Pinces écrasées au sol, ruée, vague circulaire. Après la vague, sa carapace s’ouvre : c’est la fenêtre pour frapper.',
       },
       2: {
         title: 'Deuxième nœud · L’eau se soulève',
-        line: 'Le lac répond à son appel. Deux vagues, puis une troisième qui ne vient pas.',
+        line: 'L’eau de la retenue répond à son appel. Deux vagues, puis une troisième qui ne vient pas.',
         design: 'Double vague (deux esquives à rythmer), combo de pinces. La carapace ne s’ouvre qu’après la double vague.',
       },
       3: {
         title: 'Troisième nœud · Le nom volé',
-        line: '« Rends-lui son nom, et il rentrera chez lui. » — Akua Serwaa',
+        line: '« Rends-lui son nom, et il rentrera chez lui. » — chant de Kwabena',
         design: 'Tourbillon sur lui-même, vague enchaînée sur une ruée. Plus agressif, mais chaque ouverture dure aussi longtemps.',
       },
     },

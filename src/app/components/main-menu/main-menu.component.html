@@ -3,8 +3,25 @@
   <div class="backdrop" aria-hidden="true"></div>
   <div class="title-content">
     <h1>Les Sentiers<br><span>de Terre Rouge</span></h1>
+    @if (challenge.incoming(); as received) {
+      <section class="challenge-card" aria-label="Défi reçu">
+        <strong>Défi reçu</strong>
+        <p>Un voyageur a vaincu {{ bossNames[received.boss] }} en {{ formatTime(received.time) }}, {{ received.hits }} coup{{ received.hits > 1 ? 's' : '' }} reçu{{ received.hits > 1 ? 's' : '' }}, {{ received.flasks }} Bandji.</p>
+        <div>
+          <button type="button" class="primary" (click)="acceptChallenge(received)">Relever le défi</button>
+          <button type="button" (click)="challenge.dismissIncoming()">Plus tard</button>
+        </div>
+      </section>
+    }
     <nav aria-label="Menu principal">
+      @if (hasSave()) {
+        <button type="button" class="primary" (click)="continue()">Continuer</button>
+      }
       <button type="button" class="primary" (click)="start()">Nouvelle partie</button>
+      <button type="button" (click)="bossRush()" [disabled]="!challenge.rushUnlocked()"
+        [attr.title]="challenge.rushUnlocked() ? null : 'Termine l’histoire pour débloquer le Boss Rush'">
+        {{ challenge.rushUnlocked() ? 'Boss Rush' : 'Boss Rush · verrouillé' }}
+      </button>
       <button type="button" (click)="controlsOpen.set(!controlsOpen())" [attr.aria-expanded]="controlsOpen()">
         Commandes
       </button>

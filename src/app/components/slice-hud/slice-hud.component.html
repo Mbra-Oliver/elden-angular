@@ -1,0 +1,47 @@
+@if (slice.hookLine() !== null) {
+  <section class="hook" aria-live="polite" (click)="slice.skipHook()">
+    @for (line of lines; track $index) {
+      <p [class.shown]="$index <= slice.hookLine()!">{{ line }}</p>
+    }
+    <small>Espace pour passer</small>
+  </section>
+} @else {
+  <div class="spirit" aria-label="Ardeur">
+    <span class="label">Ardeur · niv. {{ progression.level() }} · {{ progression.cowries() }} cauris</span>
+    <div class="track"><div class="fill" [class.ready]="progression.spirit() >= spiritCost"
+      [style.width.%]="progression.spirit() / spiritMax * 100"></div></div>
+    <span class="special">C · {{ specialName() }}</span>
+  </div>
+  @if (slice.prompt(); as prompt) {
+    <p class="prompt">F · {{ prompt.label }}</p>
+  }
+  @if (slice.notice(); as notice) {
+    <p class="notice" role="status">{{ notice }}</p>
+  }
+  @if (slice.pickup(); as item) {
+    <aside class="pickup" aria-live="polite">
+      <strong>{{ item.name }}</strong>
+      <em>{{ item.effect }}</em>
+      <p>{{ item.lore }}</p>
+    </aside>
+  }
+  @if (slice.restMenu(); as rest) {
+    <section class="rest" role="dialog" aria-label="Repos au foyer">
+      <h2>{{ rests[rest].name }}</h2>
+      <p>Les ennemis sont revenus. Gourdes et carquois remplis.</p>
+      <p class="cost">Niveau {{ progression.level() }} · prochain niveau : {{ progression.nextCost() }} cauris
+        (tu en as {{ progression.cowries() }})</p>
+      <ul>
+        @for (stat of stats; track stat.id; let i = $index) {
+          <li>
+            <button type="button" (click)="level(stat.id)" [disabled]="progression.cowries() < progression.nextCost()">
+              <kbd>{{ i + 1 }}</kbd> {{ stat.name }} <b>{{ progression.stats()[stat.id] }}</b>
+            </button>
+            <span>{{ stat.effect }}</span>
+          </li>
+        }
+      </ul>
+      <button type="button" class="leave" (click)="slice.closeRestMenu()"><kbd>Échap</kbd> Repartir</button>
+    </section>
+  }
+}

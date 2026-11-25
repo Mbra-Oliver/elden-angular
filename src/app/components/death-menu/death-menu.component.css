@@ -144,3 +144,9 @@ background: transparent;
 
 .death-content:has(.epilogue) .death-text { color: #ffda9a; }
 .menu-label { color: #f8dab0; }
+
+.results { list-style: none; margin: 0 auto 16px; padding: 0; max-width: 560px; display: grid; gap: 6px; color: #f3e2c4; font: 14px system-ui, sans-serif; }
+.results li { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 6px 10px; background: #00000059; border: 1px solid #d8a23a66; border-radius: 4px; }
+.results button { padding: 4px 10px; background: #7a3e1d; color: inherit; border: 1px solid #d8a23a; border-radius: 4px; cursor: pointer; font: inherit; }
+.copied, .unlock { text-align: center; color: #ffdc9a; font: 13px system-ui, sans-serif; }
+.copied input { width: min(420px, 80vw); font: 12px monospace; }

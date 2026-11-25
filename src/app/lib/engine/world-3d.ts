@@ -5,8 +5,20 @@ import { CROSSING, GATE, VILLAGE_STOPS } from '../constants/village';
 import type { DuelArena } from './duel-fog';
 import { ArenaDressing } from './arena-3d';
 import { GuardianRig, animateDuelist } from './boss-rig-3d';
-import { Equipment3D } from './equipment-3d';
+import { BossFx } from './boss-fx-3d';
+import { CombatFeel3D } from './combat-feel-3d';
+import { PostFx } from './post-fx';
+import { CombatFx3D, HitFlash } from './combat-fx-3d';
+import type { FxEvent } from '../services/combat-fx.service';
+import { CinematicCamera, type CinematicShot, SHOTS } from './cinematic-camera';
+import { Equipment3D, type GearLook } from './equipment-3d';
+import { buildHumanoid, type HumanoidRig } from './humanoid-rig';
 import { PlayerAnimator } from './player-rig-3d';
+import { BipedGait, DUELIST_GAIT } from './gait';
+import { plantGrass } from './wind';
+import { KENTE_PLAYER, adinkraTexture, attachBatakari, attachToga, kenteTexture } from './akan-garments';
+import { Landscape3D } from './landscape-3d';
+import { addOutlines } from './attack-readability-3d';
 import type { WeaponId } from '../constants/equipment.config-constant';
 
 interface Point { x: number; y: number }
@@ -22,6 +34,9 @@ export interface Actor3D extends Point {
   step?: number;
   bossPhase?: number;
   exposed?: boolean;
+  /** Boss : lueur émissive du profil de phase (couleur, intensité). */
+  glow?: string;
+  glowIntensity?: number;
   /** Gel d'impact en cours : l'animation se fige et tremble. */
   hitstop?: boolean;
   /** Vitesse de recul (joueur touché) : oriente la réaction au coup. */
@@ -32,20 +47,27 @@ export interface Actor3D extends Point {
   sprint?: boolean;
   /** Invincibilité brève après un coup reçu : le corps clignote. */
   guarded?: boolean;
+  /** Ennemi : sursaut du buste (1 → 0) et direction du coup reçu. */
+  flinch?: number;
+  flinchX?: number;
+  flinchY?: number;
+  /** Joueur : PV restants (0 → 1), pour la vignette de PV bas. */
+  hpRatio?: number;
 }
 
-interface Fighter {
-  root: T.Group;
-  torso: T.Group;
-  arms: T.Group[];
-  legs: T.Group[];
+interface Fighter extends HumanoidRig {
   walk: number;
+  /** Démarche calée sur la distance (capitaine) : pieds posés, pas lourds. */
+  gait?: BipedGait;
+  speed?: number;
+  bob?: number;
+  bobV?: number;
 }
 
 export class World3D {
   private readonly renderer: T.WebGLRenderer;
   private readonly scene = new T.Scene();
-  private readonly camera = new T.PerspectiveCamera(54, VIEWPORT.WIDTH / VIEWPORT.HEIGHT, 2, 1240);
+  private readonly camera = new T.PerspectiveCamera(54, VIEWPORT.WIDTH / VIEWPORT.HEIGHT, 2, 2600);
   private readonly ground: T.Mesh<T.PlaneGeometry, T.MeshStandardMaterial>;
   private readonly player: Fighter;
   private readonly gear: Equipment3D;
@@ -53,6 +75,23 @@ export class World3D {
   private readonly duelist: Fighter;
   private readonly guardian = new GuardianRig((color) => this.material(color));
   private readonly veille = this.guardian.root;
+  private readonly bossFx = new BossFx();
+  /** FOV kick, sursaut de l'ennemi, flèches plantées et braises. */
+  private readonly feel = new CombatFeel3D();
+  private readonly post: PostFx;
+  /** Ciel, collines, repères lointains, détails du sol, graybox (landscape-3d.ts). */
+  private readonly landscape: Landscape3D;
+  /** Échelle de temps du jeu (ralenti sélectif) appliquée aux animations. */
+  timeScale = 1;
+  /** Avancement 0→1 de l'entrée cinématique du boss (null hors intro). */
+  private intro: number | null = null;
+  /** Caméra sur spline : entrées de boss, phases, victoire (HUD masqué). */
+  private readonly cine = new CinematicCamera();
+  private introStarted = false;
+  private duelistMaterials?: T.MeshStandardMaterial[];
+  private readonly weaponBase = new T.Vector3();
+  private readonly weaponTip = new T.Vector3();
+  private readonly glintPoint = new T.Vector3();
   private readonly mist = new T.Group();
   private readonly marker: T.Mesh;
   private readonly wave: T.Mesh<T.RingGeometry, T.MeshBasicMaterial>;
@@ -75,8 +114,19 @@ export class World3D {
   private readonly mistMaterial: T.SpriteMaterial;
   private focus: Point | null = null;
   private readonly arenaDressing: ArenaDressing;
+  /** Impacts : éclats, décalques, lumières flash, secousse de caméra. */
+  private readonly fx: CombatFx3D;
+  private readonly duelistFlash: HitFlash;
+  private readonly guardianFlash: HitFlash;
+  private fxSource?: { drain(handle: (event: FxEvent) => void): void };
+  private readonly handleFx = (event: FxEvent) => this.onFx(event);
+  /** Décalage de secousse appliqué à la caméra à l'image précédente. */
+  private readonly appliedShake = new T.Vector3();
   /** Couches de scène ajoutées par d'autres systèmes (décor destructible…). */
   private readonly layers: { update(dt: number): void; dispose(): void }[] = [];
+  /** Tenues du héros, une seule visible selon l'acte (setHero). */
+  private readonly togas: { kwabena: T.Group; ama: T.Group };
+  private hero: 'kwabena' | 'ama' | null = null;
 
   constructor(host: HTMLElement) {
     this.renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -116,12 +166,13 @@ export class World3D {
     this.ground.position.set(WORLD.WIDTH / 2, 0, WORLD.HEIGHT / 2);
     this.scene.add(this.ground);
     this.makeScenery();
-    this.player = this.makeFighter('#253c54', '#aa793f');
+    this.player = this.makeFighter('#253c54', '#aa793f', true);
     // La lance est la dernière pièce ajoutée au bras droit par makeFighter.
     const spear = this.player.arms[1].children.at(-1);
     this.gear = new Equipment3D(this.scene, this.player.torso, this.player.arms, spear);
     this.playerAnim = new PlayerAnimator(this.scene, this.player, spear!);
     this.duelist = this.makeFighter('#873f30', '#c2a176');
+    this.duelist.gait = new BipedGait(DUELIST_GAIT);
     this.makeVeille();
     this.mistTexture = this.makeMistTexture();
     this.mistMaterial = new T.SpriteMaterial({
@@ -140,11 +191,52 @@ export class World3D {
       new T.MeshBasicMaterial({ color: '#9bd7c6', transparent: true, depthWrite: false, opacity: 0.55 }));
     this.wave.rotation.x = -Math.PI / 2;
     this.scene.add(this.wave);
+    // Tenues akan (le pan de pagne et l'herbe ondulent au vent, compilés au warmUp) :
+    // pagne kente du héros (Kwabena en 1824 : toge sur l'épaule gauche ; Ama en
+    // 1874 : noué sous les bras, foulard de tête), batakari pour le capitaine asafo.
+    this.togas = {
+      kwabena: attachToga(this.player.torso, kenteTexture(KENTE_PLAYER), 'man'),
+      ama: attachToga(this.player.torso, kenteTexture(KENTE_PLAYER), 'woman'),
+    };
+    this.setHero('ama');
+    attachBatakari(this.duelist.torso);
+    plantGrass(this.scene);
+    // Avant ArenaDressing : il lit la lumière et la brume posées ici comme ambiance de base.
+    this.landscape = new Landscape3D(this.scene, this.renderer);
     this.arenaDressing = new ArenaDressing(this.scene, this.renderer, this.camera);
+    this.scene.add(this.feel.root);
+    this.post = new PostFx(this.renderer, VIEWPORT.WIDTH, VIEWPORT.HEIGHT);
+    this.fx = new CombatFx3D(this.scene);
+    this.duelistFlash = new HitFlash(this.duelist.root);
+    this.guardianFlash = new HitFlash(this.veille);
+    // Silhouettes lisibles : contour sombre autour des combattants.
+    addOutlines([this.player.root, this.duelist.root, this.veille]);
 
   }
 
   get heading() { return this.viewYaw; }
+
+  /** Source des événements d'impact (CombatFxService), vidée à chaque image. */
+  setFxSource(source: { drain(handle: (event: FxEvent) => void): void } | undefined) {
+    this.fxSource = source;
+  }
+
+  /** Nouveau combat : efface éclats, traces et flashs en cours. */
+  resetFx() {
+    this.fx.reset();
+    this.duelistFlash.clear();
+    this.guardianFlash.clear();
+  }
+
+  private onFx(event: FxEvent) {
+    this.fx.handle(event);
+    if (event.type === 'hit' && event.target === 'boss') {
+      const flash = this.duelist.root.visible ? this.duelistFlash : this.guardianFlash;
+      const color = event.material === 'guard' || event.material === 'shell' ? '#ffd9a0'
+        : event.material === 'spirit' ? '#d8fffa' : '#ffffff';
+      flash.trigger(color, event.material === 'guard' ? 0.55 : 0.95);
+    }
+  }
 
   addLayer(create: (scene: T.Scene) => { update(dt: number): void; dispose(): void }) {
     this.layers.push(create(this.scene));
@@ -161,49 +253,18 @@ export class World3D {
     return mesh;
   }
 
-  private makeFighter(clothColor: string, accentColor: string): Fighter {
-    const root = new T.Group();
-    const torso = new T.Group();
-    torso.position.y = 16;
-    root.add(torso);
-    const cloth = this.material(clothColor);
-    const skin = this.material('#663b2b');
-    const accent = this.material(accentColor);
-    this.part(torso, new T.CylinderGeometry(5.4, 3.8, 9, 7), cloth, 0, 4, 0);
-    this.part(torso, new T.CylinderGeometry(4.4, 5.6, 7, 7), cloth, 0, -2, 0);
-    this.part(torso, new T.CylinderGeometry(4.3, 4.4, 1.7, 8), accent, 0, 0.5, 0);
-    this.part(torso, new T.SphereGeometry(3.4, 8, 6), skin, 0, 11, 0.5);
-    this.part(torso, new T.SphereGeometry(3.1, 7, 5), this.material('#211917'), 0, 12.1, -0.7);
-    const arms: T.Group[] = [];
-    const legs: T.Group[] = [];
-    for (const side of [-1, 1]) {
-      const arm = new T.Group();
-      arm.position.set(side * 5, 7, 0);
-      torso.add(arm);
-      arms.push(arm);
-      this.part(arm, new T.CylinderGeometry(1.45, 1.13, 8, 6), skin, 0, -3.4, 0);
-      this.part(arm, new T.SphereGeometry(1.3, 6, 4), skin, 0, -8.1, 0.5);
-      const leg = new T.Group();
-      leg.position.set(side * 2.6, 14, 0);
-      root.add(leg);
-      legs.push(leg);
-      this.part(leg, new T.CylinderGeometry(1.65, 1.08, 12, 6), skin, 0, -6.4, 0);
-      this.part(leg, new T.BoxGeometry(2.6, 1.7, 4.2), skin, 0, -12.6, 0.9);
-    }
-    const staff = this.part(arms[1], new T.CylinderGeometry(0.58, 0.78, 36, 7),
-      this.material('#775235'), 0, -8.5, 10);
-    staff.rotation.x = Math.PI / 2 - 0.18;
-    const shadow = this.part(root, new T.CircleGeometry(10, 18),
-      new T.MeshBasicMaterial({ color: '#302119', transparent: true, opacity: 0.28, depthWrite: false }),
-      0, 0.15, 0);
-    shadow.rotation.x = -Math.PI / 2;
-    this.scene.add(root);
-    return { root, torso, arms, legs, walk: 0 };
+  /** Humanoïde du rig partagé (joueur, duelliste, villageois : même squelette). */
+  private makeFighter(clothColor: string, accentColor: string, bareChest = false): Fighter {
+    const rig = buildHumanoid((color) => this.material(color), clothColor, accentColor, { bareChest });
+    this.scene.add(rig.root);
+    return { ...rig, walk: 0 };
   }
 
   private makeVeille() {
     this.guardian.hide();
-    this.scene.add(this.veille, this.guardian.rings);
+    this.scene.add(this.veille, this.guardian.rings, this.bossFx.root);
+    this.bossFx.attachRim(this.duelist.root, 'duelist');
+    this.bossFx.attachRim(this.veille, 'guardian');
   }
 
   private makeScenery() {
@@ -243,7 +304,8 @@ export class World3D {
     }
     this.scene.add(props);
     for (const target of [...VILLAGE_STOPS, GATE, CROSSING]) {
-      const witness = this.makeFighter('#695b42', '#ba9c69');
+      const witness = this.makeFighter('#695b42', '#ba9c69', true);
+      attachToga(witness.torso, adinkraTexture('#7a4a2c'));
       witness.root.scale.setScalar(0.82);
       witness.root.position.set(target.x + 12, 0, target.y - 16);
       witness.root.rotation.y = Math.PI;
@@ -282,11 +344,14 @@ export class World3D {
   /**
    * Compile tous les shaders et envoie les textures au GPU avant la première
    * image jouée. Sans ça, la première frame (et la première apparition de la
-   * Veille, de la vague ou de la brume) gèle le jeu pendant la compilation.
+   * Gardien, de la vague ou de la brume) gèle le jeu pendant la compilation.
    */
   async warmUp(ground: HTMLCanvasElement) {
     this.setGround(ground);
-    const hidden = [this.duelist.root, this.veille, this.mist, this.marker, this.wave].filter((o) => !o.visible);
+    const hidden = [this.duelist.root, this.veille, this.mist, this.marker, this.wave, ...this.bossFx.warmables, ...this.fx.warmables, ...this.feel.warmables,
+      // Habillage des deux arènes (lueurs et poussières en PointsMaterial) : compilé avec
+      // l'état final de la scène (brouillard, lumières), pas seulement au constructeur.
+      ...this.arenaDressing.warmObjects].filter((o) => !o.visible);
     hidden.forEach((object) => { object.visible = true; });
     try {
       await this.renderer.compileAsync(this.scene, this.camera);
@@ -305,6 +370,8 @@ export class World3D {
       }
     });
     this.renderer.render(this.scene, this.camera);
+    // Variantes de shader du bloom (tampon linéaire, occulteurs noirs, flou).
+    this.post.warm(this.scene, this.camera);
     culled.forEach((object) => { object.frustumCulled = true; });
     hidden.forEach((object) => { object.visible = false; });
   }
@@ -321,24 +388,62 @@ export class World3D {
   }
 
   private animate(fighter: Fighter, pose: Actor3D, dt: number) {
-    const travel = Math.hypot(pose.x - fighter.root.position.x, pose.y - fighter.root.position.z);
+    const dx = pose.x - fighter.root.position.x;
+    const dz = pose.y - fighter.root.position.z;
+    const travel = Math.min(Math.hypot(dx, dz), 12);
     const moving = pose.state === 'moving' || pose.state === 'chase';
-    fighter.walk += Math.min(travel, 12) * 0.14;
+    fighter.walk += travel * 0.14;
     fighter.root.position.set(pose.x, 0, pose.y);
     const desired = Math.atan2(pose.facingX, pose.facingY);
     const angle = desired - fighter.root.rotation.y;
     fighter.root.rotation.y += Math.atan2(Math.sin(angle), Math.cos(angle)) * (1 - Math.exp(-25 * dt));
-    const stride = moving ? Math.sin(fighter.walk) : 0;
     const strike = pose.state === 'attacking' ? Math.sin(pose.phase * Math.PI) : 0;
     const ready = pose.state === 'windup' ? pose.phase : 0;
     const dash = pose.state === 'rolling' ? Math.sin(pose.phase * Math.PI) : 0;
-    fighter.torso.position.y = 16 + Math.abs(stride) * 0.65 - dash * 6;
-    fighter.torso.rotation.set(dash * 0.87 - strike * 0.31 + ready * 0.19, strike * 0.55 - ready * 0.49,
-      pose.state === 'hurt' ? -0.2 * (1 - pose.phase) : 0);
-    fighter.arms[0].rotation.x = -stride * 0.64 - strike * 0.68;
-    fighter.arms[1].rotation.set(stride * 0.53 - strike * 1.15 + ready * 1.05, strike * 0.7, -0.14);
-    fighter.legs[0].rotation.x = stride * 0.69;
-    fighter.legs[1].rotation.x = -stride * 0.69;
+
+    // Démarche : la phase suit la distance parcourue le long du regard, la
+    // jambe d'appui balaie à vitesse constante, le bassin se pose dessus et
+    // chaque pas lourd fait plonger le buste (ressort amorti).
+    let legL = 0;
+    let legR = 0;
+    let armL = 0;
+    let armR = 0;
+    let drop = 0;
+    let roll = 0;
+    const gait = fighter.gait;
+    if (gait && dt > 0) {
+      fighter.speed = (fighter.speed ?? 0) + (travel / dt - (fighter.speed ?? 0)) * (1 - Math.exp(-12 * dt));
+      const yaw = fighter.root.rotation.y;
+      const along = travel > 0 ? (dx * Math.sin(yaw) + dz * Math.cos(yaw)) / Math.hypot(dx, dz) : 0;
+      gait.update(moving ? travel * along : 0, moving ? fighter.speed : 0, dt);
+      legL = -gait.swing[0];
+      legR = -gait.swing[1];
+      armL = -gait.swing[1] * 0.75;
+      armR = -gait.swing[0] * 0.55;
+      drop = -13.45 * (1 - gait.reach);
+      if (gait.contact[0] || gait.contact[1]) fighter.bobV = (fighter.bobV ?? 0) - 16 * gait.pace;
+      fighter.bobV = (fighter.bobV ?? 0) + (-160 * (fighter.bob ?? 0) - 2 * 0.55 * 12.6 * (fighter.bobV ?? 0)) * dt;
+      fighter.bob = (fighter.bob ?? 0) + fighter.bobV * dt;
+      // Le poids passe d'une jambe à l'autre : le buste roule vers l'appui.
+      roll = (gait.swing[0] - gait.swing[1]) * 0.08 * gait.pace;
+      fighter.legs[0].scale.y = 1 - 0.16 * gait.fold[0];
+      fighter.legs[1].scale.y = 1 - 0.16 * gait.fold[1];
+    } else if (moving) {
+      const stride = Math.sin(fighter.walk);
+      legL = stride * 0.69;
+      legR = -stride * 0.69;
+      armL = -stride * 0.64;
+      armR = stride * 0.53;
+    }
+    fighter.root.position.y = drop;
+    fighter.torso.position.y = 16 + (fighter.bob ?? 0) - dash * 6;
+    fighter.torso.rotation.set(dash * 0.87 - strike * 0.31 + ready * 0.19 + (gait?.pace ?? 0) * 0.08,
+      strike * 0.55 - ready * 0.49 + (legL - legR) * 0.08,
+      pose.state === 'hurt' ? -0.2 * (1 - pose.phase) : roll);
+    fighter.arms[0].rotation.x = armL - strike * 0.68;
+    fighter.arms[1].rotation.set(armR - strike * 1.15 + ready * 1.05, strike * 0.7, -0.14);
+    fighter.legs[0].rotation.x = legL;
+    fighter.legs[1].rotation.x = legR;
   }
 
   render(
@@ -347,12 +452,19 @@ export class World3D {
   ) {
     this.setGround(ground);
     const now = performance.now();
-    const dt = this.lastFrame ? Math.min(0.05, (now - this.lastFrame) / 1000) : 1 / 60;
+    const realDt = this.lastFrame ? Math.min(0.05, (now - this.lastFrame) / 1000) : 1 / 60;
+    const dt = realDt * this.timeScale;
     this.lastFrame = now;
     this.setArena(arena);
     this.arenaDressing.update(arena, now, dt);
     for (const layer of this.layers) layer.update(dt);
     this.mist.rotation.y = now * 0.000046;
+    // La secousse est un décalage pur : on le retire avant que la caméra de
+    // jeu ne se recale, pour qu'il ne s'accumule jamais dans son lissage.
+    this.camera.position.sub(this.appliedShake);
+    this.duelistFlash.restore();
+    this.guardianFlash.restore();
+    this.fxSource?.drain(this.handleFx);
     this.playerAnim.update(player, dt, now, !!enemy);
     this.gear.applyPose(player);
     // L'arc et la gourde posent les bras directement : l'animateur repart de
@@ -363,9 +475,39 @@ export class World3D {
     if (enemy && duelist) {
       this.animate(this.duelist, enemy, dt);
       animateDuelist(this.duelist, enemy, now);
+      this.applyGlow(enemy);
+      this.feel.applyFlinch(this.duelist.root, this.duelist.torso, enemy);
     }
-    if (enemy && !duelist) this.guardian.update(enemy, now);
-    else this.guardian.hide();
+    if (enemy && !duelist) {
+      this.guardian.update(enemy, now);
+      this.feel.applyFlinch(this.veille, this.guardian.torso, enemy, 0.6);
+    } else this.guardian.hide();
+    if (enemy) {
+      const flash = duelist ? this.duelistFlash : this.guardianFlash;
+      flash.apply(dt, !!enemy.hitstop);
+      if (enemy.hitstop) {
+        // Gel d'impact : la cible tremble sur place, comme le joueur.
+        const body = duelist ? this.duelist.root : this.veille;
+        body.position.x += Math.sin(now * 0.93) * 0.8;
+        body.position.z += Math.cos(now * 1.37) * 0.8;
+      }
+    }
+    let weapon: { base: T.Vector3; tip: T.Vector3 } | null = null;
+    let glint: T.Vector3 | null = null;
+    if (enemy && duelist) {
+      // Bâton tenu par le bras droit : axe local (0, 0.18, 0.98) autour de (0, -8.5, 10).
+      this.duelist.root.updateMatrixWorld(true);
+      this.weaponBase.set(0, -10.3, 0.2);
+      this.weaponTip.set(0, -5.3, 27.7);
+      this.duelist.arms[1].localToWorld(this.weaponBase);
+      this.duelist.arms[1].localToWorld(this.weaponTip);
+      weapon = { base: this.weaponBase, tip: this.weaponTip };
+      glint = this.weaponTip;
+    } else if (enemy) {
+      glint = this.glintPoint.set(enemy.x + enemy.facingX * 20, 16, enemy.y + enemy.facingY * 20);
+    }
+    this.bossFx.update(this.intro !== null && this.intro < 0.3 ? null : enemy, duelist ? 'duelist' : 'guardian',
+      weapon, glint, now, dt);
     this.wave.visible = enemy?.waveRadius !== undefined;
     if (enemy?.waveRadius !== undefined) {
       this.wave.position.set(enemy.x, 1.5, enemy.y);
@@ -379,10 +521,101 @@ export class World3D {
     }
     this.focus = objective;
     this.updateCamera(player, enemy, dt);
-    this.renderer.render(this.scene, this.camera);
+    const fov = this.feel.updateFov(player, realDt);
+    if (!this.cine.active && Math.abs(this.camera.fov - fov) > 0.01) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.feel.update(dt);
+    this.fx.update(dt, this.camera);
+    this.appliedShake.copy(this.fx.shakeOffset);
+    this.camera.position.add(this.appliedShake);
+    this.landscape.update(this.camera, now);
+    this.post.render(this.scene, this.camera, player.hpRatio ?? null, realDt);
+  }
+
+  /** Grayboxing (touche G) : gris neutre, grille de 50 unités, collisions. */
+  toggleGraybox() {
+    return this.landscape.toggleGraybox();
+  }
+
+  /** Une flèche qui touche reste plantée dans le boss quelques secondes. */
+  stickArrow(duelist: boolean, x: number, y: number, dirX: number, dirY: number) {
+    this.feel.stickArrow(duelist ? this.duelist.root : this.veille, x, y, dirX, dirY);
+  }
+
+  /** Braises qui couvent au sol après une attaque de feu (ou de poudre). */
+  scatterEmbers(x: number, y: number, count: number, radius: number) {
+    this.feel.scatterEmbers(x, y, count, radius);
+  }
+
+  /** Efface flèches plantées et braises (nouvelle partie, changement de chapitre). */
+  clearTraces() {
+    this.feel.reset();
+  }
+
+  /** Pilote l'entrée cinématique du boss : k de 0 à 1, null pour rendre la main. */
+  setIntro(k: number | null) {
+    this.intro = k;
+  }
+
+  /** Lueur du duelliste selon la phase (braises sous la peau en phases 2 et 3). */
+  private applyGlow(enemy: Actor3D) {
+    if (!enemy.glow) return;
+    if (!this.duelistMaterials) {
+      const found = new Set<T.MeshStandardMaterial>();
+      this.duelist.root.traverse((o) => {
+        if (o instanceof T.Mesh && o.material instanceof T.MeshStandardMaterial) found.add(o.material);
+      });
+      this.duelistMaterials = [...found];
+    }
+    // Pulsation lente : la lueur respire, elle ne clignote pas.
+    const pulse = 0.85 + 0.15 * Math.sin(performance.now() * 0.004);
+    for (const material of this.duelistMaterials) {
+      material.emissive.set(enemy.glow);
+      material.emissiveIntensity = (enemy.glowIntensity ?? 0) * pulse;
+    }
+  }
+
+  /** Joue un plan de caméra sur spline ; la caméra de jeu reprend la main ensuite. */
+  playCinematic(shot: CinematicShot) {
+    this.cine.play(shot);
+  }
+
+  /** Changement de phase : demi-tour lent autour du boss, de bas en haut. */
+  playPhaseShot(from: Point, boss: () => Point, duration: number) {
+    const look = new T.Vector3();
+    const at = boss();
+    this.cine.play(SHOTS.phaseShift(at, from, duration, () => {
+      const p = boss();
+      return look.set(p.x, 22, p.y);
+    }));
+  }
+
+  skipCinematic() {
+    this.cine.skip();
+  }
+
+  get cinematicActive() { return this.cine.active; }
+
+  /**
+   * Entrée du boss : un plan spline par boss (poussée basse sur les pieds,
+   * remontée vers le visage), lancé au premier setIntro(k). Retourne true
+   * tant que la cinématique pilote seule la caméra.
+   */
+  private cinematicCamera(player: Actor3D, enemy: Point | null, dt: number) {
+    if (this.intro === null) {
+      this.introStarted = false;
+    } else if (!this.introStarted && enemy) {
+      this.introStarted = true;
+      // L'intro de GameStateService dure 3,8 s ; la caméra rend la main à 88 %.
+      this.cine.play(SHOTS.bossIntro(enemy, player, 3800 * 0.88 * (1 - this.intro)));
+    }
+    return this.cine.drive(this.camera, dt);
   }
 
   private updateCamera(player: Actor3D, enemy: Point | null, dt: number) {
+    if (this.cinematicCamera(player, enemy, dt)) return;
     if (enemy) {
       this.targetYaw = Math.atan2(enemy.x - player.x, enemy.y - player.y);
       this.orbit = this.targetYaw;
@@ -440,12 +673,29 @@ export class World3D {
       this.cameraLook.copy(this.lookGoal);
     }
     this.camera.lookAt(this.cameraLook);
+    this.cine.blend(this.camera, this.cameraLook);
     this.initialized = true;
   }
 
   /** Arme en main et flèches (en vol ou au sol), mises à jour avant render(). */
-  setEquipment(weapon: WeaponId, arrows: readonly { x: number; y: number; dirX: number; dirY: number; grounded: boolean }[]) {
+  /** Héros incarné : Kwabena (acte I, 1824) ou Ama Serwaa (acte II, 1874). */
+  setHero(hero: 'kwabena' | 'ama') {
+    if (hero === this.hero) return;
+    this.hero = hero;
+    this.togas.kwabena.visible = hero === 'kwabena';
+    this.togas.ama.visible = hero === 'ama';
+  }
+
+  setEquipment(weapon: WeaponId, arrows: readonly { x: number; y: number; dirX: number; dirY: number; grounded: boolean }[],
+    look?: GearLook) {
     this.gear.setWeapon(weapon);
+    if (look) {
+      this.gear.setLook(look);
+      // Batakari ramassé : il recouvre le haut du pagne (seul le bas dépasse).
+      for (const toga of [this.togas.kwabena, this.togas.ama]) {
+        for (const part of toga.children) if (part.userData['underBatakari']) part.visible = !look.batakari;
+      }
+    }
     this.gear.setArrows(arrows);
   }
 
@@ -460,7 +710,11 @@ export class World3D {
 
   dispose() {
     this.controller.abort();
+    this.landscape.dispose();
     this.arenaDressing.dispose();
+    this.fx.dispose();
+    this.feel.dispose();
+    this.post.dispose();
     this.layers.forEach((layer) => layer.dispose());
     this.scene.traverse((object) => {
       if (object instanceof T.Mesh) {

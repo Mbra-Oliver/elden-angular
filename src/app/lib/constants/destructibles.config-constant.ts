@@ -123,7 +123,7 @@ function wallAround(arena: DuelArena, kind: 'wall' | 'stone' | 'barricade', turn
 /**
  * Gué de l'Ouest : les familles ont fui en abandonnant leurs affaires.
  * [SUPPOSITION] Un muret de terre d'un ancien enclos et une palissade de
- * campement de guerre servent de couverts contre les charges de Kwadwo.
+ * campement de guerre servent de couverts contre les charges de Kofi Brempong.
  */
 const FORD_PROPS: DestructiblePlacement[] = [
   ...wallAround(FORD_DUEL, 'wall', 0.38, 0.62, 3),

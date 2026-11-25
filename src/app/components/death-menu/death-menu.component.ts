@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { MenuItem } from '../../lib/interfaces/MenuItem';
 import { GameStateService } from '../../lib/services/game-state.service';
+import { ChallengeService, beats, describe, formatTime } from '../../lib/social/challenge.service';
 
 @Component({
   selector: 'app-death-menu',
@@ -10,9 +11,13 @@ import { GameStateService } from '../../lib/services/game-state.service';
 })
 export class DeathMenuComponent {
   gameService = inject(GameStateService);
+  readonly challenge = inject(ChallengeService);
+  readonly describe = describe;
+  readonly formatTime = formatTime;
+  readonly beats = beats;
   menusItems: MenuItem[] = [
     {
-      label: 'Réessayer',
+      label: 'Revenir au foyer',
       action: () => this.gameService.retry(),
     },
     {

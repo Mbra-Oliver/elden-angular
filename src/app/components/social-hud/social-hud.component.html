@@ -1,0 +1,71 @@
+@if (challenge.target(); as target) {
+  @if (game.encounter() === target.boss) {
+    <p class="chrono" role="timer">
+      <span>{{ formatTime(challenge.fightTime()) }}</span>
+      <small>Défi : {{ formatTime(target.time) }} · {{ target.hits }} coup{{ target.hits > 1 ? 's' : '' }}</small>
+    </p>
+  }
+} @else if (game.mode() === 'rush' && game.encounter()) {
+  <p class="chrono" role="timer">
+    <span>{{ formatTime(challenge.rushTotal() + challenge.fightTime()) }}</span>
+    <small>Boss Rush</small>
+  </p>
+}
+
+@if (!world.composing()) {
+  @if (world.nearMessageText(); as text) {
+    <aside class="message" aria-live="polite">
+      <p class="rune">{{ text }}</p>
+      @if (world.nearMessage(); as message) {
+        <small>
+          {{ message.mine ? 'Ton message' : 'Laissé par un voyageur' }} · {{ message.likes }} appréciation{{ message.likes > 1 ? 's' : '' }}
+          @if (!message.mine && free()) { · <app-key-hint action="interact" /> apprécier }
+        </small>
+      }
+    </aside>
+  }
+  @if (free() && world.nearStain()) {
+    <p class="prompt"><app-key-hint action="interact" /> Toucher la tache de sang</p>
+  } @else if (canWrite() && !world.nearMessage()) {
+    <p class="prompt subtle"><app-key-hint action="message" /> Tracer un signe au kaolin</p>
+  }
+}
+
+@if (world.composing()) {
+  <section class="composer" role="dialog" aria-modal="true" aria-label="Tracer un signe au kaolin">
+    <strong>Tracer un signe au kaolin sur le sol</strong>
+    <div class="row" [class.focus]="field() === 'template'">
+      <button type="button" aria-label="Formule précédente" (click)="field.set('template'); template.set((template() + templates.length - 1) % templates.length)">‹</button>
+      <span>{{ templates[template()].replace('{}', '…') }}</span>
+      <button type="button" aria-label="Formule suivante" (click)="field.set('template'); template.set((template() + 1) % templates.length)">›</button>
+    </div>
+    <div class="row" [class.focus]="field() === 'word'">
+      <button type="button" aria-label="Mot précédent" (click)="field.set('word'); word.set((word() + words.length - 1) % words.length)">‹</button>
+      <span>{{ words[word()] }}</span>
+      <button type="button" aria-label="Mot suivant" (click)="field.set('word'); word.set((word() + 1) % words.length)">›</button>
+    </div>
+    <p class="preview">« {{ preview() }} »</p>
+    <div class="actions">
+      <button type="button" class="primary" (click)="submit()"><app-key-hint action="confirm" /> Tracer</button>
+      <button type="button" (click)="close()"><app-key-hint action="back" /> Annuler</button>
+    </div>
+    @if (world.offline) {
+      <small class="note">Hors ligne : les messages restent sur cet appareil pour l’instant.</small>
+    }
+  </section>
+}
+
+@if (challenge.latest(); as result) {
+  @if (game.currentScreen() === 'playing') {
+    <aside class="challenge" aria-live="polite">
+      <strong>{{ verdict() ?? 'Boss vaincu' }}</strong>
+      <p>{{ describe(result) }}</p>
+      <button type="button" (click)="challenge.share(result)">Partager le défi</button>
+      @if (challenge.copied()) { <small>Lien copié</small> }
+    </aside>
+  }
+}
+
+@if (world.notice(); as notice) {
+  <p class="notice" role="status">{{ notice }}</p>
+}

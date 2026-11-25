@@ -1,0 +1,13 @@
+<section class="dialogue" aria-label="Dialogue" (click)="complete()">
+  <strong>{{ line().speaker }}</strong>
+  <!-- Le texte complet reste lisible par les lecteurs d'écran ; seule la partie visible s'écrit. -->
+  <p class="sr-only" aria-live="polite">{{ line().text }}</p>
+  <p aria-hidden="true">{{ line().text.slice(0, shown()) }}<span class="rest">{{ line().text.slice(shown()) }}</span></p>
+  <div class="choices" [class.waiting]="!done()">
+    @for (choice of line().choices; track choice.label; let index = $index) {
+      <button type="button" [disabled]="!done()" (click)="$event.stopPropagation(); choose.emit(choice)">
+        <kbd>{{ index + 1 }}</kbd> {{ choice.label }}
+      </button>
+    }
+  </div>
+</section>

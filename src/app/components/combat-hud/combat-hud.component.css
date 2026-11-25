@@ -1,0 +1,130 @@
+:host {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #f6e6c4;
+  /* Échelle commune au canvas (960 px de large au maximum). */
+  container-type: inline-size;
+}
+
+.hud { position: absolute; inset: 0; transition: opacity 0.35s ease; }
+.hud.hidden { opacity: 0; }
+
+/* --- Barres à double jauge --- */
+.bar {
+  position: relative;
+  height: 7px;
+  background: #1a1410d9;
+  outline: 1px solid #00000088;
+  box-shadow: 0 1px 3px #0008;
+}
+.bar > span { position: absolute; inset: 0 auto 0 0; }
+.bar .fill { background: var(--fill); transition: width 0.08s linear; }
+/* La jauge pâle attend 0,5 s puis rattrape la jauge pleine. */
+.bar .lag { background: #f3e2b8; transition: width 0.45s ease-in 0.5s; }
+
+.player {
+  position: absolute;
+  top: 15%;
+  left: 2%;
+  display: grid;
+  gap: 4px;
+}
+.player .hp { --fill: #c96349; width: 15.5cqi; }
+.player .stamina { --fill: #b0bd76; width: 11.5cqi; height: 4px; }
+/* L'endurance remonte en continu : pas de retard sur la jauge pâle. */
+.player .stamina .lag { transition-delay: 0.2s; transition-duration: 0.3s; }
+
+.counter {
+  position: absolute;
+  top: 24%;
+  inset-inline: 0;
+  margin: 0;
+  text-align: center;
+  font: 600 clamp(12px, 2cqi, 18px) system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a7fff0;
+  text-shadow: 0 1px 4px #000;
+}
+
+/* --- Boss --- */
+.boss {
+  position: absolute;
+  bottom: 7%;
+  left: 50%;
+  width: min(52cqi, 500px);
+  transform: translateX(-50%);
+  text-align: center;
+  --fill: #c5a059;
+}
+.boss[data-phase='2'] { --fill: #c07a3a; }
+.boss[data-phase='3'] { --fill: #8b0000; }
+.boss h2 {
+  margin: 0 0 5px;
+  font-size: clamp(10px, 1.6cqi, 14px);
+  font-weight: normal;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 3px #000;
+}
+.boss h2 span { color: #c5a059; }
+.boss .bar { height: 8px; outline: 1px solid #c5a059; outline-offset: 2px; }
+.boss .mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: #f5e7c0;
+}
+.opening {
+  margin: 9px 0 0;
+  font: 600 clamp(9px, 1.3cqi, 12px) system-ui, sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fde1a7;
+  text-shadow: 0 1px 3px #000;
+}
+
+/* --- Bannière de changement de phase --- */
+.banner {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  width: min(75cqi, 720px);
+  padding: 10px 0;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  background: linear-gradient(90deg, #0000, #000000c8 20%, #000000c8 80%, #0000);
+  border-block: 1px solid #c5a05999;
+  animation: banner linear both;
+}
+.banner small {
+  display: block;
+  color: #c5a059;
+  font-size: clamp(9px, 1.25cqi, 12px);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.banner strong {
+  display: block;
+  font-size: clamp(16px, 2.5cqi, 24px);
+  font-weight: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.banner p { margin: 4px 0 0; color: #e8d5ad; font-size: clamp(11px, 1.45cqi, 14px); }
+
+@keyframes banner {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  86% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar .lag, .bar .fill, .hud { transition: none; }
+}

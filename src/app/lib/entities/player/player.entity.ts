@@ -26,10 +26,16 @@ import {
   BOW_QUICK_SHOT,
   BowShotData,
   EQUIPMENT_CONFIG,
+  WEAPONS,
 } from '../../constants/equipment.config-constant';
 import { approachVelocity, DodgeKind, dodgeProfile, dodgeSpeed, ShiftGesture } from './locomotion';
+import { AFENA_COMBO, AFENA_HEAVY, SPECIALS, type SpecialId } from '../../slice/slice-content';
 
 type BufferedAction = 'light' | 'heavy' | 'dodge';
+
+
+/** Vitesse de marche (fraction de la vitesse normale) pendant une action du haut du corps. */
+const BUSY_WALK = { drinking: 0.35, aiming: 0.45 };
 
 @Injectable({
   providedIn: 'root',
@@ -84,6 +90,15 @@ export class PlayerEntity {
   /** Invincibilité restante après un coup reçu (ms). */
   private hurtIFrames = 0;
   private lockTarget: { x: number; y: number } | undefined;
+  /** Attaque spéciale en cours (lancée par SliceService, touche C). */
+  special: SpecialId | null = null;
+
+  /** Combo et coup lourd de l'arme de corps à corps en main. */
+  private moveset() {
+    return this.equipment.getData().weapon === 'afena'
+      ? { combo: AFENA_COMBO, heavy: AFENA_HEAVY }
+      : { combo: LIGHT_COMBO, heavy: HEAVY_ATTACK };
+  }
 
   /** Durée de l'esquive en cours (ms), pour calculer sa phase d'animation. */
   get dodgeDuration() {
@@ -146,6 +161,7 @@ export class PlayerEntity {
     //Si le joueur est mort on ne fait rien.
 
     if (data.state === 'dead') return;
+    if (data.state !== 'attacking') this.special = null;
 
     this.lockTarget = this.cameraHeading !== null ? target : undefined;
     this.tickHurtIFrames(deltaTime);
@@ -328,7 +344,7 @@ export class PlayerEntity {
     this.switchHeld = switchDown;
     if (switchPressed) {
       const weapon = this.equipment.switchWeapon();
-      this.equipment.say(weapon === 'bow' ? 'Arc en main' : 'Lance en main', 900);
+      this.equipment.say(`${WEAPONS[weapon].name} en main`, 900);
     }
     const drinkDown = this.input.drink();
     const drinkPressed = drinkDown && !this.drinkHeld;
@@ -371,13 +387,15 @@ export class PlayerEntity {
   }
 
   private getCurrentLightAttack(comboIndex: number) {
-    return LIGHT_COMBO[Math.min(comboIndex, LIGHT_COMBO.length - 1)];
+    const combo = this.moveset().combo;
+    return combo[Math.min(comboIndex, combo.length - 1)];
   }
 
   //Entrer en mode attaque rapide (COMBO)
   private enterLightAttack() {
     const data = this.store.getData();
     const attack = this.getCurrentLightAttack(data.comboCount);
+    this.special = null;
 
     this.store.update({
       state: 'attacking',
@@ -397,6 +415,8 @@ export class PlayerEntity {
 
   private enterHeavyAttack() {
     const data = this.store.getData();
+    const HEAVY_ATTACK = this.moveset().heavy;
+    this.special = null;
 
     this.store.update({
       state: 'attacking',
@@ -502,7 +522,7 @@ export class PlayerEntity {
         this.enterRoll();
         return;
       }
-      if (elapsed >= chain && this.equipment.getData().weapon === 'spear') {
+      if (elapsed >= chain && this.equipment.getData().weapon !== 'bow') {
         const finished = data.attackType !== 'light' || data.comboCount >= LIGHT_COMBO.length;
         if (this.buffered === 'light' && data.stamina > 0) {
           this.consume();
@@ -600,6 +620,7 @@ export class PlayerEntity {
       this.enterRoll();
       return;
     }
+    this.walkWhileBusy(deltaTime, BUSY_WALK.aiming);
     const newTimer = data.stateTimer - deltaTime * 1000;
     const elapsed = this.shot.duration - newTimer;
     if (!this.arrowReleased && elapsed >= this.shot.windup) {
@@ -618,8 +639,26 @@ export class PlayerEntity {
     }
   }
 
+  /**
+   * Pas lents pendant une action du haut du corps (boire, viser) : le
+   * regard ne change pas, seules les jambes avancent (blending haut/bas
+   * dans player-rig-3d.ts).
+   */
+  private walkWhileBusy(deltaTime: number, factor: number) {
+    const data = this.store.getData();
+    const { x, y } = this.inputDirection();
+    const speed = PLAYER_CONFIG.speed * factor;
+    const velocity = approachVelocity(data.vx, data.vy, x * speed, y * speed, deltaTime);
+    this.store.update({
+      x: data.x + velocity.x * deltaTime,
+      y: data.y + velocity.y * deltaTime,
+      vx: velocity.x,
+      vy: velocity.y,
+    });
+  }
+
   // ====================================================================
-  // BANDJI (vin de palme) : soin limité, immobile pendant la gorgée
+  // BANDJI (vin de palme) : soin limité, pas lents pendant la gorgée
   // ====================================================================
 
   private enterDrinking() {
@@ -637,6 +676,7 @@ export class PlayerEntity {
 
   /** Le soin tombe aux 60 % de la gorgée : un coup reçu avant fait perdre la gourde. */
   private handleDrinking(deltaTime: number) {
+    this.walkWhileBusy(deltaTime, BUSY_WALK.drinking);
     const data = this.store.getData();
     const newTimer = data.stateTimer - deltaTime * 1000;
     const progress = 1 - newTimer / EQUIPMENT_CONFIG.drinkDuration;
@@ -982,16 +1022,19 @@ export class PlayerEntity {
   getActiveAttackData(data?: PlayerData) {
     const d = data ?? this.store.getData();
 
+    const special = this.special && d.state === 'attacking' ? SPECIALS[this.special].attack : undefined;
+    if (special) return special;
     if (d.attackType === 'counter') return COUNTER_ATTACK;
     if (d.attackType === 'heavy') {
-      return HEAVY_ATTACK;
+      return this.moveset().heavy;
     }
 
     //Attaque rapide : A prendre selon le combo
 
     const comboIndex = Math.max(0, d.comboCount - 1);
+    const combo = this.moveset().combo;
 
-    return LIGHT_COMBO[Math.min(comboIndex, LIGHT_COMBO.length - 1)];
+    return combo[Math.min(comboIndex, combo.length - 1)];
   }
 
   //Function pour avoir des infos sur l'attaque

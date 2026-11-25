@@ -1,0 +1,46 @@
+@if (hud(); as h) {
+  @if (playing()) {
+    <div class="hud" [class.hidden]="h.cinematic">
+      <section class="player" aria-label="Ama">
+        <div class="bar hp" role="meter" aria-label="Vie" [attr.aria-valuenow]="h.hp" aria-valuemin="0" [attr.aria-valuemax]="h.maxHp">
+          <span class="lag" [style.width]="pct(h.hp, h.maxHp)"></span>
+          <span class="fill" [style.width]="pct(h.hp, h.maxHp)"></span>
+        </div>
+        <div class="bar stamina" role="meter" aria-label="Endurance" [attr.aria-valuenow]="h.stamina" aria-valuemin="0" [attr.aria-valuemax]="h.maxStamina">
+          <span class="lag" [style.width]="pct(h.stamina, h.maxStamina)"></span>
+          <span class="fill" [style.width]="pct(h.stamina, h.maxStamina)"></span>
+        </div>
+      </section>
+
+      @if (h.counter) {
+        <p class="counter" role="status">Esquive parfaite · Espace pour riposter</p>
+      }
+
+      @if (h.boss; as boss) {
+        <section class="boss" [attr.data-phase]="boss.phase" aria-label="Boss">
+          <h2>{{ boss.name }} <span>· {{ boss.epithet }}</span></h2>
+          <div class="bar" role="meter" aria-label="Vie du boss" [attr.aria-valuenow]="boss.hp" aria-valuemin="0" [attr.aria-valuemax]="boss.maxHp">
+            <span class="lag" [style.width]="pct(boss.hp, boss.maxHp)"></span>
+            <span class="fill" [style.width]="pct(boss.hp, boss.maxHp)"></span>
+            @for (t of boss.thresholds; track $index) {
+              <i class="mark" [style.left.%]="t * 100"></i>
+            }
+          </div>
+          @if (boss.opening) {
+            <p class="opening">{{ boss.opening }}</p>
+          }
+        </section>
+
+        @if (boss.banner; as banner) {
+          @for (b of [banner]; track b.phase) {
+            <section class="banner" role="status" [style.animation-duration.ms]="b.duration">
+              <small>Phase {{ b.phase }}</small>
+              <strong>{{ b.title }}</strong>
+              <p>{{ b.line }}</p>
+            </section>
+          }
+        }
+      }
+    </div>
+  }
+}

@@ -1,5 +1,6 @@
 import { inject, Injectable } from '@angular/core';
-import { BOSS_CONFIG, BOSS_TEMPO, BossState } from '../../constants/boss.config-constant';
+import { BOSS_CONFIG, BOSS_PHASE_PROFILE, BOSS_TEMPO, BossState } from '../../constants/boss.config-constant';
+import { BOSS_TRANSITIONS } from './boss-fsm';
 import { BOSS_LORE, BossId, BossPhase } from '../../constants/boss-lore';
 import { PLAYER_CONFIG } from '../../constants/player.config-constant';
 import {
@@ -26,6 +27,13 @@ import { RendererService } from '../../services/renderer.service';
 import { PlayerStore } from '../player/player.store';
 import { BossStore } from './boss.store';
 import { BossBrain, MIN_WINDUP, inReach } from './boss-brain';
+import { BACKSTAB, HIT_WEIGHT, HitWeight, POISE } from '../../constants/immersion.config-constant';
+
+/** Détails d'un coup reçu : poids de l'arme et coup porté dans le dos. */
+export interface HitImpact {
+  weight?: HitWeight;
+  backstab?: boolean;
+}
 
 type Attack = Exclude<BossAttackType, 'none'>;
 
@@ -37,6 +45,18 @@ interface AttackPlan {
 
 /** Durée d'affichage de la bannière de phase après la transition (ms). */
 const BANNER_TIME = 2600;
+
+export interface BossHud {
+  name: string;
+  epithet: string;
+  hp: number;
+  maxHp: number;
+  phase: BossPhase;
+  thresholds: [number, number];
+  /** Fenêtre de punition affichée sous la barre. */
+  opening: string | null;
+  banner: { phase: BossPhase; title: string; line: string; duration: number } | null;
+}
 
 @Injectable({
   providedIn: 'root',
@@ -63,6 +83,16 @@ export class BossEntity {
   private pending: AttackPlan | null = null;
   /** Côté préféré pour contourner un obstacle (évite d'hésiter à chaque frame). */
   private steerSide = 1;
+  /** Équilibre restant : rompu, le boss chancelle (voir POISE). */
+  private poise = 0;
+  private poiseRegenDelay = 0;
+  /** Recul physique en cours (unités/s), amorti en ~0,12 s. */
+  private knockVX = 0;
+  private knockVY = 0;
+  /** Sursaut du haut du corps (1 → 0) et direction du coup reçu (monde). */
+  flinch = 0;
+  flinchX = 0;
+  flinchY = 0;
 
   /** Centre du boss en coords monde (caméra / éclairage). */
   get centerX() {
@@ -89,11 +119,26 @@ export class BossEntity {
     this.pending = null;
     this.brain.reset();
     this.motion.reset();
+    this.poise = POISE.max[this.id];
+    this.poiseRegenDelay = 0;
+    this.knockVX = 0;
+    this.knockVY = 0;
+    this.flinch = 0;
   }
 
   /** Change d'état en gardant la durée totale (pour l'avancement des animations). */
   private enter(state: BossState, ms: number, extra: Partial<BossData> = {}) {
+    const from = this.store.getData().state;
+    if (from !== state && !BOSS_TRANSITIONS[from].includes(state)) {
+      // Machine à états : une transition non prévue est un bug de logique.
+      console.warn(`[Boss] transition inattendue ${from} → ${state}`);
+    }
     this.store.update({ state, stateTimer: ms, stateLength: ms, ...extra });
+  }
+
+  /** Profil de la phase courante (timeScale, lueur, attaques débloquées). */
+  profile(data = this.store.getData()) {
+    return BOSS_PHASE_PROFILE[this.id][data.phase];
   }
 
   /** Avancement 0→1 de l'état courant. */
@@ -104,37 +149,45 @@ export class BossEntity {
   update(deltaTime: number) {
     const data = this.store.getData();
     if (this.banner > 0) this.banner -= deltaTime * 1000;
-    if (data.state === 'dead') return;
+    if (data.state === 'dead') {
+      this.flinch = Math.max(0, this.flinch - deltaTime * 4.5);
+      return;
+    }
 
+    // Horloge du boss accélérée par le profil de phase (timeScale) : états,
+    // coups et animations (pilotées par l'avancement) vont plus vite.
+    const clock = deltaTime * this.profile(data).timeScale;
     switch (data.state) {
       case 'idle':
-        this.handleIdle(deltaTime);
+        this.handleIdle(clock);
         break;
       case 'chase':
-        this.handleChase(deltaTime);
+        this.handleChase(clock);
         break;
       case 'windup':
-        this.handleWindup(deltaTime);
+        this.handleWindup(clock);
         break;
       case 'attacking':
-        this.handleAttacking(deltaTime);
+        this.handleAttacking(clock);
         break;
       case 'recover':
-        this.handleRecover(deltaTime);
+        this.handleRecover(clock);
         break;
       case 'hurt':
-        this.handleHurt(deltaTime);
+      case 'stunned':
+        this.handleHurt(clock);
         break;
       case 'shift':
-        this.handleShift(deltaTime);
+        this.handleShift(clock);
         break;
     }
 
+    this.tickImpact(deltaTime);
     this.resolveMovement(data.x, data.y);
     const resolved = this.store.getData();
     this.motion.update(deltaTime, Math.hypot(resolved.x - data.x, resolved.y - data.y),
       resolved.facingX, resolved.facingY);
-    this.animator.play(bossStateToClip(data.state === 'shift' ? 'hurt' : data.state));
+    this.animator.play(bossStateToClip(data.state === 'shift' || data.state === 'stunned' ? 'hurt' : data.state));
     this.animator.update(deltaTime);
   }
 
@@ -397,12 +450,15 @@ export class BossEntity {
    * @param amount dégâts bruts du joueur
    * @param x,y recul appliqué si le coup fait chanceler le boss
    */
-  takeDamage(amount: number, x: number, y: number, counter = false) {
+  takeDamage(amount: number, x: number, y: number, counter = false, impact: HitImpact = {}) {
     const data = this.store.getData();
     if (data.state === 'dead' || data.state === 'shift') return;
 
-    const recovering = data.state === 'recover';
-    const multiplier = counter ? 1.1 : this.isExposed(data) ? 1.4 : recovering ? 1 : 0.22;
+    const recovering = data.state === 'recover' || data.state === 'stunned';
+    const guardMultiplier = counter ? 1.1 : this.isExposed(data) ? 1.4 : recovering ? 1 : 0.22;
+    // Dans le dos, la garde ne protège plus.
+    const multiplier = impact.backstab ? Math.max(guardMultiplier, 1) * BACKSTAB.multiplier : guardMultiplier;
+    const poiseBroken = this.react(amount, x, y, impact.weight ?? (counter ? 'counter' : 'light'));
     const newHp = Math.max(0, data.hp - Math.max(1, Math.round(amount * multiplier)));
     this.store.update({ hp: newHp });
 
@@ -423,10 +479,54 @@ export class BossEntity {
     } else if (counter && data.state !== 'recover') {
       this.queued = null;
       this.enter('hurt', BOSS_CONFIG.hurtDuration, { vx: x, vy: y });
+    } else if (poiseBroken) {
+      // Équilibre rompu : il est étourdi, l'attaque en cours est interrompue,
+      // et il encaisse les coups sans garde jusqu'à ce qu'il se reprenne.
+      this.queued = null;
+      this.pending = null;
+      this.enter('stunned', POISE.breakDuration, { vx: x * 0.6, vy: y * 0.6, currentAttack: 'none', comboStep: 0 });
     } else if (data.state === 'chase') {
       // Frappé pendant qu'il tournait : il cesse d'attendre et répond.
       this.brain.provoke();
     }
+  }
+
+  /**
+   * Réaction physique à un coup : recul de quelques centimètres selon le
+   * poids de l'arme, sursaut du buste, et usure de l'équilibre.
+   * @returns vrai si l'équilibre vient de rompre
+   */
+  private react(amount: number, x: number, y: number, weight: HitWeight) {
+    const w = HIT_WEIGHT[weight];
+    const length = Math.hypot(x, y);
+    const nx = length ? x / length : 0;
+    const ny = length ? y / length : 0;
+    const speed = POISE.knockback * w * POISE.knockbackDamping;
+    this.knockVX = nx * speed;
+    this.knockVY = ny * speed;
+    this.flinch = Math.min(1, 0.45 + w * 0.3);
+    this.flinchX = nx;
+    this.flinchY = ny;
+    this.poiseRegenDelay = POISE.regenDelay;
+    this.poise -= amount * w;
+    if (this.poise > 0) return false;
+    this.poise = POISE.max[this.id];
+    return true;
+  }
+
+  private tickImpact(deltaTime: number) {
+    this.flinch = Math.max(0, this.flinch - deltaTime * 4.5);
+    if (this.poiseRegenDelay > 0) this.poiseRegenDelay -= deltaTime * 1000;
+    else this.poise = Math.min(POISE.max[this.id], this.poise + POISE.regenRate * deltaTime);
+    if (Math.abs(this.knockVX) + Math.abs(this.knockVY) < 1) {
+      this.knockVX = this.knockVY = 0;
+      return;
+    }
+    const data = this.store.getData();
+    this.store.update({ x: data.x + this.knockVX * deltaTime, y: data.y + this.knockVY * deltaTime });
+    const decay = Math.exp(-POISE.knockbackDamping * deltaTime);
+    this.knockVX *= decay;
+    this.knockVY *= decay;
   }
 
   private resolveMovement(fromX: number, fromY: number) {
@@ -662,77 +762,79 @@ export class BossEntity {
 
   /** UI écran (repère non-monde) : grande barre de vie du boss en bas. */
   /** UI écran (repère non-monde) : barre de vie du boss et bannière de phase. */
-  renderUi(): void {
+  /** Canvas : seulement les bandes et le carton de l'entrée (le HUD est en HTML). */
+  renderUi(intro: number | null = null): void {
+    if (intro !== null) this.renderIntro(this.store.getData(), intro);
+  }
+
+  /**
+   * État du HUD HTML (barre de vie, ouverture, bannière de phase), lu par
+   * GameStateService à chaque image. Valeurs arrondies : le HUD ne se
+   * redessine que lorsqu'elles changent.
+   */
+  hud(intro: number | null = null): BossHud | null {
     const data = this.store.getData();
-    this.renderBossHpBar(data);
-    this.renderPhaseBanner(data);
-  }
-
-  private renderBossHpBar(data: BossData) {
-    if (data.state === 'dead') return;
-
-    const barWidth = 500;
-    const barHeight = 8;
-    const barX = (this.renderer.width - barWidth) / 2;
-    const barY = this.renderer.height - 60;
-
-    this.renderer.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4, '#1a1a1a');
-    this.renderer.strokeRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4, '#C5A059', 1);
-
-    // Or terni → ocre → rouge sombre : la couleur suit la phase.
-    const hpColor = ['#C5A059', '#c07a3a', '#8B0000'][data.phase - 1];
-    this.renderer.drawBar(barX, barY, barWidth, barHeight, data.hp, data.maxHp, hpColor);
-
-    // Repères des seuils de phase sur la barre.
-    for (const threshold of this.lore.thresholds) {
-      const x = barX + barWidth * threshold;
-      this.renderer.fillRect(x - 1, barY - 3, 2, barHeight + 6, '#f5e7c0');
-    }
-
+    if (data.state === 'dead') return null;
     const lore = this.lore;
-    const textX = barX + barWidth / 2;
-    this.renderer.drawText(`${lore.name} · ${lore.epithet}`.toUpperCase(), textX, barY - 12, '#F5F5DC',
-      { align: 'center', shadow: true });
-
-    if (data.state === 'recover') {
-      this.renderer.drawText(this.isExposed(data) ? 'CARAPACE OUVERTE' : 'OUVERTURE', textX, barY + 25,
-        '#fde1a7', { size: 12, align: 'center', shadow: true });
-    }
-    this.renderer.fillRect(barX, barY - 4, barWidth, 1, '#C5A05944');
+    const smooth = (a: number, b: number, x: number) => {
+      const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    // Pendant l'entrée, la barre se remplit avant de rendre la main.
+    const fill = intro === null ? 1 : smooth(0.68, 0.92, intro);
+    if (fill <= 0) return null;
+    const phase = lore.phases[data.phase];
+    return {
+      name: lore.name,
+      epithet: lore.epithet,
+      hp: Math.round(data.hp * fill),
+      maxHp: data.maxHp,
+      phase: data.phase,
+      thresholds: lore.thresholds,
+      opening: intro !== null ? null
+        : data.state === 'stunned' ? 'Étourdi'
+        : data.state !== 'recover' ? null
+        : this.isExposed(data) ? 'Carapace ouverte' : 'Ouverture',
+      banner: this.banner > 0 && data.phase > 1 && intro === null
+        ? { phase: data.phase, title: phase.title, line: phase.line, duration: BOSS_CONFIG.shiftDuration + BANNER_TIME }
+        : null,
+    };
   }
 
-  /** Bannière centrale à chaque changement de phase (titre + réplique du lore). */
-  private renderPhaseBanner(data: BossData) {
-    if (this.banner <= 0 || data.state === 'dead' || data.phase === 1) return;
+  /**
+   * Entrée du boss : bandes noires, puis le nom apparaît une fois le boss
+   * révélé, et la barre de vie se remplit avant de rendre la main.
+   */
+  private renderIntro(data: BossData, k: number) {
     const ctx = this.renderer.context;
     if (!ctx) return;
-    const total = BOSS_CONFIG.shiftDuration + BANNER_TIME;
-    const elapsed = total - this.banner;
-    const fadeIn = Math.min(1, elapsed / 350);
-    const fadeOut = Math.min(1, this.banner / 600);
-    const alpha = Math.min(fadeIn, fadeOut);
-    const phase = this.lore.phases[data.phase];
-    const cx = this.renderer.width / 2;
-    const cy = this.renderer.height * 0.3;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    const band = ctx.createLinearGradient(cx - 360, 0, cx + 360, 0);
-    band.addColorStop(0, '#00000000');
-    band.addColorStop(0.2, '#000000c8');
-    band.addColorStop(0.8, '#000000c8');
-    band.addColorStop(1, '#00000000');
-    ctx.fillStyle = band;
-    ctx.fillRect(cx - 360, cy - 42, 720, 84);
-    ctx.fillStyle = '#C5A05999';
-    ctx.fillRect(cx - 220, cy - 42, 440, 1);
-    ctx.fillRect(cx - 220, cy + 41, 440, 1);
-    this.renderer.drawText(`PHASE ${data.phase}`, cx, cy - 18, '#C5A059',
-      { size: 12, align: 'center', font: 'Georgia', shadow: true });
-    this.renderer.drawText(phase.title.toUpperCase(), cx, cy + 8, '#f6e6c4',
-      { size: 24, align: 'center', font: 'Georgia', shadow: true });
-    this.renderer.drawText(phase.line, cx, cy + 30, '#e8d5ad',
-      { size: 14, align: 'center', font: 'Georgia', shadow: true });
-    ctx.restore();
+    const smooth = (a: number, b: number, x: number) => {
+      const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    const w = this.renderer.width;
+    const h = this.renderer.height;
+    const bars = smooth(0, 0.08, k) * (1 - smooth(0.9, 1, k));
+    const bandH = h * 0.11 * bars;
+    this.renderer.fillRect(0, 0, w, bandH, '#000000');
+    this.renderer.fillRect(0, h - bandH, w, bandH, '#000000');
+
+    const card = smooth(0.55, 0.65, k) * (1 - smooth(0.9, 0.98, k));
+    if (card > 0) {
+      const lore = this.lore;
+      const cy = h * 0.66;
+      ctx.save();
+      ctx.globalAlpha = card;
+      this.renderer.drawText(lore.epithet.toUpperCase(), w / 2, cy - 30, '#C5A059',
+        { size: 13, align: 'center', font: 'Georgia', shadow: true });
+      this.renderer.drawText(lore.name.toUpperCase(), w / 2, cy + 4, '#f6e6c4',
+        { size: 34, align: 'center', font: 'Georgia', shadow: true });
+      const rule = 260 * smooth(0.55, 0.75, k);
+      this.renderer.fillRect(w / 2 - rule / 2, cy + 16, rule, 1, '#C5A059');
+      this.renderer.drawText(lore.chapter, w / 2, cy + 36, '#e8d5ad',
+        { size: 13, align: 'center', font: 'Georgia', shadow: true });
+      ctx.restore();
+    }
   }
 
   /**
@@ -774,7 +876,10 @@ export class BossEntity {
   }
 
   private startAttack(plan: AttackPlan, windupScale = 1) {
-    const { attack, chain } = plan;
+    // Seules les attaques débloquées par le profil de phase sont jouées.
+    const unlocked = this.profile().attacks;
+    const attack = unlocked.includes(plan.attack) ? plan.attack : unlocked[0];
+    const chain = plan.chain && unlocked.includes(plan.chain) ? plan.chain : undefined;
     this.lastAttack = attack;
     this.attackCount++;
     this.queued = chain ?? null;
@@ -783,7 +888,8 @@ export class BossEntity {
     const len = distance || 1;
     // Préparation jamais plus courte que MIN_WINDUP : même enchaînée en phase 3,
     // chaque attaque reste lisible et esquivable.
-    const windup = Math.max(MIN_WINDUP, config.windupDuration * this.tempo().windup * windupScale);
+    // MIN_WINDUP est en temps réel : on le compense du timeScale de la phase.
+    const windup = Math.max(MIN_WINDUP * this.profile().timeScale, config.windupDuration * this.tempo().windup * windupScale);
     this.enter('windup', windup, {
       currentAttack: attack,
       comboStep: 0,

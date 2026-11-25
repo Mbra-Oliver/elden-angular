@@ -18,11 +18,19 @@ import { EnvironmentService } from '../../lib/engine/environment.service';
 import { GameLoopService } from '../../lib/services/game-loop.service';
 import { GameStateService } from '../../lib/services/game-state.service';
 import { RendererService } from '../../lib/services/renderer.service';
+import { CombatHudComponent } from '../combat-hud/combat-hud.component';
+import { DialogueBoxComponent } from '../dialogue-box/dialogue-box.component';
 import { EquipmentStore } from '../../lib/entities/player/equipment.store';
+import { KeyHintComponent } from '../key-hint/key-hint.component';
+import { SliceHudComponent } from '../slice-hud/slice-hud.component';
+import { SliceService } from '../../lib/slice/slice.service';
+import { SocialHudComponent } from '../social-hud/social-hud.component';
+import { AsyncWorldService } from '../../lib/social/async-world.service';
+import { InputDeviceService, PAD } from '../../lib/services/input-device.service';
 
 @Component({
   selector: 'app-game-canva',
-  imports: [],
+  imports: [CombatHudComponent, DialogueBoxComponent, KeyHintComponent, SocialHudComponent, SliceHudComponent],
   templateUrl: './game-canva.component.html',
   styleUrl: './game-canva.component.css',
 })
@@ -31,12 +39,21 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
 
   readonly gameState = inject(GameStateService);
   readonly equipment = inject(EquipmentStore);
+  private readonly slice = inject(SliceService);
   readonly engineStatus = signal<'loading' | 'ready' | 'failed'>('loading');
   private readonly renderer = inject(RendererService);
   private readonly loop = inject(GameLoopService);
   private readonly zone = inject(NgZone);
   private readonly assets = inject(AssetLoaderService);
   private readonly environment = inject(EnvironmentService);
+  private readonly social = inject(AsyncWorldService);
+  /** Manette : A interagit / choix 1, X choix 2 (le clavier passe par onKeydown). */
+  private readonly offPad = inject(InputDeviceService).onPadPressed((button) => {
+    const dialogue = this.gameState.dialogue();
+    const choice = dialogue?.choices[button === PAD.A ? 0 : button === PAD.X ? 1 : -1];
+    if (choice) this.gameState.choose(choice);
+    else if (button === PAD.A && this.gameState.canTalk()) this.gameState.talk();
+  });
   private game?: Game;
   private world?: World3D;
   private destroyed = false;
@@ -51,6 +68,18 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
       this.gameState.choose(choice);
       return;
     }
+    // Grayboxing : matériaux gris, grille de 50 unités, collisions visibles.
+    if (event.code === 'KeyG' && !event.repeat && this.world) {
+      event.preventDefault();
+      const on = this.world.toggleGraybox();
+      this.slice.say(on ? 'Graybox activé (G pour revenir)' : 'Graybox désactivé');
+      return;
+    }
+    // Tranche verticale : objets, portes, levier passent avant les dialogues.
+    if (event.code === 'KeyF' && !event.repeat && this.slice.interact()) {
+      event.preventDefault();
+      return;
+    }
     if (event.code === 'KeyF' && !event.repeat && this.gameState.canTalk()) {
       event.preventDefault();
       this.gameState.talk();
@@ -63,9 +92,10 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
 
   private async loadEngine() {
     try {
-      const [Phaser, { World3D }] = await Promise.all([
+      const [Phaser, { World3D }, { addSharedWorldLayers }] = await Promise.all([
         import('phaser/dist/phaser.esm.js'),
         import('../../lib/engine/world-3d'),
+        import('../../lib/social/scene-layers'),
         // Les textures du sol doivent être prêtes avant la première image :
         // sinon le terrain 2400×1600 est repeint et renvoyé au GPU en plein combat.
         this.assets.load(SPRITE_MANIFEST),
@@ -112,6 +142,8 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
               void world.warmUp(this.environment.groundCanvas()).finally(() => {
                 if (this.destroyed) return;
                 this.gameState.setWorld3D(world);
+                addSharedWorldLayers(world, this.social);
+                this.social.attach();
                 this.warming = false;
                 this.zone.run(() => this.engineStatus.set('ready'));
               });
@@ -129,6 +161,8 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
+    this.offPad();
+    this.social.detach();
     this.gameState.stopGame();
     this.gameState.setWorld3D(null);
     this.world?.dispose();

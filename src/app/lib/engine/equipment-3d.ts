@@ -11,6 +11,14 @@ interface ArrowView {
 
 interface Pose { state: string; phase: number }
 
+export interface GearLook { batakari: boolean; tier: 0 | 1 | 2; ready: boolean }
+
+const TIERS = [
+  { color: '#77746c', metalness: 0.3, roughness: 0.7 }, // fer de forge, terne
+  { color: '#a7a69e', metalness: 0.55, roughness: 0.4 }, // fer poli
+  { color: '#b89a4e', metalness: 0.65, roughness: 0.35 }, // incrustation de laiton
+] as const;
+
 const ARROW_POOL = 24;
 const FLIGHT_HEIGHT = 19;
 
@@ -25,6 +33,11 @@ export class Equipment3D {
   private readonly quiver = new T.Group();
   private readonly arrows: T.Group[] = [];
   private weapon: WeaponId = 'spear';
+  /** Afena (épée courte à lame en feuille) et batakari (tunique à talismans). */
+  private readonly afena = new T.Group();
+  private readonly afenaBlade: T.MeshStandardMaterial;
+  private readonly batakari = new T.Group();
+  private look: GearLook = { batakari: false, tier: 0, ready: false };
 
   constructor(
     scene: T.Scene,
@@ -76,6 +89,41 @@ export class Equipment3D {
     this.gourd.visible = false;
     arms[0].add(this.gourd);
 
+    // Afena : poignée, garde ronde et lame en feuille, alignée comme la lance.
+    this.afenaBlade = new T.MeshStandardMaterial({ color: TIERS[0].color, metalness: 0.35, roughness: 0.6, flatShading: true });
+    const hilt = new T.Mesh(new T.CylinderGeometry(0.45, 0.5, 3.4, 6), leather);
+    const guard = new T.Mesh(new T.SphereGeometry(0.9, 6, 4), wood);
+    guard.position.y = 1.9;
+    const blade = new T.Mesh(new T.SphereGeometry(1, 8, 6), this.afenaBlade);
+    blade.scale.set(1.5, 6.2, 0.22);
+    blade.position.y = 7.6;
+    this.afena.add(hilt, guard, blade);
+    this.afena.position.set(0, -8.6, 1);
+    this.afena.rotation.x = Math.PI / 2 - 0.18;
+    this.afena.visible = false;
+    arms[1].add(this.afena);
+
+    // Batakari : tunique de coton rayé couverte de sachets de cuir (talismans).
+    const cotton = new T.MeshStandardMaterial({ color: '#c8b48a', roughness: 0.95, flatShading: true });
+    const stripe = new T.MeshStandardMaterial({ color: '#5b4a73', roughness: 0.95, flatShading: true });
+    const smock = new T.Mesh(new T.CylinderGeometry(5.9, 6.6, 11.5, 8), cotton);
+    smock.position.y = 1.6;
+    const band = new T.Mesh(new T.CylinderGeometry(6.65, 6.7, 1.2, 8), stripe);
+    band.position.y = -3.4;
+    this.batakari.add(smock, band);
+    const pouch = new T.BoxGeometry(1.6, 1.9, 0.9);
+    const red = new T.MeshStandardMaterial({ color: '#8f2e22', roughness: 0.9, flatShading: true });
+    for (let i = 0; i < 10; i++) {
+      const angle = i / 10 * Math.PI * 2;
+      const charm = new T.Mesh(pouch, i % 3 ? leather : red);
+      const height = i % 2 ? 4.4 : 0.6;
+      charm.position.set(Math.sin(angle) * 6.3, height, Math.cos(angle) * 6.3);
+      charm.rotation.y = angle;
+      this.batakari.add(charm);
+    }
+    this.batakari.visible = false;
+    torso.add(this.batakari);
+
     // Réserve de flèches partagée (même géométrie et matériau).
     const shaftGeometry = new T.CylinderGeometry(0.22, 0.22, 15, 4);
     const tipGeometry = new T.ConeGeometry(0.6, 2.2, 4);
@@ -92,6 +140,22 @@ export class Equipment3D {
       scene.add(arrow);
       this.arrows.push(arrow);
     }
+  }
+
+  /**
+   * Habillage modulaire : batakari attaché au torse (os du buste), teinte de
+   * la lame selon le niveau de Force (fer terne → fer poli → incrustation de
+   * laiton, matériaux de l'époque), lueur chaude quand l'attaque spéciale est prête.
+   */
+  setLook(look: GearLook) {
+    if (look.batakari === this.look.batakari && look.tier === this.look.tier && look.ready === this.look.ready) return;
+    this.look = look;
+    this.batakari.visible = look.batakari;
+    const tint = TIERS[look.tier];
+    this.afenaBlade.color.set(tint.color);
+    this.afenaBlade.metalness = tint.metalness;
+    this.afenaBlade.roughness = tint.roughness;
+    this.afenaBlade.emissive.set(look.ready ? '#7a3a10' : '#000000');
   }
 
   setWeapon(weapon: WeaponId) {
@@ -121,7 +185,9 @@ export class Equipment3D {
     this.bow.visible = bow && !drinking;
     this.quiver.visible = bow;
     this.gourd.visible = drinking;
-    if (this.spear) this.spear.visible = !bow && !drinking;
+    if (this.spear) this.spear.visible = this.weapon === 'spear' && !drinking;
+    this.afena.visible = this.weapon === 'afena' && !drinking;
+    if (this.look.ready) this.afenaBlade.emissiveIntensity = 0.6 + Math.sin(performance.now() / 160) * 0.35;
 
     const [left, right] = this.arms;
     if (pose.state === 'aiming' || pose.state === 'release') {

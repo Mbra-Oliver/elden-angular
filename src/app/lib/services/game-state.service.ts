@@ -14,7 +14,7 @@ import {
   tideRadii,
 } from '../interfaces/BossAttackData';
 import { SPRITE_MANIFEST } from '../constants/sprite-config';
-import { BossEntity } from '../entities/bosses/boss.entity';
+import { BossEntity, BossHud } from '../entities/bosses/boss.entity';
 import { BossStore } from '../entities/bosses/boss.store';
 import { PlayerEntity } from '../entities/player/player.entity';
 import { PlayerStore } from '../entities/player/player.store';
@@ -29,12 +29,36 @@ import type { Actor3D, World3D } from '../engine/world-3d';
 import { EnvironmentService } from '../engine/environment.service';
 import { DestructiblesService } from '../engine/destructibles.service';
 import { Destructibles3D } from '../engine/destructibles-3d';
-import { BATTLE, CLEARING, CROSSING, DIALOGUES, DialogueChoice, GATE, VILLAGE_STOPS } from '../constants/village';
+import { BATTLE, CLEARING, CROSSING, GATE, VILLAGE_STOPS } from '../constants/village';
+import { AttackEventTracker, attackFrame } from '../combat/attack-timeline';
+import { Dialogue, DialogueChoice, FlagValue, resolveDialogue } from './dialogue-tree';
+import { SliceService } from '../slice/slice.service';
+import { SoulsLoopService, type SoulsPrompt } from './souls-loop.service';
+import { FOYERS, SOULS, type Foyer, type FoyerId } from '../constants/souls-world';
+import { ruinBlocks } from '../constants/landscape';
+import { Souls3D } from '../engine/souls-3d';
+import { AttackTelegraph3D } from '../engine/attack-readability-3d';
+import { Slice3D } from '../slice/slice-3d';
+import { SLICE_DIALOGUES } from '../slice/slice-content';
 import { AttackData } from '../interfaces/AttackData';
 import { PlayerData } from '../interfaces/PlayerData';
 import { CollisionService } from './collision.service';
+import { BACKSTAB, HitWeight, TIME_DILATION, isPerilous } from '../constants/immersion.config-constant';
 import { GameLoopService } from './game-loop.service';
 import { RendererService } from './renderer.service';
+import { CombatFxService, type ImpactMaterial, type StrikeStyle } from './combat-fx.service';
+import { MusicCue, MusicDirectorService } from '../audio/music-director.service';
+
+export interface CombatHud {
+  /** Cinématique en cours : le HUD de combat est masqué. */
+  cinematic: boolean;
+  hp: number;
+  maxHp: number;
+  stamina: number;
+  maxStamina: number;
+  boss: BossHud | null;
+  counter: boolean;
+}
 
 @Injectable({
   providedIn: 'root',
@@ -58,10 +82,24 @@ export class GameStateService {
   private readonly equipment = inject(EquipmentStore);
   private readonly arrows = inject(ArrowService);
   private readonly destructibles = inject(DestructiblesService);
+  /** Game feel : sons d'impact, éclats, flashs, secousse 3D. */
+  private readonly fx = inject(CombatFxService);
+  private lastPlayerState = '';
+  private rollLanded = false;
+  /** Clé du dernier swing sonorisé (joueur) / du dernier coup de boss sonorisé. */
+  private swingKey = '';
+  private bossSwingKey = '';
+
+  /** Tranche verticale : plaine, chambres de la digue, ennemis, progression. */
+  private readonly slice = inject(SliceService);
 
   setWorld3D(view: World3D | null) {
     this.view3d = view;
+    view?.setFxSource(this.fx);
     view?.addLayer((scene) => new Destructibles3D(scene, this.destructibles));
+    view?.addLayer((scene) => new Slice3D(scene, this.slice, this.slice.enemies, this.playerEntity));
+    view?.addLayer((scene) => new Souls3D(scene, () => this.souls.stash()));
+    view?.addLayer((scene) => new AttackTelegraph3D(scene, () => this.threatPose()));
     this.playerEntity.setCameraHeading(view?.heading ?? null);
   }
 
@@ -72,6 +110,11 @@ export class GameStateService {
   private groundEffects = inject(GroundEffectsService);
   private assets = inject(AssetLoaderService);
 
+  private readonly _hud = signal<CombatHud | null>(null);
+  /** État du HUD HTML (null avant la première image). */
+  readonly hud = this._hud.asReadonly();
+  private hudKey = '';
+
   private readonly visited = signal(0);
   private readonly dialogueId = signal<string | null>(null);
   private readonly decision = signal<'seal' | 'expose' | null>(null);
@@ -80,41 +123,77 @@ export class GameStateService {
   readonly objective = computed(() => {
     if (this.chapter() === 'battle') return BATTLE;
     if (this.chapter() === 'crossing') return CROSSING;
-    return this.decision() ? CLEARING : (VILLAGE_STOPS.at(this.visited()) ?? GATE);
+    return this.decision() ? CLEARING : (VILLAGE_STOPS.at(this.visited()) ?? this.slice.objective() ?? GATE);
   });
   private readonly near = signal(false);
   private readonly counterTime = signal(0);
   readonly counterReady = computed(() => this.counterTime() > 0);
+  /** Drapeaux posés par les dialogues (`set` dans dialogues.json). */
+  private readonly storyFlags = signal<Record<string, FlagValue>>({});
+  /** Drapeaux lus par les conditions des dialogues (`if`). */
+  readonly flags = computed(() => ({
+    ...this.storyFlags(),
+    chapter: this.chapter(),
+    visited: this.visited(),
+    decision: this.decision(),
+    duelist_defeated: this.chapter() !== 'battle',
+  }));
   readonly dialogue = computed(() => {
     const id = this.dialogueId();
-    return id ? DIALOGUES[id] : null;
+    return id ? resolveDialogue(id, this.flags()) ??
+      resolveDialogue(id, this.flags(), SLICE_DIALOGUES as Record<string, Dialogue>) : null;
   });
-  readonly canTalk = computed(() => this.near() && !this.dialogue() && !this.decision());
+  /** Boucle soulslike : cauris, foyers, tache laissée à la mort (souls-loop.service.ts). */
+  readonly souls = inject(SoulsLoopService);
+  /** Foyer à portée (touche F), hors combat. */
+  private readonly restPrompt = signal<SoulsPrompt | null>(null);
+  readonly canTalk = computed(() => (this.near() || !!this.restPrompt()) && !this.dialogue() && !this.decision());
+  /** Libellé du bouton d'interaction. */
+  readonly interactLabel = computed(() => this.restPrompt()?.label ?? 'Interagir');
+  /** Boss affronté en ce moment (chronomètre des défis), null hors combat. */
+  readonly encounter = computed<'ford' | 'sluice' | null>(() =>
+    this.chapter() === 'battle' ? 'ford' : this.decision() ? 'sluice' : null);
+  /** Histoire, Boss Rush (boss à la suite) ou défi reçu par URL. */
+  readonly mode = signal<'story' | 'rush' | 'challenge'>('story');
+  /** Fenêtre d'interface ouverte (écriture d'un message) : la partie attend. */
+  readonly uiLock = signal(false);
+  private rushPlan: ('ford' | 'sluice')[] = [];
+  private rushNext: ('ford' | 'sluice')[] = [];
+  private rushTransition = 0;
   readonly story = computed(() => {
     if (this.chapter() === 'battle') {
-      return 'Pays akan, XVIIIᵉ siècle. Ama tient le gué pendant que les familles fuient la guerre. Kwadwo a reçu l’ordre de les ramener. Esquive ses charges et frappe quand il reprend son souffle.';
+      return 'Acte I, 1824. Le Pra est en crue. Kwabena Ofori, de la lignée de Pokou, fait passer les familles de son clan qui fuient la guerre. Kofi Brempong, capitaine asafo, a l’ordre de ne laisser passer personne. Esquive ses charges et frappe quand il reprend son souffle.';
     }
     if (this.chapter() === 'crossing') {
-      return 'Kwadwo lâche son arme. Il veut sauver son frère. Rejoins le gué : il tiendra la corde pendant que tu guideras les familles.';
+      return 'Kofi baisse son sabre : il n’y a pas d’armée, seulement des familles. Rejoins le gué : il tiendra la corde pendant que tu les guideras.';
     }
-    if (this.decision()) return 'La Veille ouvre sa cuirasse après avoir relâché l’eau. Esquive la vague, puis frappe pendant qu’elle se vide.';
+    if (this.decision()) return 'Le Gardien ouvre sa carapace après avoir relâché l’eau. Esquive la vague, puis frappe pendant qu’il se vide.';
+    const expedition = this.visited() >= 2 ? this.slice.journal() : null;
+    if (expedition) return expedition;
     return [
-      'Des générations plus tard, le village fondé par les familles du gué manque d’eau. Kouamé t’attend sur la place du Goli, avec le carnet d’Ama.',
-      'Le carnet d’Ama mentionne les trois coups entendus sous la digue. Porte-le à Aya.',
+      'Acte II, 1874. Kumasi a brûlé. Ama Serwaa, petite-nièce de Kwabena, a conduit les rescapés jusqu’au village fondé par les familles du gué. Le puits manque d’eau. Kouamé t’attend sur la place du Goli, avec la vieille corde du gué.',
+      'Le chant de Kwabena parle de trois coups entendus sous la digue. Va le redire à Aya.',
       'Le canal a été détourné. Retrouve Yao à la vanne avant que la chambre se vide.',
     ][this.visited()];
   });
   readonly ending = computed(() => this.decision() === 'seal'
-    ? 'Le puits se remplit. Yao et sa sœur veillent leur mère ensemble. Le père de Yao retire l’accusation devant le conseil. Quand on lui demande qui a ouvert le canal, il baisse les yeux. Aya inscrit son silence à la dernière page du carnet.'
-    : 'Tu retiens la Veille assez longtemps pour que Yao rende l’eau au puits. À l’aube, sa sœur pose la planche devant le conseil. Le père de Yao reconnaît le sceau et son ordre. Avant de rentrer veiller leur mère, elle lui demande de venir avec eux.');
+    ? 'Le puits se remplit. Yao et sa sœur veillent leur mère ensemble. Le père de Yao retire l’accusation devant le conseil. Quand on lui demande qui a ouvert le canal, il baisse les yeux. Ce soir-là, Aya ajoute un couplet au chant de Kwabena : celui du silence.'
+    : 'Tu retiens le Gardien assez longtemps pour que Yao rende l’eau au puits. Le dernier nœud cède, et l’esprit retourne sous l’eau, libre. À l’aube, la sœur de Yao pose la planche devant le conseil. Son père reconnaît sa marque et son ordre. Avant de rentrer veiller leur mère, elle lui demande de venir avec eux.');
 
   talk() {
     if (this.currentScreen() !== 'playing' || !this.canTalk()) return;
-    this.dialogueId.set(this.chapter() === 'crossing' ? 'crossing' : ['kouame', 'aya', 'gate'][this.visited()]);
+    const rest = this.restPrompt();
+    if (rest) {
+      this.rest(rest.foyer);
+      return;
+    }
+    const gate = this.slice.progression.has('lever') ? 'gate' : 'gate-blocked';
+    this.dialogueId.set(this.chapter() === 'crossing' ? 'crossing' : ['kouame', 'aya', gate][this.visited()]);
   }
 
   choose(choice: DialogueChoice) {
     if (!this.dialogue()?.choices.includes(choice)) return;
+    if (choice.set) this.storyFlags.update((flags) => ({ ...flags, ...choice.set }));
     if (choice.next) {
       this.dialogueId.set(choice.next);
       return;
@@ -131,12 +210,18 @@ export class GameStateService {
       this.groundEffects.reset();
       this.arrows.reset();
       this.equipment.refill();
+      this.slice.enterActTwo();
+      this.souls.enterChapter('village', this.visited());
       this.camera.snapTo(this.playerEntity.centerX, this.playerEntity.centerY);
+    } else if (choice.action === 'expedition') {
+      this.slice.startExpedition();
     } else if (choice.action === 'leave') {
       this.visited.update((count) => count + 1);
+      this.slice.setVisited(this.visited());
     } else if (choice.action === 'seal' || choice.action === 'expose') {
       this.decision.set(choice.action);
       this.terrain.setArena(SLUICE_DUEL);
+      this.beginBossIntro();
       if (choice.action === 'seal') {
         this.bossStore.update({ hp: 225, maxHp: 225 });
       }
@@ -147,13 +232,79 @@ export class GameStateService {
   private renderCallback = this.render.bind(this);
 
   private playerHitThisFrame = false;
+  /** Temps restant de l'entrée cinématique du boss (s). */
+  private introTime = 0;
+  /** L'intro attend que la vue 3D soit prête (les shaders compilent au lancement). */
+  private introPending = false;
+  static readonly INTRO_DURATION = 3.8;
   /** Dernier coup de combo / anneau vu, pour réarmer la touche à chaque coup. */
   private bossStrikeSeen = -1;
   private bossHitThisFrame = false;
+  private readonly playerAttackEvents = new AttackEventTracker();
 
-  constructor() {}
+  constructor() {
+    inject(MusicDirectorService).setCueSource(() => this.musicCue());
+    // Murs encore debout des ruines (décor de landscape.ts).
+    this.terrain.addBlocker(ruinBlocks);
+  }
+
+  /** Situation lue par la musique : zone, pause, approche de l'arène de la vanne. */
+  private musicCue(): MusicCue {
+    const screen = this._currentScreen();
+    if (screen === 'victory') return { zone: 'dawn' };
+    if (screen === 'death') return { zone: 'silence', defeated: true };
+    if (screen !== 'playing' && screen !== 'paused') return { zone: 'silence' };
+    const paused = screen === 'paused';
+    const chapter = this.chapter();
+    if (chapter === 'battle') return { zone: 'duel-ford', paused };
+    if (chapter === 'crossing') return { zone: 'river', paused };
+    if (this.decision()) return { zone: 'duel-sluice', paused };
+    return {
+      zone: 'village', paused,
+      player: { x: this.playerEntity.centerX, y: this.playerEntity.centerY },
+      nextArena: { x: SLUICE_DUEL.x, y: SLUICE_DUEL.y, zone: 'duel-sluice' },
+    };
+  }
+
+  /**
+   * Boss Rush / défi : enchaîne les boss demandés sans l'exploration. Les PV
+   * sont conservés d'un boss à l'autre, les gourdes et flèches rechargées.
+   */
+  startBossRush(plan: ('ford' | 'sluice')[], mode: 'rush' | 'challenge' = 'rush') {
+    if (!plan.length) return;
+    this.startGame();
+    this.mode.set(mode);
+    this.rushPlan = [...plan];
+    this.rushNext = plan.slice(1);
+    if (plan[0] === 'sluice') this.enterSluice();
+  }
+
+  private enterSluice() {
+    this.chapter.set('village');
+    this.visited.set(2);
+    this.decision.set('expose');
+    this.dialogueId.set(null);
+    this.counterTime.set(0);
+    this.bossStore.reset();
+    this.bossEntity.configure(false);
+    this.playerEntity.resetCombat();
+    this.groundEffects.reset();
+    this.arrows.reset();
+    this.equipment.refill();
+    this.terrain.setArena(SLUICE_DUEL);
+    const half = PLAYER_CONFIG.size / 2;
+    this.playerStore.update({
+      x: GATE.x + 20 - half, y: GATE.y - half, vx: 0, vy: 0, facingX: 1, facingY: 0, state: 'idle', stateTimer: 0,
+    });
+    this.camera.snapTo(this.playerEntity.centerX, this.playerEntity.centerY);
+    this.beginBossIntro();
+  }
 
   startGame() {
+    this.mode.set('story');
+    this.rushNext = [];
+    this.rushTransition = 0;
+    this.uiLock.set(false);
     this.destructibles.reset();
     this.stopGame();
     this.visited.set(0);
@@ -161,12 +312,16 @@ export class GameStateService {
     this.terrain.setArena(FORD_DUEL);
     this.decision.set(null);
     this.dialogueId.set(null);
+    this.storyFlags.set({});
     this.near.set(false);
     this.counterTime.set(0);
     this.playerEntity.resetCombat();
     this.groundEffects.reset();
     this.arrows.reset();
     this.equipment.reset();
+    this.fx.reset();
+    this.view3d?.resetFx();
+    this.view3d?.clearTraces();
     this.playerHitThisFrame = false;
     this.bossHitThisFrame = false;
     this.playerStore.reset();
@@ -187,6 +342,7 @@ export class GameStateService {
     // Centre la caméra sur le joueur dès le départ.
     this.camera.snapTo(this.playerEntity.centerX, this.playerEntity.centerY);
 
+    this.beginBossIntro();
     this._currentScreen.set('playing');
     this.gameloop.onUpdate(this.updateCallback);
     this.gameloop.onRender(this.renderCallback);
@@ -205,7 +361,9 @@ export class GameStateService {
   }
 
   retry() {
-    this.startGame();
+    const mode = this.mode();
+    if (mode === 'story') this.respawn();
+    else this.startBossRush(this.rushPlan, mode);
   }
 
   death() {
@@ -224,22 +382,42 @@ export class GameStateService {
 
     //Si jamais le player attack le boss et que les deux se chevauchent.
 
-    if (player.state === 'attacking' && !this.bossHitThisFrame) {
-      const attackData = this.playerEntity.getActiveAttackData();
-      const elapsed = attackData.duration - player.stateTimer;
-      if (elapsed < attackData.windup || elapsed >= attackData.windup + attackData.active) return;
+    // Chronologie de l'attaque : la hitbox ne vit que pendant les frames actives.
+    // Si une image lente saute toute la fenêtre active, l'événement
+    // 'active-start' garantit quand même un test de touche.
+    const attackData = this.playerEntity.getActiveAttackData();
+    const frame = player.state === 'attacking' ? attackFrame(attackData, attackData.duration - player.stateTimer) : null;
+    const events = this.playerAttackEvents.update(frame ? `${player.attackType}${player.comboCount}` : null, frame);
+    if (frame && !this.bossHitThisFrame) {
+      if (!frame.hitbox && !events.includes('active-start')) return;
       const counterContact = player.attackType === 'counter' &&
         Math.hypot(this.playerEntity.centerX - this.bossEntity.centerX, this.playerEntity.centerY - this.bossEntity.centerY) < 67;
       if (counterContact || this.playerStrikeReaches(player, attackData)) {
         const knockbackX = player.facingX * 150;
         const knockbarY = player.facingY * 150;
 
-        this.bossEntity.takeDamage(attackData.damage, knockbackX, knockbarY, player.attackType === 'counter');
+        const backstab = this.isBackstab(boss);
+        this.bossEntity.takeDamage(this.slice.meleeDamage(attackData.damage), knockbackX, knockbarY, player.attackType === 'counter',
+          { weight: player.attackType as HitWeight, backstab });
+        this.dilateOnCriticalHit(backstab ? 'backstab' : player.attackType === 'counter' ? 'counter' : null);
         this.groundEffects.emit(this.bossEntity.centerX, this.bossEntity.centerY, 7, player.facingX, player.facingY);
         const guarded = boss.state !== 'recover' && player.attackType !== 'counter';
         const heavy = player.attackType !== 'light';
+        const finisher = player.attackType === 'light' && player.comboCount >= 3;
         this.rendered.shake(guarded ? 2 : heavy ? 8 : 4);
-        this.gameloop.freeze(guarded ? 18 : heavy ? 70 : 50);
+        // Hitstop 40–80 ms : attaquant et cible figés (la boucle logique est suspendue).
+        this.gameloop.freeze(guarded ? 40 : heavy ? 80 : finisher ? 65 : 55);
+        const duelist = this.bossEntity.id.startsWith('duel');
+        const style: StrikeStyle = player.attackType === 'heavy' ? 'slam'
+          : player.attackType === 'counter' || finisher ? 'thrust' : 'slash';
+        const material: ImpactMaterial = duelist ? guarded ? 'guard' : 'flesh' : guarded ? 'shell' : 'spirit';
+        const bx = this.bossEntity.centerX;
+        const by = this.bossEntity.centerY;
+        this.fx.hit({ x: bx - player.facingX * 8, y: by - player.facingY * 8, height: duelist ? 22 : 14,
+          dirX: player.facingX, dirY: player.facingY, material, style, target: 'boss',
+          strength: guarded ? 0.5 : player.attackType === 'counter' ? 1.5 : heavy ? 1.4 : finisher ? 1.1 : 0.9 });
+        if (player.attackType === 'counter') this.fx.flash(bx, by, '#bff8ff', 4.5, 0.12);
+        if (player.attackType === 'heavy' && !guarded) this.fx.mark(bx, by, 16, duelist ? 'crack' : 'wet');
         this.bossHitThisFrame = true;
       }
     }
@@ -312,6 +490,8 @@ export class GameStateService {
         this.playerHitThisFrame = true;
         if (this.playerEntity.inPerfectDodge(player)) {
           this.counterTime.set(0.85);
+          this.fx.parry(this.playerEntity.centerX, this.playerEntity.centerY);
+          this.gameloop.slowMotion(TIME_DILATION.perfectDodge.scale, TIME_DILATION.perfectDodge.ms);
         }
         return;
       }
@@ -329,7 +509,12 @@ export class GameStateService {
       );
       this.groundEffects.emit(this.playerEntity.centerX, this.playerEntity.centerY, 8, dx / len, dy / len);
       this.rendered.shake(14);
-      this.gameloop.freeze(55);
+      this.gameloop.freeze(65);
+      const attack = boss.currentAttack;
+      const ground = attack === 'slam' || attack === 'surge' || attack === 'tide';
+      this.fx.hit({ x: this.playerEntity.centerX, y: this.playerEntity.centerY, height: 20,
+        dirX: dx / len, dirY: dy / len, material: 'flesh', target: 'player',
+        style: ground ? 'slam' : attack === 'charge' ? 'thrust' : 'slash', strength: attack === 'slam' ? 1.8 : 1.5 });
       this.playerHitThisFrame = true;
     }
   }
@@ -339,8 +524,39 @@ export class GameStateService {
     return BOSS_ATTACKS[name as Exclude<BossAttackType, 'none'>];
   }
 
+  /**
+   * Entrée du boss (vue 3D seulement) : combat figé, plan bas sur le boss,
+   * carton du nom et barre de vie qui se remplit, puis retour au joueur.
+   * Point d'accroche pour le son d'entrée du boss.
+   */
+  private beginBossIntro() {
+    this.introPending = true;
+    this.introTime = 0;
+  }
+
+  /** Avancement 0→1 de l'entrée du boss, null hors intro. */
+  get introProgress(): number | null {
+    return this.introTime > 0 ? 1 - this.introTime / GameStateService.INTRO_DURATION : null;
+  }
+
   update(deltaTime: number) {
-    if (this.dialogue()) return;
+    if (this.dialogue() || this.uiLock()) return;
+    // Accroche d'ouverture et menu du foyer : le monde attend.
+    if (this.slice.tickHook(deltaTime) || this.slice.blocking()) return;
+    if (this.rushTransition > 0) {
+      this.rushTransition -= deltaTime;
+      if (this.rushTransition <= 0) this.enterSluice();
+    }
+    if (this.introPending && this.view3d && this.inCombat()) {
+      this.introPending = false;
+      this.introTime = GameStateService.INTRO_DURATION;
+    }
+    if (this.introTime > 0) {
+      this.introTime = Math.max(0, this.introTime - deltaTime);
+      this.view3d?.setIntro(this.introProgress);
+      return;
+    }
+    this.view3d?.setIntro(null);
 
     this.groundEffects.update(deltaTime);
     const inCombat = this.inCombat();
@@ -353,11 +569,16 @@ export class GameStateService {
     }
     const px = this.playerEntity.centerX;
     const py = this.playerEntity.centerY;
+    this.slice.setFieldActive(this.mode() === 'story' && this.chapter() === 'village' && !inCombat);
     this.playerEntity.update(deltaTime, inCombat
       ? { x: this.bossEntity.centerX, y: this.bossEntity.centerY }
-      : undefined);
+      : this.slice.aimTarget());
+    this.slice.spinFacing();
+    this.slice.update(deltaTime, inCombat);
+    if (this.mode() === 'story' && this.soulsTick(inCombat)) return;
     this.updateArrows(deltaTime, inCombat);
     const player = this.playerStore.getData();
+    this.playerFeel(player);
     this.groundEffects.track(0, this.playerEntity.centerX, this.playerEntity.centerY,
       this.playerEntity.centerX - px, this.playerEntity.centerY - py,
       player.state === 'rolling' || player.attackType === 'counter');
@@ -376,23 +597,37 @@ export class GameStateService {
         this.groundEffects.emit(bx, by, 24, 0, 0, !this.bossEntity.id.startsWith('duel'));
         this.rendered.shake(16);
         this.gameloop.freeze(120);
+        const duelist = this.bossEntity.id.startsWith('duel');
+        this.fx.quake(bx, by, 46, duelist ? 'scorch' : 'wet', 1.3);
+        this.fx.flash(bx, by, duelist ? '#ff9a4a' : '#7fe3d0', 6, 0.22, 30);
+        // Plan sur spline autour du boss pendant qu'il est intouchable.
+        this.view3d?.playPhaseShot({ x: px, y: py },
+          () => ({ x: this.bossEntity.centerX, y: this.bossEntity.centerY }), BOSS_CONFIG.shiftDuration * 0.8);
       }
       if (boss.state === 'shift') this.pushPlayerFromBoss(deltaTime);
       if (before.state === 'windup' && boss.state === 'attacking') {
         if (boss.currentAttack === 'slam' || boss.currentAttack === 'surge' || boss.currentAttack === 'tide') {
           this.groundEffects.emit(bx, by, 18, 0, 0, boss.currentAttack !== 'slam');
+          const slam = boss.currentAttack === 'slam';
+          const duelist = this.bossEntity.id.startsWith('duel');
+          this.fx.quake(bx + boss.facingX * (slam ? 22 : 0), by + boss.facingY * (slam ? 22 : 0),
+            slam ? 26 : 34, duelist ? 'crack' : 'wet', slam ? 1 : 0.8);
+          // Le sabre du capitaine frappe la pierre : la poudre de sa giberne s'enflamme et couve.
+          if (slam && duelist) this.view3d?.scatterEmbers(bx + boss.facingX * 22, by + boss.facingY * 22, 16, 20);
         } else if (boss.currentAttack === 'sweep') {
           this.groundEffects.emit(bx, by, 14, 0, 0);
         } else if (charge) {
           this.groundEffects.emit(bx, by, 9, -boss.facingX, -boss.facingY);
         }
       }
+      this.soundBossSwing(boss);
+      this.telegraphPerilous(boss);
       if (this.view3d) this.separateFighters();
       this.checkCollision();
       this.checkBossAttack();
       this.checkEndConditions();
     } else {
-      const near = Math.hypot(target.x - this.playerEntity.centerX, target.y - this.playerEntity.centerY) < 75;
+      const near = !this.slice.objective() && Math.hypot(target.x - this.playerEntity.centerX, target.y - this.playerEntity.centerY) < 75;
       this.near.set(near);
     }
 
@@ -406,6 +641,37 @@ export class GameStateService {
     }
   }
 
+  /** Coup porté dans le dos du boss (hors attaque : il ne fait pas face). */
+  private isBackstab(boss: { state: string; facingX: number; facingY: number }) {
+    if (boss.state === 'attacking' || boss.state === 'shift') return false;
+    const dx = this.playerEntity.centerX - this.bossEntity.centerX;
+    const dy = this.playerEntity.centerY - this.bossEntity.centerY;
+    const distance = Math.hypot(dx, dy) || 1;
+    const facing = Math.hypot(boss.facingX, boss.facingY) || 1;
+    return (dx * boss.facingX + dy * boss.facingY) / (distance * facing) < BACKSTAB.cosine;
+  }
+
+  /** Ralenti bref : coup de grâce sur le boss, coup dans le dos, riposte. */
+  private dilateOnCriticalHit(kind: 'backstab' | 'counter' | null) {
+    const dilation = this.bossStore.getData().state === 'dead' ? TIME_DILATION.finisher
+      : kind ? TIME_DILATION[kind] : null;
+    if (dilation) this.gameloop.slowMotion(dilation.scale, dilation.ms);
+  }
+
+  private perilousRung = false;
+
+  /** Son aigu au moment où l'éclat apparaît, avant une attaque imparable. */
+  private telegraphPerilous(boss: { state: string; currentAttack: string }) {
+    if (boss.state !== 'windup') {
+      this.perilousRung = false;
+      return;
+    }
+    if (this.perilousRung || this.bossEntity.progress() < 0.75) return;
+    if (!isPerilous(this.bossEntity.id, boss.currentAttack)) return;
+    this.perilousRung = true;
+    this.fx.sfx.glint();
+  }
+
   /** Flèches en vol : impacts sur le boss, chute au sol, ramassage par le joueur. */
   private updateArrows(deltaTime: number, inCombat: boolean) {
     this.equipment.tick();
@@ -414,14 +680,69 @@ export class GameStateService {
       ? { x: this.bossEntity.centerX, y: this.bossEntity.centerY, radius: BOSS_CONFIG.size * 0.42 }
       : null;
     const arena = inCombat ? this.chapter() === 'battle' ? FORD_DUEL : SLUICE_DUEL : null;
-    const hits = this.arrows.update(deltaTime, target,
-      { x: this.playerEntity.centerX, y: this.playerEntity.centerY }, arena);
+    // Hors duel : les flèches visent les ennemis de la tranche et butent sur ses murs.
+    const field = inCombat ? null : this.slice.arrowTargets();
+    const hits = this.arrows.update(deltaTime, field ?? target,
+      { x: this.playerEntity.centerX, y: this.playerEntity.centerY }, arena, this.slice.arrowBlocked);
+    if (field) {
+      hits.forEach((hit) => this.slice.onArrowHit(hit));
+      return;
+    }
     for (const hit of hits) {
-      this.bossEntity.takeDamage(hit.damage, hit.dirX * 60, hit.dirY * 60);
+      this.bossEntity.takeDamage(this.slice.arrowDamage(hit.damage), hit.dirX * 60, hit.dirY * 60, false, { weight: 'arrow' });
+      this.view3d?.stickArrow(this.bossEntity.id.startsWith('duel'), hit.x, hit.y, hit.dirX, hit.dirY);
+      this.dilateOnCriticalHit(null);
       this.groundEffects.emit(hit.x, hit.y, 4, hit.dirX, hit.dirY);
       this.rendered.shake(hit.damage > 15 ? 4 : 2);
-      this.gameloop.freeze(hit.damage > 15 ? 40 : 20);
+      this.gameloop.freeze(hit.damage > 15 ? 50 : 40);
+      const duelist = this.bossEntity.id.startsWith('duel');
+      this.fx.hit({ x: hit.x, y: hit.y, height: 18, dirX: hit.dirX, dirY: hit.dirY, target: 'boss', style: 'thrust',
+        material: duelist ? 'flesh' : this.bossEntity.isExposed() ? 'spirit' : 'shell',
+        strength: hit.damage > 15 ? 0.8 : 0.55 });
     }
+  }
+
+  /**
+   * Souffle du swing et poussière de roulade du joueur, déclenchés sur les
+   * transitions d'état (aucun coût hors de ces instants).
+   */
+  private playerFeel(player: PlayerData) {
+    const x = this.playerEntity.centerX;
+    const y = this.playerEntity.centerY;
+    if (player.state === 'attacking') {
+      const attack = this.playerEntity.getActiveAttackData(player);
+      const key = `${player.attackType}${player.comboCount}`;
+      if (attack.duration - player.stateTimer >= attack.windup && key !== this.swingKey) {
+        this.swingKey = key;
+        this.fx.swing(player.attackType !== 'light');
+      }
+    } else {
+      this.swingKey = '';
+    }
+    if (player.state === 'rolling') {
+      const backstep = this.playerEntity.dodgeKind === 'backstep';
+      if (this.lastPlayerState !== 'rolling') {
+        this.rollLanded = false;
+        this.fx.dust(x, y, player.vx, player.vy, backstep ? 0.5 : 1);
+      } else if (!this.rollLanded && !backstep && player.stateTimer < this.playerEntity.dodgeDuration * 0.35) {
+        // Réception de la roulade : second nuage, sans son.
+        this.rollLanded = true;
+        this.fx.dust(x, y, player.vx, player.vy, 0.7, false);
+      }
+    }
+    this.lastPlayerState = player.state;
+  }
+
+  /** Souffle de l'arme du boss à chaque coup (combo : à chaque frappe). */
+  private soundBossSwing(boss: ReturnType<BossStore['getData']>) {
+    if (boss.state !== 'attacking' || boss.currentAttack === 'surge' || boss.currentAttack === 'tide') {
+      this.bossSwingKey = '';
+      return;
+    }
+    const key = `${boss.currentAttack}${boss.comboStep}`;
+    if (key === this.bossSwingKey) return;
+    this.bossSwingKey = key;
+    this.fx.swing(true);
   }
 
   /** Pendant la transition de phase, le souffle du boss repousse le joueur. */
@@ -458,18 +779,133 @@ export class GameStateService {
     this.playerStore.update({ x: moved.x - halfPlayer, y: moved.y - halfPlayer });
   }
 
+  // ─────────────────────────────────────────── Boucle soulslike
+
+  /** Cauris des objets cassés, tache de cauris, invite du foyer, mort hors duel. */
+  private soulsTick(inCombat: boolean): boolean {
+    this.souls.collectFromProps();
+    const x = this.playerEntity.centerX;
+    const y = this.playerEntity.centerY;
+    const recovered = this.souls.tryRecover(x, y);
+    if (recovered) this.slice.say(`Cauris retrouvés : +${recovered}`, 2200);
+    const player = this.playerStore.getData();
+    this.restPrompt.set(inCombat || player.state === 'dead' ? null : this.souls.promptAt(x, y));
+    if (!inCombat && player.state === 'dead') {
+      this.onPlayerDeath();
+      return true;
+    }
+    return false;
+  }
+
+  /** Les cauris restent au sol là où Ama tombe ; l'ancienne tache disparaît. */
+  private onPlayerDeath() {
+    if (this.mode() === 'story') {
+      const { dropped, lost } = this.souls.die(this.playerEntity.centerX, this.playerEntity.centerY);
+      this.deathNote.set(dropped ? `${dropped} cauris sont restés là où tu es tombé.${lost ? ` Les ${lost} d’avant sont perdus.` : ''}`
+        : lost ? `Les ${lost} cauris laissés plus tôt sont perdus.` : null);
+    } else {
+      this.deathNote.set(null);
+    }
+    this.stopGame();
+    this._currentScreen.set('death');
+  }
+
+  /** Message de l'écran de mort sur les cauris. */
+  readonly deathNote = signal<string | null>(null);
+
+  private rewardBoss() {
+    if (this.mode() !== 'story' || this.bossRewarded) return;
+    this.bossRewarded = true;
+    const reward = SOULS.bossReward[this.bossEntity.id] ?? 0;
+    this.souls.earn(reward);
+    if (reward) this.slice.say(`+${reward} cauris`, 2200);
+  }
+  private bossRewarded = false;
+
+  /** Repos : soin complet, gourdes et flèches, point de retour, sauvegarde. */
+  private rest(foyer: Foyer) {
+    const first = this.souls.rest(foyer.id, this.chapter(), this.visited());
+    if (foyer.id !== 'gue') this.slice.onRest(foyer.id);
+    const data = this.playerStore.getData();
+    this.playerStore.update({ hp: data.maxHp, stamina: data.maxStamina });
+    this.equipment.refill();
+    this.restPrompt.set(null);
+    this.slice.say(first ? `${foyer.name} allumé · progression sauvegardée` : `${foyer.name} · repos, progression sauvegardée`, 2400);
+  }
+
+  /** Continuer (menu principal) : reprend au dernier foyer sauvegardé. */
+  async continueGame(): Promise<boolean> {
+    const save = await this.souls.load();
+    if (!save) return false;
+    await this.slice.loadProgress();
+    this.resumeAtCheckpoint();
+    return true;
+  }
+
+  /** Après la mort : retour au dernier foyer, cauris au sol, monde remis en place. */
+  respawn() {
+    void this.slice.loadProgress().finally(() => this.resumeAtCheckpoint());
+  }
+
+  private resumeAtCheckpoint() {
+    const { foyer, chapter, visited } = this.souls.checkpoint();
+    this.startGame();
+    this.bossRewarded = false;
+    // Pas de nouvelle entrée cinématique à chaque retour.
+    this.introPending = false;
+    this.introTime = 0;
+    if (chapter === 'battle') return;
+    this.chapter.set(chapter);
+    this.visited.set(visited);
+    this.slice.setVisited(visited);
+    this.terrain.setArena(null);
+    this.bossStore.reset();
+    this.bossEntity.configure(false);
+    if (chapter === 'village') this.slice.resetWorld();
+    this.placeAtFoyer(foyer.id);
+  }
+
+  private placeAtFoyer(id: FoyerId) {
+    const foyer = FOYERS[id];
+    const half = PLAYER_CONFIG.size / 2;
+    this.playerStore.update({
+      x: foyer.x - half, y: foyer.y + 22 - half, vx: 0, vy: 0, facingX: 0, facingY: 1, state: 'idle', stateTimer: 0,
+    });
+    this.camera.snapTo(this.playerEntity.centerX, this.playerEntity.centerY);
+  }
+
+  /** Pose du boss lue par la zone de danger au sol (anticipation des coups). */
+  private threatPose() {
+    if (!this.inCombat() || this.introTime > 0) return null;
+    const boss = this.bossStore.getData();
+    return {
+      x: this.bossEntity.centerX, y: this.bossEntity.centerY, facingX: boss.facingX, facingY: boss.facingY,
+      state: boss.state, progress: this.bossEntity.progress(boss), attack: boss.currentAttack as BossAttackType,
+    };
+  }
+
   private checkEndConditions() {
     const player = this.playerStore.getData();
     const boss = this.bossStore.getData();
 
     if (player.state === 'dead') {
-      this.stopGame();
-      this._currentScreen.set('death');
+      this.onPlayerDeath();
     } else if (boss.state === 'dead') {
       this.counterTime.set(0);
-      if (this.chapter() === 'battle') {
+      this.rewardBoss();
+      if (this.mode() !== 'story') {
+        // Boss Rush : court répit, puis boss suivant (seul le Gardien suit Kofi).
+        if (this.rushTransition > 0) return;
+        const next = this.rushNext.shift();
+        if (next === 'sluice') this.rushTransition = 1.8;
+        else {
+          this.stopGame();
+          this._currentScreen.set('victory');
+        }
+      } else if (this.chapter() === 'battle') {
         this.terrain.setArena(null);
         this.chapter.set('crossing');
+        this.souls.enterChapter('crossing', 0);
       } else {
         this.stopGame();
         this._currentScreen.set('victory');
@@ -482,14 +918,11 @@ export class GameStateService {
     const boss = this.bossStore.getData();
     const attack = this.playerEntity.getActiveAttackData(player);
     const playerAttack = player.state === 'attacking';
-    const elapsed = attack.duration - player.stateTimer;
-    const impactEnd = attack.windup + attack.active;
     const phase = (timer: number, duration: number) => Math.max(0, Math.min(1, 1 - timer / duration));
-    // Attaque découpée en anticipation / impact / récupération pour l'animateur 3D.
-    const attackState = elapsed < attack.windup ? 'windup' : elapsed < impactEnd ? 'attacking' : 'recover';
-    const attackPhase = attackState === 'windup' ? elapsed / attack.windup
-      : attackState === 'attacking' ? (elapsed - attack.windup) / attack.active
-      : (elapsed - impactEnd) / Math.max(1, attack.duration - impactEnd);
+    // Même chronologie que la hitbox : anticipation / impact / récupération.
+    const frame = attackFrame(attack, attack.duration - player.stateTimer);
+    const attackState = frame.segment === 'active' ? 'attacking' : frame.segment;
+    const attackPhase = frame.t;
     const playerPose: Actor3D = {
       x: this.playerEntity.centerX, y: this.playerEntity.centerY,
       facingX: player.facingX, facingY: player.facingY,
@@ -504,29 +937,63 @@ export class GameStateService {
       sprint: this.playerEntity.sprinting,
       guarded: player.invicible && (player.state === 'idle' || player.state === 'moving'),
       knockX: player.vx, knockY: player.vy,
+      hpRatio: player.maxHp ? player.hp / player.maxHp : 1,
       ...this.playerEntity.equipmentPose(player),
     };
-    view.setEquipment(this.equipment.getData().weapon, this.arrows.all);
+    // Acte I (gué, 1824) : Kwabena ; acte II (village, 1874) : Ama Serwaa.
+    view.setHero(this.chapter() === 'village' ? 'ama' : 'kwabena');
+    view.setEquipment(this.equipment.getData().weapon, this.arrows.all, this.slice.look());
     const waves = boss.state !== 'attacking' ? []
       : boss.currentAttack === 'surge' ? [surgeRadius(BOSS_CONFIG.size, boss.stateTimer)]
       : boss.currentAttack === 'tide' ? tideRadii(BOSS_CONFIG.size, boss.stateTimer) : [];
     const enemyPose: Actor3D | null = combat ? {
       x: this.bossEntity.centerX, y: this.bossEntity.centerY,
-      facingX: boss.facingX, facingY: boss.facingY, state: boss.state,
+      // 'stunned' (équilibre rompu) se joue comme un chancellement sur les rigs.
+      facingX: boss.facingX, facingY: boss.facingY, state: boss.state === 'stunned' ? 'hurt' : boss.state,
+      glow: this.bossEntity.profile(boss).emissive,
+      glowIntensity: this.bossEntity.profile(boss).emissiveIntensity,
       phase: this.bossEntity.progress(boss),
       waveRadii: waves,
       attack: boss.currentAttack,
       step: boss.comboStep,
       bossPhase: boss.phase,
       exposed: this.bossEntity.isExposed(boss),
+      flinch: this.bossEntity.flinch,
+      flinchX: this.bossEntity.flinchX,
+      flinchY: this.bossEntity.flinchY,
     } : null;
 
+    // Pendant l'entrée, le boss se dresse et rugit (pose de transition de phase).
+    const intro = this.introProgress;
+    if (enemyPose && intro !== null && intro >= 0.3 && intro <= 0.85) {
+      enemyPose.state = 'shift';
+      enemyPose.phase = (intro - 0.3) / 0.55;
+    }
+    view.timeScale = this.gameloop.timeScale;
     view.render(this.environment.groundCanvas(), playerPose, enemyPose, duelist, combat ? null : this.objective(),
       combat ? duelist ? FORD_DUEL : SLUICE_DUEL : undefined);
     this.playerEntity.setCameraHeading(view.heading);
+  }
 
-    this.rendered.drawBar(20, 88, 148, 7, player.hp, player.maxHp, '#c96349');
-    this.rendered.drawBar(20, 99, 110, 4, player.stamina, player.maxStamina, '#b0bd76');
+  /**
+   * HUD HTML par-dessus le canvas : on ne pousse un nouvel état que lorsque
+   * une valeur affichée change (PV arrondis, phase, bannière…), pour ne pas
+   * relancer la détection de changements Angular à chaque image.
+   */
+  private syncHud(combat: boolean) {
+    const player = this.playerStore.getData();
+    const cinematic = this.introProgress !== null || !!this.view3d?.cinematicActive;
+    const next: CombatHud = {
+      cinematic,
+      hp: Math.round(player.hp), maxHp: player.maxHp,
+      stamina: Math.round(player.stamina), maxStamina: player.maxStamina,
+      boss: combat ? this.bossEntity.hud(this.introProgress) : null,
+      counter: this.counterReady(),
+    };
+    const key = JSON.stringify(next);
+    if (key === this.hudKey) return;
+    this.hudKey = key;
+    this._hud.set(next);
   }
 
   render() {
@@ -555,18 +1022,15 @@ export class GameStateService {
 
       this.rendered.shadeCombatEdges((this.camera.zoom - 1) / 0.6);
     }
+    this.syncHud(combat);
     if (combat) {
-      this.bossEntity.renderUi();
+      this.bossEntity.renderUi(this.introProgress);
     } else {
       const target = this.objective();
       const projected = view?.objectiveOnScreen();
       const x = Math.max(20, Math.min(projected?.x ?? this.camera.worldToScreenX(target.x), this.rendered.width - 20));
       const y = Math.max(80, Math.min(projected?.y ?? this.camera.worldToScreenY(target.y - 30), this.rendered.height - 24));
       this.rendered.drawText('◆', x, y, '#fff1aa', { size: 24, align: 'center', font: 'Georgia', shadow: true });
-    }
-    if (this.counterReady()) {
-      this.rendered.drawText('ESQUIVE PARFAITE  ·  ESPACE POUR RIPOSTER', this.rendered.width / 2, 110,
-        '#a7fff0', { size: 18, align: 'center', shadow: true });
     }
   }
 }

@@ -2,6 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { AssetLoaderService } from './asset-loader.service';
 import { HUTS, ROCKS, sceneryRandom, TREES } from '../constants/scenery';
 import { WORLD } from '../constants/terrain-constant';
+import { paintSliceGround } from '../slice/slice-ground';
 import { BATTLE, CLEARING, CROSSING, GATE, VILLAGE_STOPS } from '../constants/village';
 
 @Injectable({ providedIn: 'root' })
@@ -106,6 +107,8 @@ export class EnvironmentService {
       ctx.fillStyle = random() < 0.5 ? '#f4cf8225' : '#26190a26';
       ctx.fillRect(x, y, 1 + random() * 6, 1 + random() * 3);
     }
+
+    paintSliceGround(ctx, sceneryRandom(9157));
 
     for (const { x, y, radius: r, seed } of TREES) {
       const branchRandom = sceneryRandom(seed);

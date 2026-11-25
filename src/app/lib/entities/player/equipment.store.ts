@@ -7,6 +7,8 @@ export interface EquipmentData {
   maxArrows: number;
   bandji: number;
   maxBandji: number;
+  /** Armes possédées, dans l'ordre du cycle de R. */
+  owned: WeaponId[];
 }
 
 /** Inventaire d'Ama : arme en main, flèches restantes, gourdes de Bandji. */
@@ -35,9 +37,22 @@ export class EquipmentStore {
   }
 
   switchWeapon(): WeaponId {
-    const next: WeaponId = this.data().weapon === 'spear' ? 'bow' : 'spear';
+    const { owned, weapon } = this.data();
+    const next = owned[(owned.indexOf(weapon) + 1) % owned.length] ?? 'spear';
     this.data.update((d) => ({ ...d, weapon: next }));
     return next;
+  }
+
+  setOwned(owned: WeaponId[]) {
+    this.data.update((d) => ({ ...d, owned, weapon: owned.includes(d.weapon) ? d.weapon : owned[0] }));
+  }
+
+  setWeapon(weapon: WeaponId) {
+    if (this.data().owned.includes(weapon)) this.data.update((d) => ({ ...d, weapon }));
+  }
+
+  setMaxBandji(maxBandji: number) {
+    this.data.update((d) => ({ ...d, maxBandji, bandji: Math.min(d.bandji, maxBandji) }));
   }
 
   /** Retire une flèche du carquois. Renvoie false s'il n'y en a plus. */
@@ -86,6 +101,7 @@ export class EquipmentStore {
       maxArrows: EQUIPMENT_CONFIG.maxArrows,
       bandji: EQUIPMENT_CONFIG.maxBandji,
       maxBandji: EQUIPMENT_CONFIG.maxBandji,
+      owned: ['spear', 'bow'],
     };
   }
 }

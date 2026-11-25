@@ -1,5 +1,7 @@
 import * as T from 'three';
 import type { Actor3D } from './world-3d';
+import { HUMANOID_BONES, type HumanoidRig } from './humanoid-rig';
+import { BipedGait, PLAYER_GAIT } from './gait';
 
 /**
  * Animateur procédural du joueur en 3D.
@@ -15,12 +17,8 @@ import type { Actor3D } from './world-3d';
  * (pose.hitstop) les ressorts sont figés et le corps tremble légèrement.
  */
 
-interface Rig {
-  root: T.Group;
-  torso: T.Group;
-  arms: T.Group[];
-  legs: T.Group[];
-}
+/** Le joueur utilise le squelette humanoïde partagé (humanoid-rig.ts). */
+type Rig = HumanoidRig;
 
 const CHANNELS = [
   'tY', 'tF', 'rX', 'rY', 'rZ',
@@ -117,6 +115,18 @@ for (const c of ['aRx', 'aRy', 'aRz'] as Channel[]) { OMEGA_SCALE[I[c]] = 0.9; Z
 OMEGA_SCALE[I.wr] = 0.8; ZETA_SCALE[I.wr] = 0.85;
 for (const c of ['lLx', 'lLz', 'lRx', 'lRz'] as Channel[]) OMEGA_SCALE[I[c]] = 1.1;
 
+/**
+ * Masque du bas du corps (blending haut/bas) : quand le joueur marche en
+ * buvant, en visant ou en armant un coup, les jambes jouent la marche et le
+ * torse garde son action. 1 = canal pris à la locomotion, 0 = à l'action.
+ */
+const LOWER_MASK = new Float32Array(N);
+for (const c of ['lLx', 'lLz', 'lRx', 'lRz', 'tY'] as Channel[]) LOWER_MASK[I[c]] = 1;
+LOWER_MASK[I.rZ] = 0.35; // balancement des hanches
+LOWER_MASK[I.rX] = 0.2; // légère inclinaison dans la marche
+/** États dont seul le haut du corps est animé : les jambes peuvent marcher dessous. */
+const UPPER_BODY_STATES = new Set(['drinking', 'aiming', 'release', 'windup']);
+
 const TRAIL = 11;
 
 /** Traînée lumineuse derrière la pointe de la lance pendant les coups. */
@@ -200,7 +210,6 @@ export class PlayerAnimator {
   private readonly trail: SpearTrail;
   private readonly flashMaterials: T.MeshStandardMaterial[] = [];
   private heading: number | undefined;
-  private walk = 0;
   private speed = 0;
   private forward = 0;
   private side = 0;
@@ -215,12 +224,31 @@ export class PlayerAnimator {
   private knockSide = 0;
   private placed = false;
   private shadow?: T.Object3D;
+  private readonly upper = new Float32Array(N);
+  /** Squash & stretch : > 0 étire vers l'avant, < 0 tasse verticalement. */
+  private squash = 0;
+  private squashV = 0;
+  /**
+   * Démarche calée sur la distance (gait.ts). Les jambes la suivent sans
+   * ressort (un ressort lisserait l'appui linéaire et ferait glisser le pied) ;
+   * gaitWeight fond l'entrée et la sortie de marche.
+   */
+  private readonly gait = new BipedGait(PLAYER_GAIT);
+  private gaitWeight = 0;
+  /** Hanches tournées vers le déplacement, buste vers l'ennemi (pas chassé). */
+  private hip = 0;
+  private backpedal = false;
+  /** Part latérale restante une fois les hanches tournées (écart des jambes). */
+  private lateral = 0;
+  /** Contre-rotation du buste appliquée à la dernière image (relue par capture()). */
+  private torsoTwist = 0;
 
   constructor(scene: T.Scene, private readonly rig: Rig, private readonly spear: T.Object3D) {
     // Lacet puis tangage local : nécessaire pour la roulade avant.
     rig.root.rotation.order = 'YXZ';
     // Poignet : la lance pivote autour de la main, plus autour de son milieu.
     const arm = spear.parent ?? rig.arms[1];
+    this.wrist.name = HUMANOID_BONES.wrist;
     this.wrist.position.set(0, -8.5, 0.5);
     arm.add(this.wrist);
     this.wrist.add(spear);
@@ -273,11 +301,22 @@ export class PlayerAnimator {
       this.forward += ((dx * fx + dy * fy) * unit - this.forward) * blend;
       this.side += ((dx * fy - dy * fx) * unit - this.side) * blend;
       this.lean += ((this.forward - prevForward) * 8 - this.lean) * (1 - Math.exp(-6 * dt));
-      if (state === 'moving') this.walk += travel * 0.14;
+      this.stepGait(state, travel, dt);
     }
 
     // --- Entrées dans un état : impulsions de réaction et de recul.
     if (state !== this.lastState) {
+      // Squash & stretch : impulsions sur un ressort mou, qui rebondit tout seul.
+      if (state === 'attacking') this.squashV += attack === 'heavy' ? 16 : 11;
+      else if (state === 'hurt') this.squashV -= 14;
+      else if (this.lastState === 'rolling') this.squashV -= 9; // réception de la roulade
+      if (this.lastState === 'moving' && state === 'idle') {
+        // Arrêt : le buste part en arrière (freinage) et le bassin se pose.
+        this.v[I.rX] -= 2.4 * this.gait.pace;
+        this.v[I.tY] -= 5 * this.gait.pace;
+      } else if (state === 'moving' && this.lastState === 'idle') {
+        this.v[I.rX] += 1.4; // départ : on s'élance vers l'avant
+      }
       if (state === 'hurt') {
         const kx = pose.knockX ?? 0;
         const ky = pose.knockY ?? 0;
@@ -300,6 +339,7 @@ export class PlayerAnimator {
       // Le coup porte : l'arme rebondit légèrement contre la cible.
       this.v[I.aRx] += attack === 'heavy' ? 6 : 4;
       this.v[I.wr] -= 5;
+      this.squashV -= 8; // le choc tasse le corps
     }
     this.wasFrozen = frozen;
 
@@ -397,6 +437,19 @@ export class PlayerAnimator {
       }
     }
 
+    // --- Bas du corps : la marche se superpose à une action du haut du corps.
+    const walking = clamp01((this.speed - 12) / 50);
+    if (walking > 0 && UPPER_BODY_STATES.has(state)) {
+      this.upper.set(this.target);
+      this.fill(base);
+      this.locomotion(engaged, false);
+      for (let i = 0; i < N; i++) {
+        const m = LOWER_MASK[i] * walking;
+        this.target[i] = this.upper[i] + (this.target[i] - this.upper[i]) * m;
+      }
+      ground = Math.min(ground, 1 - 0.45 * walking);
+    }
+
     // --- Ressorts (figés pendant le gel d'impact).
     if (!frozen && dt > 0) {
       const [omega, zeta] = springFor(state, attack);
@@ -412,6 +465,9 @@ export class PlayerAnimator {
         }
       }
       this.flash = Math.max(0, this.flash - dt * 6);
+      // Ressort du squash & stretch (ω 26, ζ 0,45 : un rebond visible).
+      this.squashV += (-26 * 26 * this.squash - 2 * 0.45 * 26 * this.squashV) * dt;
+      this.squash = T.MathUtils.clamp(this.squash + this.squashV * dt, -0.35, 0.35);
     }
 
     // --- Orientation : rapide en combat, plus souple en marche.
@@ -443,7 +499,7 @@ export class PlayerAnimator {
   capture() {
     const { torso, arms } = this.rig;
     const actual: [Channel, number][] = [
-      ['rX', torso.rotation.x], ['rY', torso.rotation.y], ['rZ', torso.rotation.z],
+      ['rX', torso.rotation.x], ['rY', torso.rotation.y + this.torsoTwist], ['rZ', torso.rotation.z],
       ['aLx', arms[0].rotation.x], ['aLy', arms[0].rotation.y], ['aLz', arms[0].rotation.z],
       ['aRx', arms[1].rotation.x], ['aRy', arms[1].rotation.y], ['aRz', arms[1].rotation.z],
     ];
@@ -456,34 +512,64 @@ export class PlayerAnimator {
     }
   }
 
+  /** Avance la démarche : hanches, phase calée sur la distance, contacts des pieds. */
+  private stepGait(state: string, travel: number, dt: number) {
+    const walkingState = state === 'moving' || UPPER_BODY_STATES.has(state);
+    const moving = walkingState && this.speed > 8;
+    // Direction du déplacement dans le repère du regard (0 = devant, > 0 = à droite).
+    const move = Math.atan2(this.side, this.forward);
+    // Marche arrière au-delà de ~100°, avec hystérésis pour ne pas clignoter.
+    if (Math.abs(move) > (this.backpedal ? 1.4 : 1.75)) this.backpedal = true;
+    else if (Math.abs(move) < 1.4) this.backpedal = false;
+    let hipGoal = 0;
+    if (moving) {
+      const aim = this.backpedal ? Math.atan2(Math.sin(move - Math.PI), Math.cos(move - Math.PI)) : move;
+      hipGoal = T.MathUtils.clamp(aim, -0.6, 0.6);
+    }
+    this.hip += (hipGoal - this.hip) * (1 - Math.exp(-10 * dt));
+    const rel = move - this.hip;
+    this.lateral = moving ? Math.sin(rel) : 0;
+    this.gait.update(moving ? travel * Math.cos(rel) : 0, moving ? this.speed : 0, dt);
+    const goal = walkingState ? clamp01((this.speed - 6) / 30) : 0;
+    this.gaitWeight += (goal - this.gaitWeight) * (1 - Math.exp(-(goal > this.gaitWeight ? 16 : 10) * dt));
+    // Poids du pas : chaque pied qui se pose tasse le corps d'un rien.
+    const pace = this.gait.pace * this.gaitWeight;
+    for (let i = 0; i < 2; i++) {
+      if (!this.gait.contact[i]) continue;
+      this.v[I.tY] -= 7 * pace;
+      this.v[I.rX] += 0.7 * pace;
+      this.squashV -= 2.2 * pace;
+    }
+  }
+
   private locomotion(engaged: boolean, sprint: boolean) {
-    const pace = clamp01(this.speed / 220);
-    const swing = Math.sin(this.walk) * (sprint ? 0.85 : 0.6) * Math.min(pace, 1);
+    const g = this.gait;
+    const pace = g.pace;
+    const [left, right] = g.swing;
     const f = this.forward;
     const s = this.side;
     const t = this.target;
-    // Marche avant/arrière : jambes d'avant en arrière ; pas chassé : écart latéral.
-    const lateral = Math.abs(s);
-    const wave = Math.sin(this.walk) * pace;
-    t[I.lLx] = swing * f + swing * 0.4 * lateral;
-    t[I.lRx] = -swing * f - swing * 0.4 * lateral;
-    // En pas chassé, chaque jambe s'écarte à son tour (ouvre, ramène).
-    t[I.lLz] = -0.08 * +engaged - 0.45 * lateral * Math.max(0, wave);
-    t[I.lRz] = 0.08 * +engaged + 0.45 * lateral * Math.max(0, -wave);
+    const lateral = Math.abs(this.lateral);
+    // Jambes : rotation x > 0 envoie le pied en arrière, d'où le signe.
+    t[I.lLx] = -left;
+    t[I.lRx] = -right;
+    // Ce qui reste de pas chassé après la rotation des hanches : la jambe en l'air s'écarte.
+    t[I.lLz] = -0.08 * +engaged - 0.4 * lateral * g.fold[0];
+    t[I.lRz] = 0.08 * +engaged + 0.4 * lateral * g.fold[1];
     // Bras en opposition des jambes ; le bras armé reste en garde au combat.
-    t[I.aLx] += -swing * f * (engaged ? 0.35 : 0.9);
-    t[I.aRx] += swing * f * (engaged ? 0.25 : 0.75);
-    // Buste : penché dans la course et l'accélération, incliné dans les virages.
-    t[I.rX] += 0.12 * pace * f + T.MathUtils.clamp(this.lean, -0.2, 0.2);
-    t[I.rY] += -swing * 0.12;
-    t[I.rZ] += T.MathUtils.clamp(-this.turn * 0.035, -0.18, 0.18) + s * 0.08 * pace;
-    t[I.tY] += Math.abs(Math.cos(this.walk)) * 0.45 * pace;
+    t[I.aLx] += -right * (engaged ? 0.35 : 0.9);
+    t[I.aRx] += -left * (engaged ? 0.25 : 0.75);
+    // Buste : penché dans la course et l'accélération, incliné dans les virages
+    // (plus on va vite, plus on se couche), épaules en contre-rotation du bassin.
+    t[I.rX] += 0.12 * pace * Math.abs(f) + T.MathUtils.clamp(this.lean, -0.2, 0.2);
+    t[I.rY] += (left - right) * 0.09;
+    t[I.rZ] += T.MathUtils.clamp(-this.turn * (0.015 + 0.05 * pace), -0.2, 0.2) + s * 0.05 * pace;
     if (sprint) {
       // Course : penché fort, bras qui pompent, lance ramenée le long du corps.
       t[I.rX] += 0.22;
-      t[I.aLx] = -swing * 1.3 - 0.2;
+      t[I.aLx] = -right * 1.5 - 0.2;
       t[I.aLz] = -0.15;
-      t[I.aRx] = swing * 0.6 + 0.25;
+      t[I.aRx] = -left * 0.7 + 0.25;
       t[I.wr] = -0.25;
       t[I.aRz] = -0.1;
     }
@@ -506,13 +592,18 @@ export class PlayerAnimator {
     frozen: boolean, state: string, now: number) {
     const { root, torso, arms, legs } = this.rig;
     const x = this.x;
-    const yaw = (this.heading ?? 0) + spin;
+    const w = this.gaitWeight;
+    const yaw = (this.heading ?? 0) + spin + this.hip * w;
     const sin = Math.sin(yaw);
     const cos = Math.cos(yaw);
 
     // Les jambes écartées abaissent le bassin pour garder les pieds au sol.
-    const reach = Math.max(Math.cos(x[I.lLx]) * Math.cos(x[I.lLz]), Math.cos(x[I.lRx]) * Math.cos(x[I.lRz]));
-    const drop = -LEG * (1 - reach) * ground;
+    // En marche, seule la jambe d'appui porte le bassin (la jambe en l'air est pliée).
+    const legL = x[I.lLx] + (-this.gait.swing[0] - x[I.lLx]) * w;
+    const legR = x[I.lRx] + (-this.gait.swing[1] - x[I.lRx]) * w;
+    const springReach = Math.max(Math.cos(x[I.lLx]) * Math.cos(x[I.lLz]), Math.cos(x[I.lRx]) * Math.cos(x[I.lRz]));
+    const reach = springReach + (this.gait.reach - springReach) * w;
+    const drop = -LEG * (1 - reach) * (ground + (1 - ground) * w);
     // Pivot de la roulade à mi-hauteur du corps.
     const pivot = 9;
     const pivotUp = pivot - pivot * Math.cos(pitch);
@@ -527,6 +618,16 @@ export class PlayerAnimator {
     }
     root.position.set(pose.x + sin * forward + shakeX, drop + lift + pivotUp, pose.y + cos * forward + shakeZ);
     root.rotation.set(pitch, yaw, 0);
+    // Volume conservé : étiré vers l'avant (z local) ou tassé vers le sol (y).
+    const sq = this.squash;
+    if (sq >= 0) {
+      const side = 1 / Math.sqrt(1 + 0.35 * sq);
+      root.scale.set(side, side, 1 + 0.35 * sq);
+    } else {
+      const up = 1 + 0.4 * sq;
+      const side = 1 / Math.sqrt(up);
+      root.scale.set(side, up, side);
+    }
     if (this.shadow) {
       this.shadow.position.set(root.position.x, 0.15, root.position.z);
       const squash = 1 - 0.25 * Math.min(1, lift / 2.5);
@@ -534,12 +635,17 @@ export class PlayerAnimator {
     }
 
     torso.position.y = 16 + x[I.tY];
-    torso.rotation.set(x[I.rX], x[I.rY], x[I.rZ]);
+    // Le buste annule la rotation des hanches : il reste tourné vers l'ennemi.
+    this.torsoTwist = this.hip * w * 0.85;
+    torso.rotation.set(x[I.rX], x[I.rY] - this.torsoTwist, x[I.rZ]);
     arms[0].rotation.set(x[I.aLx], x[I.aLy], x[I.aLz]);
     arms[1].rotation.set(x[I.aRx], x[I.aRy], x[I.aRz]);
     this.wrist.rotation.x = x[I.wr];
-    legs[0].rotation.set(x[I.lLx], 0, x[I.lLz]);
-    legs[1].rotation.set(x[I.lRx], 0, x[I.lRz]);
+    legs[0].rotation.set(legL, 0, x[I.lLz]);
+    legs[1].rotation.set(legR, 0, x[I.lRz]);
+    // Faux genou : la jambe en l'air se raccourcit au milieu de son retour.
+    legs[0].scale.y = 1 - 0.16 * this.gait.fold[0] * w;
+    legs[1].scale.y = 1 - 0.16 * this.gait.fold[1] * w;
 
     const glow = this.flash * this.flash;
     // Clignotement pâle pendant l'invincibilité qui suit un coup reçu.

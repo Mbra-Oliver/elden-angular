@@ -1,5 +1,5 @@
 <div class="stage">
-  <div #viewport class="game-viewport"></div>
+  <div #viewport class="game-viewport"><app-combat-hud /><app-social-hud /><app-slice-hud /></div>
   @if (engineStatus() === 'loading') {
     <p class="engine-message" role="status">Chargement du terrain…</p>
   } @else if (engineStatus() === 'failed') {
@@ -18,6 +18,11 @@
       <div class="slot" [class.active]="gear.weapon === 'spear'">
         <span class="icon" aria-hidden="true">⟋</span> Lance
       </div>
+      @if (gear.owned.includes('afena')) {
+        <div class="slot" [class.active]="gear.weapon === 'afena'">
+          <span class="icon" aria-hidden="true">†</span> Afena
+        </div>
+      }
       <div class="slot" [class.active]="gear.weapon === 'bow'" [class.empty]="gear.arrows === 0">
         <span class="icon" aria-hidden="true">➶</span> Arc
         <span class="count" [attr.aria-label]="gear.arrows + ' flèches'">{{ gear.arrows }}/{{ gear.maxArrows }}</span>
@@ -26,27 +31,19 @@
         <span class="icon" aria-hidden="true">⚱</span> Bandji
         <span class="count" [attr.aria-label]="gear.bandji + ' gourdes'">{{ gear.bandji }}/{{ gear.maxBandji }}</span>
       </div>
-      <p class="keys">R changer d’arme · B boire</p>
+      <p class="keys"><app-key-hint action="switch" /> changer d’arme · <app-key-hint action="drink" /> boire</p>
     </section>
     @if (equipment.notice(); as notice) {
       <p class="gear-notice" role="status">{{ notice }}</p>
     }
   }
   @if (gameState.canTalk()) {
-    <button type="button" class="talk" (click)="gameState.talk()">Interagir · F</button>
+    <button type="button" class="talk" (click)="gameState.talk()"><app-key-hint action="interact" /> {{ gameState.interactLabel() }}</button>
   }
   @if (gameState.dialogue(); as line) {
-    <section class="dialogue" aria-label="Dialogue" aria-live="polite">
-      <strong>{{ line.speaker }}</strong>
-      <p>{{ line.text }}</p>
-      <div class="choices">
-        @for (choice of line.choices; track choice.label; let index = $index) {
-          <button type="button" (click)="gameState.choose(choice)"><kbd>{{ index + 1 }}</kbd> {{ choice.label }}</button>
-        }
-      </div>
-    </section>
+    <app-dialogue-box [line]="line" (choose)="gameState.choose($event)" />
   }
   <div class="controls">
-    Flèches / ZQSD / WASD · Espace combo / tir · E attaque lourde / tir bandé · R lance ↔ arc · B Bandji · Maj (appui bref) esquive, maintenue sprint · F interagir · Glisser pour tourner hors combat
+    <app-key-hint action="move" /> se déplacer · <app-key-hint action="attack" /> combo / tir · <app-key-hint action="heavy" /> lourde / tir bandé · <app-key-hint action="dodge" /> esquive (maintenu : sprint) · <app-key-hint action="switch" /> lance ↔ arc · <app-key-hint action="drink" /> Bandji · <app-key-hint action="interact" /> interagir · <app-key-hint action="message" /> message
   </div>
 </div>

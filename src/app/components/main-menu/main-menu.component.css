@@ -91,3 +91,13 @@ dd { margin: 0; color: #e7ac73; }
   .title-content { padding-block: 18px; }
   h1 { font-size: clamp(32px, 6vw, 60px); margin-bottom: 20px; }
 }
+
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.challenge-card {
+  max-width: 420px; margin: 0 0 14px; padding: 10px 14px;
+  background: #1d150fe0; border: 1px solid #d8a23a; border-radius: 6px; color: #fff0d1;
+}
+.challenge-card strong { color: #ffdc9a; }
+.challenge-card p { margin: 4px 0 8px; font-size: 14px; }
+.challenge-card div { display: flex; gap: 8px; }
+.challenge-card button { min-width: 0; }

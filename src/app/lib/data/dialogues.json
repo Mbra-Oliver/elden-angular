@@ -1,0 +1,108 @@
+{
+  "$comment": "Arbres de dialogue. 'if' : conditions sur les drapeaux de partie (toutes doivent être vraies). 'set' : drapeaux posés quand le choix est pris. 'variants' : texte de remplacement, le premier dont les conditions sont remplies l'emporte. Drapeaux fournis par le jeu : chapter, visited, decision, duelist_defeated.",
+  "nodes": {
+    "crossing": {
+      "speaker": "Kofi Brempong",
+      "text": "On m’avait dit qu’une armée de Kumasi passerait ici cette nuit. Je ne vois que des mères, des vieillards et des enfants sur les épaules. Celui qui a lancé cette rumeur voulait du sang dans le fleuve. Donne-moi un bout de ta corde. Je tiendrai cette rive pendant que tu fais passer les tiens.",
+      "choices": [
+        {
+          "label": "Lui confier la corde et guider les familles",
+          "action": "cross"
+        }
+      ]
+    },
+    "kouame": {
+      "speaker": "Kouamé",
+      "text": "Le Goli devait commencer au coucher du soleil. On a rangé les tambours quand l’eau du puits a pris la couleur du fer. Le conseil accuse Yao d’avoir fendu la digue avec sa houe. Sa mère est morte ce matin sans avoir pu lui parler. Si on le chasse, il ne pourra même pas lui dire adieu.",
+      "choices": [
+        {
+          "label": "Qu’est-ce que tu as vu, toi ?",
+          "next": "doubt"
+        },
+        {
+          "label": "Qu’est-ce que cette corde fait là ?",
+          "next": "shelter"
+        }
+      ]
+    },
+    "doubt": {
+      "speaker": "Kouamé",
+      "text": "J’ai reconnu sa houe, oui. Mais elle était plantée dans le talus, comme un repère. En dessous, j’ai entendu frapper trois fois. Le chant de Kwabena parle de ce bruit. Ta grand-mère le chantait. Va le redire à Aya, elle saura ce qu’il veut dire.",
+      "choices": [
+        {
+          "label": "Porter le chant à Aya",
+          "action": "leave",
+          "set": {
+            "heard_knocks": true
+          }
+        }
+      ]
+    },
+    "shelter": {
+      "speaker": "Kouamé",
+      "text": "C’est la corde du gué du Pra, celle de ton grand-oncle Kwabena. On raconte qu’il a vaincu le capitaine asafo au milieu du fleuve. Le chant dit autre chose : Kofi Brempong a baissé son sabre et tenu l’autre bout de la corde. Personne ne chante jamais sa part. Va voir Aya.",
+      "choices": [
+        {
+          "label": "Aller parler à Aya",
+          "action": "leave"
+        }
+      ]
+    },
+    "aya": {
+      "speaker": "Aya",
+      "text": "Yao avait aperçu des piquets neufs dans le lit du canal. Il a utilisé sa houe pour marquer la brèche avant de remonter une enfant tombée dans le fossé. Dans sa manche, j’ai trouvé cette planche. Approche-la du feu.",
+      "choices": [
+        {
+          "label": "Examiner la planche",
+          "next": "mark"
+        },
+        {
+          "label": "Que dit sa sœur ?",
+          "next": "oya"
+        }
+      ],
+      "variants": [
+        {
+          "if": {
+            "heard_knocks": true
+          },
+          "text": "Trois coups sous la digue… Alors le chant de Kwabena ne mentait pas. Yao avait aperçu des piquets neufs dans le lit du canal. Il a utilisé sa houe pour marquer la brèche avant de remonter une enfant tombée dans le fossé. Dans sa manche, j’ai trouvé cette planche. Approche-la du feu."
+        }
+      ]
+    },
+    "oya": {
+      "speaker": "Aya",
+      "text": "Yao est ici avec sa petite sœur. Le conseil a demandé le silence jusqu’à ce que les familles venues de Kumasi quittent la cour de l’Adjanou. Sa sœur veut parler elle-même. Elle dit que des hommes du conseil creusaient déjà là-bas hier soir, avec un prêtre qu’elle n’avait jamais vu.",
+      "choices": [
+        {
+          "label": "Examiner la planche",
+          "next": "mark"
+        }
+      ]
+    },
+    "mark": {
+      "speaker": "Aya",
+      "text": "La marque du conseil. Ils ont détourné l’eau vers leurs parcelles et mis à sec la chambre sous la digue. Écoute le chant : Kwabena l’a noyée pour y enfermer le Gardien, un esprit qu’Okomfo Ampem avait lié par son nom. Depuis, la corde du gué sert à vérifier le niveau de l’eau. Tant qu’elle reste mouillée au troisième nœud, le Gardien dort.",
+      "choices": [
+        {
+          "label": "Retrouver Yao à la vanne",
+          "action": "leave"
+        }
+      ]
+    },
+    "gate": {
+      "speaker": "Yao",
+      "text": "Mon père a fait ouvrir le canal. Je l’ai entendu ordonner qu’on retire les piquets. Si on taille la planche pour remplacer le levier cassé, on peut rouvrir la vanne tout de suite. La marque va partir avec les copeaux, mais l’eau affaiblira le Gardien. Sinon, je peux dégager la vanne à la main pendant que tu l’occupes. Ça prendra plus longtemps. À toi de choisir ce qu’on risque.",
+      "choices": [
+        {
+          "label": "Tailler la planche et rouvrir la vanne",
+          "action": "seal"
+        },
+        {
+          "label": "Garder la marque comme preuve",
+          "action": "expose"
+        }
+      ]
+    }
+  }
+}

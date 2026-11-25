@@ -1,6 +1,7 @@
 import * as T from 'three';
 import { sceneryRandom } from '../constants/scenery';
 import { FORD_DUEL, SLUICE_DUEL, type DuelArena } from './duel-fog';
+import { applyWind } from './wind';
 
 /**
  * Habillage 3D des deux arènes de duel (gué de l'Ouest, ancienne retenue).
@@ -183,7 +184,7 @@ export class ArenaDressing {
     if (!this.active) this.glowLight.intensity = c.glowIntensity;
   }
 
-  // ─── Gué de l'Ouest : duel contre Kwadwo ────────────────────────────────
+  // ─── Gué du Pra : duel contre Kofi Brempong ────────────────────────────────
 
   private buildFord(glowTexture: T.Texture): Dressing {
     const arena = FORD_DUEL;
@@ -227,8 +228,10 @@ export class ArenaDressing {
 
     // Bandes d'étoffe nouées à quelques pieux (couleurs de pagne).
     const bannerCount = 10;
-    const banners = new T.InstancedMesh(new T.PlaneGeometry(4.5, 13).translate(0, -6.5, 0),
-      new T.MeshStandardMaterial({ roughness: 0.9, side: T.DoubleSide }), bannerCount);
+    // Subdivisée en hauteur pour que le vent (vertex shader) la fasse onduler.
+    const banners = new T.InstancedMesh(new T.PlaneGeometry(4.5, 13, 1, 6).translate(0, -6.5, 0),
+      applyWind(new T.MeshStandardMaterial({ roughness: 0.9, side: T.DoubleSide }),
+        { anchor: 0, tip: -13, amplitude: 1.3, sway: [0.25, 1], ripple: 0.8, speed: 1.6 }), bannerCount);
     const bannerBase: T.Matrix4[] = [];
     const cloth = ['#b0372a', '#d8a23a', '#2f6b4a', '#1f3f66'];
     for (let i = 0; i < bannerCount; i++) {
@@ -289,7 +292,7 @@ export class ArenaDressing {
     };
   }
 
-  // ─── Ancienne retenue : combat contre la Veille ─────────────────────────
+  // ─── Ancienne retenue : combat contre le Gardien noyé ─────────────────────────
 
   private buildSluice(glowTexture: T.Texture): Dressing {
     const arena = SLUICE_DUEL;
@@ -334,7 +337,7 @@ export class ArenaDressing {
     const shards = this.scatterStones(r, random, 30, '#4d5a55', 2, 6);
     group.add(blocks, shards);
 
-    // Braseros de pierre : feux pâles, de la couleur du cœur de la Veille.
+    // Braseros de pierre : feux pâles, de la couleur du cœur du Gardien.
     const angles = [0.15, 0.65, 1.15, 1.65].map((k) => k * Math.PI);
     const spots = angles.map((a) => new T.Vector3(Math.cos(a) * (r + 30), 0, Math.sin(a) * (r + 30)));
     const bowls = new T.InstancedMesh(new T.CylinderGeometry(6, 3.5, 9, 7).translate(0, 4.5, 0),
@@ -518,6 +521,7 @@ export class ArenaDressing {
   private flames(spots: T.Vector3[], color: string, height: number, width: number) {
     const mesh = new T.InstancedMesh(new T.ConeGeometry(width, height, 6).translate(0, height / 2, 0),
       new T.MeshBasicMaterial({ color, transparent: true, opacity: 0.92, fog: false }), spots.length);
+    mesh.userData['bloom'] = true; // flammes : halo du post-traitement
     const o = new T.Object3D();
     const flickers = spots.map((p, index) => {
       o.position.copy(p);

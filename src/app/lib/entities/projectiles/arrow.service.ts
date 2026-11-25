@@ -31,6 +31,8 @@ export interface ArrowHit {
   dirY: number;
   x: number;
   y: number;
+  /** Index de la cible touchée quand plusieurs cibles sont passées. */
+  index?: number;
 }
 
 /** Flèches en vol et flèches tombées au sol (ramassables). */
@@ -60,8 +62,9 @@ export class ArrowService {
    * Avance les flèches, renvoie les impacts sur la cible et gère le ramassage.
    * Une flèche qui touche est perdue ; une flèche qui manque tombe au sol.
    */
-  update(deltaTime: number, target: ArrowTarget | null, picker: { x: number; y: number } | null,
-    arena?: DuelArena | null): ArrowHit[] {
+  update(deltaTime: number, target: ArrowTarget | readonly ArrowTarget[] | null, picker: { x: number; y: number } | null,
+    arena?: DuelArena | null, blocked?: (x: number, y: number) => boolean): ArrowHit[] {
+    const targets: readonly ArrowTarget[] = !target ? [] : Array.isArray(target) ? target : [target as ArrowTarget];
     const hits: ArrowHit[] = [];
     const kept: Arrow[] = [];
     for (const arrow of this.arrows) {
@@ -82,10 +85,17 @@ export class ArrowService {
         arrow.x += arrow.dirX * distance / steps;
         arrow.y += arrow.dirY * distance / steps;
         arrow.travelled += distance / steps;
-        if (target && Math.hypot(target.x - arrow.x, target.y - arrow.y) <
-            target.radius + EQUIPMENT_CONFIG.arrowHitRadius) {
-          hits.push({ damage: arrow.damage, dirX: arrow.dirX, dirY: arrow.dirY, x: arrow.x, y: arrow.y });
+        const index = targets.findIndex((t) => Math.hypot(t.x - arrow.x, t.y - arrow.y) <
+          t.radius + EQUIPMENT_CONFIG.arrowHitRadius);
+        if (index >= 0) {
+          hits.push({ damage: arrow.damage, dirX: arrow.dirX, dirY: arrow.dirY, x: arrow.x, y: arrow.y, index });
           hit = true;
+          break;
+        }
+        if (blocked?.(arrow.x, arrow.y)) {
+          arrow.x -= arrow.dirX * 6;
+          arrow.y -= arrow.dirY * 6;
+          arrow.grounded = true;
           break;
         }
         const outOfArena = arena && Math.hypot(arrow.x - arena.x, arrow.y - arena.y) > arena.radius - 6;
