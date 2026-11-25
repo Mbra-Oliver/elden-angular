@@ -58,6 +58,15 @@ export class AsyncWorld3D {
     scene.add(this.group);
   }
 
+  /** Compilés par World3D.addLayer au chargement (pas d'à-coup à la première apparition). */
+  get warmables(): T.Object3D[] {
+    return [this.stains, this.runes, ...this.whites.map((p) => p.root), this.red.root];
+  }
+
+  get textures(): T.Texture[] {
+    return [this.runeTexture];
+  }
+
   update(dt: number) {
     this.clock += dt;
     if (this.world.revision !== this.revision) this.rebuild();

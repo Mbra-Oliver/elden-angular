@@ -139,10 +139,16 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
               this.world = world;
               // Ni logique ni rendu tant que les shaders ne sont pas compilés.
               this.warming = true;
-              void world.warmUp(this.environment.groundCanvas()).finally(() => {
+              // Couches d'abord, préchauffage ensuite : tout ce qui sera affiché
+              // en jeu est compilé pendant l'écran de chargement.
+              const prepared = world;
+              void (async () => {
+                await this.gameState.attachLayers(prepared);
+                addSharedWorldLayers(prepared, this.social);
+                await prepared.warmUp(this.environment.groundCanvas());
+              })().finally(() => {
                 if (this.destroyed) return;
-                this.gameState.setWorld3D(world);
-                addSharedWorldLayers(world, this.social);
+                this.gameState.setWorld3D(prepared);
                 this.social.attach();
                 this.warming = false;
                 this.zone.run(() => this.engineStatus.set('ready'));

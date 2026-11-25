@@ -14,11 +14,15 @@ import { CinematicCamera, type CinematicShot, SHOTS } from './cinematic-camera';
 import { Equipment3D, type GearLook } from './equipment-3d';
 import { buildHumanoid, type HumanoidRig } from './humanoid-rig';
 import { PlayerAnimator } from './player-rig-3d';
+import { MartialArts3D } from './martial-arts-3d';
 import { BipedGait, DUELIST_GAIT } from './gait';
 import { plantGrass } from './wind';
 import { KENTE_PLAYER, adinkraTexture, attachBatakari, attachToga, kenteTexture } from './akan-garments';
 import { Landscape3D } from './landscape-3d';
-import { addOutlines } from './attack-readability-3d';
+import { addOutlines, AttackTelegraph3D } from './attack-readability-3d';
+import { Destructibles3D } from './destructibles-3d';
+import { Souls3D } from './souls-3d';
+import { Slice3D } from '../slice/slice-3d';
 import type { WeaponId } from '../constants/equipment.config-constant';
 
 interface Point { x: number; y: number }
@@ -64,6 +68,12 @@ interface Fighter extends HumanoidRig {
   bobV?: number;
 }
 
+/**
+ * Couches 3D pilotées par GameStateService. Réexportées ici pour rester dans
+ * le chunk paresseux de world-3d (avec three.js) au lieu du bundle initial.
+ */
+export const GameLayers3D = { Destructibles3D, Slice3D, Souls3D, AttackTelegraph3D };
+
 export class World3D {
   private readonly renderer: T.WebGLRenderer;
   private readonly scene = new T.Scene();
@@ -72,6 +82,7 @@ export class World3D {
   private readonly player: Fighter;
   private readonly gear: Equipment3D;
   private readonly playerAnim: PlayerAnimator;
+  private readonly martial: MartialArts3D;
   private readonly duelist: Fighter;
   private readonly guardian = new GuardianRig((color) => this.material(color));
   private readonly veille = this.guardian.root;
@@ -122,6 +133,8 @@ export class World3D {
   private readonly handleFx = (event: FxEvent) => this.onFx(event);
   /** Décalage de secousse appliqué à la caméra à l'image précédente. */
   private readonly appliedShake = new T.Vector3();
+  /** Objets cachés des couches ajoutées (addLayer), à rendre visibles pendant warmUp. */
+  private readonly layerWarmables: T.Object3D[] = [];
   /** Couches de scène ajoutées par d'autres systèmes (décor destructible…). */
   private readonly layers: { update(dt: number): void; dispose(): void }[] = [];
   /** Tenues du héros, une seule visible selon l'acte (setHero). */
@@ -171,6 +184,8 @@ export class World3D {
     const spear = this.player.arms[1].children.at(-1);
     this.gear = new Equipment3D(this.scene, this.player.torso, this.player.arms, spear);
     this.playerAnim = new PlayerAnimator(this.scene, this.player, spear!);
+    // Prise martiale : l'arme quitte le poignet, les deux mains la tiennent par IK.
+    this.martial = new MartialArts3D(this.player, spear!);
     this.duelist = this.makeFighter('#873f30', '#c2a176');
     this.duelist.gait = new BipedGait(DUELIST_GAIT);
     this.makeVeille();
@@ -238,8 +253,23 @@ export class World3D {
     }
   }
 
-  addLayer(create: (scene: T.Scene) => { update(dt: number): void; dispose(): void }) {
-    this.layers.push(create(this.scene));
+  /**
+   * Ajoute une couche de scène. Ses objets cachés (`warmables`) et ses
+   * textures sont compilés / envoyés au GPU tout de suite, au chargement,
+   * plutôt qu'à leur première apparition en plein combat.
+   */
+  addLayer(create: (scene: T.Scene) => {
+    update(dt: number): void; dispose(): void; warmables?: T.Object3D[]; textures?: T.Texture[];
+  }) {
+    const layer = create(this.scene);
+    this.layers.push(layer);
+    // Gardés pour warmUp : il recompile tout, variantes du bloom comprises.
+    this.layerWarmables.push(...(layer.warmables ?? []));
+    const hidden = (layer.warmables ?? []).filter((object) => !object.visible);
+    hidden.forEach((object) => { object.visible = true; });
+    this.renderer.compile(this.scene, this.camera);
+    layer.textures?.forEach((texture) => this.renderer.initTexture(texture));
+    hidden.forEach((object) => { object.visible = false; });
   }
 
   private material(color: string) {
@@ -349,6 +379,7 @@ export class World3D {
   async warmUp(ground: HTMLCanvasElement) {
     this.setGround(ground);
     const hidden = [this.duelist.root, this.veille, this.mist, this.marker, this.wave, ...this.bossFx.warmables, ...this.fx.warmables, ...this.feel.warmables,
+      ...this.layerWarmables,
       // Habillage des deux arènes (lueurs et poussières en PointsMaterial) : compilé avec
       // l'état final de la scène (brouillard, lumières), pas seulement au constructeur.
       ...this.arenaDressing.warmObjects].filter((o) => !o.visible);
@@ -470,6 +501,7 @@ export class World3D {
     // L'arc et la gourde posent les bras directement : l'animateur repart de
     // cette pose ensuite, pour un fondu sans à-coup.
     this.playerAnim.capture();
+    this.martial.update(player, dt, now, !!enemy);
     this.duelist.root.visible = !!enemy && duelist;
     this.veille.visible = !!enemy && !duelist;
     if (enemy && duelist) {

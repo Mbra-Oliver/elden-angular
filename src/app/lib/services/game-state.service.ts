@@ -28,7 +28,6 @@ import { TerrainCollisionService } from '../engine/terrain-collision.service';
 import type { Actor3D, World3D } from '../engine/world-3d';
 import { EnvironmentService } from '../engine/environment.service';
 import { DestructiblesService } from '../engine/destructibles.service';
-import { Destructibles3D } from '../engine/destructibles-3d';
 import { BATTLE, CLEARING, CROSSING, GATE, VILLAGE_STOPS } from '../constants/village';
 import { AttackEventTracker, attackFrame } from '../combat/attack-timeline';
 import { Dialogue, DialogueChoice, FlagValue, resolveDialogue } from './dialogue-tree';
@@ -36,9 +35,6 @@ import { SliceService } from '../slice/slice.service';
 import { SoulsLoopService, type SoulsPrompt } from './souls-loop.service';
 import { FOYERS, SOULS, type Foyer, type FoyerId } from '../constants/souls-world';
 import { ruinBlocks } from '../constants/landscape';
-import { Souls3D } from '../engine/souls-3d';
-import { AttackTelegraph3D } from '../engine/attack-readability-3d';
-import { Slice3D } from '../slice/slice-3d';
 import { SLICE_DIALOGUES } from '../slice/slice-content';
 import { AttackData } from '../interfaces/AttackData';
 import { PlayerData } from '../interfaces/PlayerData';
@@ -93,13 +89,24 @@ export class GameStateService {
   /** Tranche verticale : plaine, chambres de la digue, ennemis, progression. */
   private readonly slice = inject(SliceService);
 
+  /**
+   * Crée les couches 3D de la partie. À attendre AVANT World3D.warmUp : leurs
+   * shaders (y compris les variantes du bloom) sont alors compilés pendant
+   * l'écran de chargement et non aux premières images jouées.
+   * Elles vivent dans le chunk paresseux de world-3d (déjà chargé ici, l'import
+   * se résout aussitôt) pour que three.js reste hors du bundle initial.
+   */
+  async attachLayers(view: World3D) {
+    const { GameLayers3D: L } = await import('../engine/world-3d');
+    view.addLayer((scene) => new L.Destructibles3D(scene, this.destructibles));
+    view.addLayer((scene) => new L.Slice3D(scene, this.slice, this.slice.enemies, this.playerEntity));
+    view.addLayer((scene) => new L.Souls3D(scene, () => this.souls.stash()));
+    view.addLayer((scene) => new L.AttackTelegraph3D(scene, () => this.threatPose()));
+  }
+
   setWorld3D(view: World3D | null) {
     this.view3d = view;
     view?.setFxSource(this.fx);
-    view?.addLayer((scene) => new Destructibles3D(scene, this.destructibles));
-    view?.addLayer((scene) => new Slice3D(scene, this.slice, this.slice.enemies, this.playerEntity));
-    view?.addLayer((scene) => new Souls3D(scene, () => this.souls.stash()));
-    view?.addLayer((scene) => new AttackTelegraph3D(scene, () => this.threatPose()));
     this.playerEntity.setCameraHeading(view?.heading ?? null);
   }
 
