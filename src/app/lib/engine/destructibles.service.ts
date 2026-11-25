@@ -20,6 +20,9 @@ import {
   tideRadii,
   type BossAttackType,
 } from '../interfaces/BossAttackData';
+import { AudioEngineService } from '../audio/audio-engine.service';
+import { PropSfx } from '../audio/prop-sfx';
+import { CombatFxService } from '../services/combat-fx.service';
 import { GameLoopService } from '../services/game-loop.service';
 import { RendererService } from '../services/renderer.service';
 import { TerrainCollisionService } from './terrain-collision.service';
@@ -67,6 +70,14 @@ export class DestructiblesService {
   private readonly arrows = inject(ArrowService);
   private readonly renderer = inject(RendererService);
   private readonly gameloop = inject(GameLoopService);
+  private readonly fx = inject(CombatFxService);
+  private readonly audio = inject(AudioEngineService);
+  private readonly sfx = new PropSfx(() => {
+    const context = this.audio.context;
+    const destination = this.audio.bus('sfx');
+    const noise = this.audio.noiseBuffer();
+    return context && destination && noise ? { context, destination, noise } : null;
+  });
 
   readonly props: Destructible[] = DESTRUCTIBLE_LAYOUT.map((placement, id) => {
     const kind = DESTRUCTIBLE_KINDS[placement.kind];
@@ -182,6 +193,7 @@ export class DestructiblesService {
     }
     if (broke) {
       this.renderer.shake(source === 'light' ? 2 : 4);
+      this.fx.shake('horizontal', source === 'light' ? 0.35 : 0.7);
       this.gameloop.freeze(source === 'light' ? 22 : 40);
     }
   }
@@ -279,7 +291,10 @@ export class DestructiblesService {
       if (!hit) continue;
       broke = this.damage(prop, 'boss', dx / (distance || 1), dy / (distance || 1), this.bossStrike) || broke;
     }
-    if (broke) this.renderer.shake(3);
+    if (broke) {
+      this.renderer.shake(3);
+      this.fx.shake('vertical', 0.6);
+    }
   }
 
   // ---------------------------------------------------------------- dégâts
@@ -306,6 +321,10 @@ export class DestructiblesService {
   }
 
   private mark(prop: Destructible, dirX: number, dirY: number, strength: number, broken: boolean) {
+    const kind = DESTRUCTIBLE_KINDS[prop.kind];
+    this.sfx.play(kind.debris, broken, strength + (kind.solid ? 0.3 : 0));
+    // Un mur qui s'effondre soulève un nuage de poussière.
+    if (broken && kind.solid) this.fx.dust(prop.x, prop.y, dirX, dirY, kind.debris === 'clod' ? 1.6 : 1, false);
     prop.hitAt = this.clock;
     prop.hitDirX = dirX;
     prop.hitDirY = dirY;
