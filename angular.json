@@ -29,7 +29,12 @@
             "styles": [
               "src/styles.css"
             ],
-            "scripts": []
+            "scripts": [],
+            "allowedCommonJsDependencies": [
+              "colyseus.js",
+              "@colyseus/schema",
+              "ws"
+            ]
           },
           "configurations": {
             "production": {

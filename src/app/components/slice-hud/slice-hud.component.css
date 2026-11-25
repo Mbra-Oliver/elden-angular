@@ -58,3 +58,7 @@ kbd { font: 11px ui-monospace, monospace; padding: 0 4px; border: 1px solid curr
   background: #120c08e6; font-size: 14px; line-height: 1.45; text-align: center;
 }
 :host-context(html.touch-input) .hook small { position: static; font-size: 11px; }
+
+/* Mobile : l'unique invite vit dans les contrôles tactiles ; stats d'exploration masquées. */
+:host-context(html.touch-input) .prompt,
+:host-context(html.touch-input) .spirit { display: none; }

@@ -12,7 +12,8 @@ export function isTouchDevice(): boolean {
 /** Densité de pixels plafonnée, multipliée par l'échelle de la qualité choisie. */
 export function devicePixelRatioCapped(): number {
   const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
-  return Math.min(dpr, MAX_DEVICE_PIXEL_RATIO) * QUALITY_SCALE[currentSettings().quality];
+  const cap = isTouchDevice() ? Math.min(MAX_DEVICE_PIXEL_RATIO, 1.25) : MAX_DEVICE_PIXEL_RATIO;
+  return Math.min(dpr, cap) * QUALITY_SCALE[currentSettings().quality];
 }
 
 /**

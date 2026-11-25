@@ -48,7 +48,7 @@ export const PLAYER_CONFIG = {
   //Attaque
 
   comboWindowDuration: 600, // Fenetre pour enchainer un combo (ms)
-  inputBuffer: 300, // Durée de vie d'un appui mémorisé (ms) : attaque, lourde ou roulade
+  inputBuffer: 150, // Durée de vie d'un appui mémorisé (ms) : attaque, lourde ou roulade
   windupTurnRate: 9, // Rotation possible pendant l'anticipation (rad/s)
 
   hurtDuration: 300,

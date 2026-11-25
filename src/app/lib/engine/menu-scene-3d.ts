@@ -21,7 +21,7 @@ const REST_LOOK = new T.Vector3(-1.25, 0.6, -0.95);
 /** Fin du travelling : face à Kwadwo, à hauteur de son regard. */
 const END_EYE = new T.Vector3(-0.95, 0.92, -0.55);
 const END_LOOK = new T.Vector3(-1.85, 0.62, -2.35);
-const TRAVEL_SECONDS = 3.4;
+const TRAVEL_SECONDS = 9.6;
 
 const EMBERS = 140;
 

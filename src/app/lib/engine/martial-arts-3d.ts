@@ -29,7 +29,7 @@ const TAU = Math.PI * 2;
 const LEG = 13.45;
 /** Lance du joueur : la hampe partagée (36) est allongée à 45, proportions d'une lance de guerre. */
 const SPEAR_STRETCH = 1.25;
-/** États où l'équipement (arc, gourde) pose les bras lui-même. */
+/** États où l'équipement (arc, feuilles de mixture) pose les bras lui-même. */
 const GEAR_STATES = new Set(['aiming', 'release', 'drinking']);
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));

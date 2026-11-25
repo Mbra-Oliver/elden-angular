@@ -2,6 +2,7 @@ import { Injectable, effect, inject, signal } from '@angular/core';
 import { AudioEngineService } from '../audio/audio-engine.service';
 
 export type GraphicsQuality = 'low' | 'medium' | 'high';
+export type CameraMode = 'wide' | 'shoulder';
 
 export interface GameSettings {
   quality: GraphicsQuality;
@@ -12,6 +13,8 @@ export interface GameSettings {
   sensitivity: number;
   /** Verrouiller automatiquement l'ennemi le plus proche au premier coup reçu. */
   autoLock: boolean;
+  /** Caméra large (soulslike) ou épaule rapprochée (TPS mobile). */
+  cameraMode: CameraMode;
 }
 
 const KEY = 'terre-rouge.settings.v1';
@@ -24,6 +27,7 @@ const DEFAULTS: GameSettings = {
   sfx: 0.9,
   sensitivity: 1,
   autoLock: true,
+  cameraMode: typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? 'shoulder' : 'wide',
 };
 
 /** Échelle de rendu par qualité, appliquée sous le plafond de densité (display.ts). */

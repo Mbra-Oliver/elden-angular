@@ -23,6 +23,13 @@
         </div>
       </section>
 
+      @if (h.hit; as hit) {
+        <div class="hit-direction" [attr.data-id]="hit.id" [attr.data-kind]="hit.kind"
+          [style.--hit-angle.deg]="hit.angle" aria-hidden="true">
+          <span class="arc"></span><span class="arrow"></span>
+        </div>
+      }
+
       @if (h.counter) {
         <p class="counter" role="status">Esquive parfaite · <app-key-hint action="attack" /> pour riposter</p>
       }

@@ -25,7 +25,7 @@
     @if (challenge.incoming(); as received) {
       <section class="challenge-card" aria-label="Défi reçu">
         <strong>Défi reçu</strong>
-        <p>Un voyageur a vaincu {{ bossNames[received.boss] }} en {{ formatTime(received.time) }}, {{ received.hits }} coup{{ received.hits > 1 ? 's' : '' }} reçu{{ received.hits > 1 ? 's' : '' }}, {{ received.flasks }} Bandji.</p>
+        <p>Un voyageur a vaincu {{ bossNames[received.boss] }} en {{ formatTime(received.time) }}, {{ received.hits }} coup{{ received.hits > 1 ? 's' : '' }} reçu{{ received.hits > 1 ? 's' : '' }}, {{ received.flasks }} mixture{{ received.flasks > 1 ? 's' : '' }} de soin.</p>
         <div>
           <button type="button" class="link" (click)="acceptChallenge(received)">Relever le défi</button>
           <button type="button" class="link" (click)="challenge.dismissIncoming()">Plus tard</button>
@@ -39,6 +39,7 @@
       }
       <button type="button" (click)="newLineage()">Nouvelle lignée</button>
       <button type="button" data-panel="codex" (click)="openPanel('codex')">Chroniques et reliques</button>
+      <button type="button" class="duel-entry" (click)="openDuel()">Duel d’honneur</button>
       <button type="button" data-panel="settings" (click)="openPanel('settings')">Paramètres</button>
     </nav>
   </div>
@@ -51,6 +52,7 @@
           <button type="button" class="close" (click)="closePanel()" aria-label="Fermer">✕</button>
         </header>
         <p class="count">{{ codex.entries().length }} / {{ codex.total }} souvenirs recueillis</p>
+        <p class="thread-line">Fil ancestral · {{ threadLine }}</p>
         @if (codex.entries().length === 0) {
           <p class="empty">Rien encore. Ce que tu lis, ramasses ou vaincs sur le chemin sera gardé ici, d’une lignée à l’autre.</p>
         }
@@ -60,10 +62,13 @@
               <button type="button" class="entry" [attr.aria-expanded]="openEntry() === entry.id"
                 (click)="openEntry.set(openEntry() === entry.id ? null : entry.id)">
                 <span class="kind">{{ entry.kind }}</span>
+                @if (entry.symbol) { <span class="adinkra" [attr.title]="entry.symbolName">{{ entry.symbol }}</span> }
                 <strong>{{ entry.title }}</strong>
                 @if (entry.subtitle) { <small>{{ entry.subtitle }}</small> }
+                @if (entry.thread) { <small class="thread">{{ entry.thread }}</small> }
               </button>
               @if (openEntry() === entry.id) {
+                @if (entry.symbolName) { <p class="signification">{{ entry.symbolName }}</p> }
                 @for (paragraph of entry.text; track $index) { <p>{{ paragraph }}</p> }
               }
             </li>
@@ -106,6 +111,11 @@
           <input type="checkbox" [checked]="s.autoLock" (change)="settings.update({ autoLock: $any($event.target).checked })">
           Verrouiller la cible au premier coup reçu
         </label>
+        <label class="toggle">
+          <input type="checkbox" [checked]="s.cameraMode === 'shoulder'"
+            (change)="settings.update({ cameraMode: $any($event.target).checked ? 'shoulder' : 'wide' })">
+          Caméra épaule (TPS mobile)
+        </label>
         <details>
           <summary>Commandes</summary>
           @if (touch) {
@@ -114,7 +124,7 @@
               <dt>Esquive</dt><dd>Bouton du bas</dd>
               <dt>Frappe légère</dt><dd>Bouton central</dd>
               <dt>Frappe lourde</dt><dd>Bouton du haut</dd>
-              <dt>Bandji (soin)</dt><dd>Bouton de côté</dd>
+              <dt>Mixture de soin (feuilles)</dt><dd>Bouton de côté</dd>
               <dt>Caméra</dt><dd>Glisser au doigt</dd>
               <dt>Verrouiller la cible</dt><dd>Bouton ⌖</dd>
               <dt>Changer de cible</dt><dd>Glisser vite à gauche ou à droite</dd>
@@ -128,7 +138,7 @@
               <dt>Esquive</dt><dd>Maj (appui bref)</dd>
               <dt>Sprint</dt><dd>Maj maintenue</dd>
               <dt>Lance / arc</dt><dd>R</dd>
-              <dt>Bandji (soin)</dt><dd>B</dd>
+              <dt>Mixture de soin (feuilles)</dt><dd>B</dd>
               <dt>Interaction</dt><dd>F</dd>
               <dt>Verrouiller la cible</dt><dd>A (Q en QWERTY)</dd>
               <dt>Changer de cible</dt><dd>Molette</dd>

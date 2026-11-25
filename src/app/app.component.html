@@ -1,3 +1,5 @@
+<app-epigraph />
+
 @switch (gameState.currentScreen()) {
   @case ("main-menu") {
     <app-main-menu />
@@ -8,6 +10,10 @@
   }
   @case ("victory") {
     <app-death-menu />
+  }
+
+  @case ("duel") {
+    <app-duel-arena />
   }
 
   @case ("death") {

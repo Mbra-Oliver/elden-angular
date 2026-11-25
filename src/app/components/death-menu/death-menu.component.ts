@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { MenuItem } from '../../lib/interfaces/MenuItem';
 import { GameStateService } from '../../lib/services/game-state.service';
 import { ChallengeService, beats, describe, formatTime } from '../../lib/social/challenge.service';
+import { ADINKRA } from '../../lib/constants/adinkra';
 
 @Component({
   selector: 'app-death-menu',
@@ -15,6 +16,7 @@ export class DeathMenuComponent {
   readonly describe = describe;
   readonly formatTime = formatTime;
   readonly beats = beats;
+  readonly victorySign = ADINKRA['akofena'];
   menusItems: MenuItem[] = [
     {
       label: 'Revenir au foyer',

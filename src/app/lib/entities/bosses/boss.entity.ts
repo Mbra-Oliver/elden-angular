@@ -289,7 +289,9 @@ export class BossEntity {
     const len = distance || 1;
     // Badu : marche lente et intimidante en phase 1, traque sans relâche en phase 2.
     const gait = this.kind === 'champion' ? (boss.phase === 1 ? 0.6 : 1.2) : 1;
-    const speed = BOSS_CONFIG.speed * this.tempo().speed * intent.speed * gait;
+    const half = BOSS_CONFIG.size / 2;
+    const grade = this.terrain.gradeFactor(boss.x + half, boss.y + half, intent.dirX, intent.dirY);
+    const speed = BOSS_CONFIG.speed * this.tempo().speed * intent.speed * gait * grade;
     const step = this.steer(intent.dirX, intent.dirY, speed * deltaTime, deltaTime);
     // Il garde toujours le joueur en face, même en tournant ou en reculant.
     this.store.update({

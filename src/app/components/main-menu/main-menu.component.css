@@ -235,6 +235,14 @@ nav button:focus-visible::before,
 .entry:hover, .entry:focus-visible, .entry[aria-expanded="true"] { outline: none; border-left-color: var(--gold); background: #e5c17b14; }
 .entry .kind { color: #b08d55; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; }
 .entry small { color: #a8977a; }
+.entry { grid-template-columns: auto 34px 1fr; grid-template-areas: "kind symbol title" "kind symbol subtitle" "kind symbol thread"; align-items: center; gap: 0 8px; }
+.entry .kind { grid-area: kind; }
+.entry .adinkra { grid-area: symbol; display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #e5c17b66; color: #edbb78; font: 21px/1 serif; }
+.entry strong { grid-area: title; }
+.entry small:not(.thread) { grid-area: subtitle; }
+.entry .thread { grid-area: thread; color: #d6a85f; font-size: 11px; }
+.thread-line { margin: 0 0 10px; color: #d6a85f; font-size: 12px; letter-spacing: 0.06em; }
+.entries .signification { color: #edbb78; font-style: italic; }
 
 .trial { margin-top: 16px; border-top: 1px solid #e5c17b33; padding-top: 10px; color: #cdbd9f; }
 .trial .link, .challenge-card .link { font-size: 17px; }
@@ -290,6 +298,7 @@ dd { margin: 0; color: #e7c98f; text-align: right; }
 }
 
 .veil.on { opacity: 1; }
+nav button.duel-entry { color: #f0d39a; border-color: #b88a45; }
 
 @media (max-height: 480px) {
   .title-content { gap: 10px; }

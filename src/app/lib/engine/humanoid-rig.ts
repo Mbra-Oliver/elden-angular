@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { HIP_X, type HumanBody, type Outfit, SHOULDER_X, hideProxy, skinHuman } from './human-body';
 
 /**
  * Squelette humanoïde partagé (« rig sharing ») : le joueur, le duelliste et
@@ -31,6 +32,8 @@ export interface HumanoidRig {
   torso: T.Group;
   arms: T.Group[];
   legs: T.Group[];
+  /** Corps skinné et tenue (human-body.ts). */
+  body?: HumanBody;
 }
 
 type MaterialFactory = (color: string) => T.Material;
@@ -64,9 +67,13 @@ function part(parent: T.Object3D, geometry: T.BufferGeometry, material: T.Materi
 /**
  * Construit un humanoïde low poly. L'arme (bâton/lance) est la dernière
  * pièce du bras droit ; l'ombre est un disque sous la racine.
+ *
+ * Le corps visible est le maillage skinné de human-body.ts ; les primitives
+ * ci-dessous ne sont plus dessinées mais restent les os (et gardent leur
+ * ordre : d'autres modules les retrouvent par index ou par type).
  */
 export function buildHumanoid(material: MaterialFactory, clothColor: string, accentColor: string,
-  options: { bareChest?: boolean } = {}): HumanoidRig {
+  options: { bareChest?: boolean; outfit?: Outfit; outline?: boolean } = {}): HumanoidRig {
   const g = geometries();
   const root = new T.Group();
   root.name = HUMANOID_BONES.root;
@@ -88,23 +95,35 @@ export function buildHumanoid(material: MaterialFactory, clothColor: string, acc
   for (const [i, side] of [-1, 1].entries()) {
     const arm = new T.Group();
     arm.name = HUMANOID_BONES.arms[i];
-    arm.position.set(side * 5, 7, 0);
+    arm.position.set(side * SHOULDER_X, 7, 0);
     torso.add(arm);
     arms.push(arm);
     part(arm, g['arm'], skin, 0, -3.4, 0);
     part(arm, g['hand'], skin, 0, -8.1, 0.5);
     const leg = new T.Group();
     leg.name = HUMANOID_BONES.legs[i];
-    leg.position.set(side * 2.6, 14, 0);
+    leg.position.set(side * HIP_X, 14, 0);
     root.add(leg);
     legs.push(leg);
     part(leg, g['leg'], skin, 0, -6.4, 0);
     part(leg, g['foot'], skin, 0, -12.6, 0.9);
   }
+  // Les primitives deviennent des os invisibles.
+  for (const group of [torso, ...arms, ...legs]) for (const child of group.children) if (child instanceof T.Mesh) hideProxy(child);
+  const hands = arms.map((arm) => arm.children.find((c) => c instanceof T.Mesh && c.geometry instanceof T.SphereGeometry) ?? arm);
+  const body = skinHuman({ root, torso, head: torso.children[3], arms, fore: hands, legs }, {
+    skin,
+    outline: options.outline,
+    eyes: { white: material('#d8c9ae'), dark: material('#161010') },
+    outfit: options.outfit ?? {
+      wrap: { material: cloth, band: accent, hem: 10.6 },
+      hair: material('#17100d'),
+    },
+  });
   const staff = part(arms[1], g['staff'], material('#775235'), 0, -8.5, 10);
   staff.rotation.x = Math.PI / 2 - 0.18;
   const shadow = part(root, g['shadow'],
     new T.MeshBasicMaterial({ color: '#302119', transparent: true, opacity: 0.28, depthWrite: false }), 0, 0.15, 0);
   shadow.rotation.x = -Math.PI / 2;
-  return { root, torso, arms, legs };
+  return { root, torso, arms, legs, body };
 }

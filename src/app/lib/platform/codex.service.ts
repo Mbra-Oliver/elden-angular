@@ -4,6 +4,7 @@ import { PrologueService } from '../prologue/prologue.service';
 import { ITEMS } from '../slice/slice-content';
 import { ProgressionStore } from '../slice/progression.store';
 import { BOSS_LORE, type BossId } from '../constants/boss-lore';
+import { ANCESTRAL_THREAD, adinkraFor } from '../constants/adinkra';
 import { GameStateService } from '../services/game-state.service';
 
 export type CodexKind = 'souvenir' | 'relique' | 'adversaire';
@@ -14,6 +15,10 @@ export interface CodexEntry {
   title: string;
   /** Sous-titre court (époque, effet, épithète). */
   subtitle?: string;
+  symbol?: string;
+  symbolName?: string;
+  thread?: string;
+  chapter?: string;
   text: string[];
 }
 
@@ -31,15 +36,26 @@ export class CodexService {
   /** Toutes les entrées possibles, dans l'ordre du récit. */
   readonly all: readonly CodexEntry[] = [
     ...REMAINS.map((r): CodexEntry => ({
-      id: `remains:${r.id}`, kind: 'souvenir', title: r.title, subtitle: 'Feyiase, 1701', text: [r.text],
+      id: `remains:${r.id}`, kind: 'souvenir', title: r.title, subtitle: 'Feyiase, 1701',
+      chapter: 'Feyiase, 1701', text: [r.text],
     })),
     ...(Object.entries(ITEMS) as [string, (typeof ITEMS)[keyof typeof ITEMS]][]).map(([id, item]): CodexEntry => ({
-      id: `item:${id}`, kind: 'relique', title: item.name, subtitle: item.effect, text: [item.lore],
+      id: `item:${id}`, kind: 'relique', title: item.name, subtitle: item.effect,
+      chapter: id === 'perle' || id === 'calebasse' ? 'Lignée des Serwaa' : 'Trésors du chemin', text: [item.lore],
     })),
     ...(Object.entries(BOSS_LORE) as [BossId, (typeof BOSS_LORE)[BossId]][]).map(([id, boss]): CodexEntry => ({
-      id: `boss:${id}`, kind: 'adversaire', title: boss.name, subtitle: `${boss.epithet} · ${boss.chapter}`, text: boss.lore,
+      id: `boss:${id}`, kind: 'adversaire', title: boss.name, subtitle: `${boss.epithet} · ${boss.chapter}`,
+      chapter: boss.chapter, text: boss.lore,
     })),
-  ];
+  ].map((entry): CodexEntry => {
+    const sign = adinkraFor(entry.id);
+    return {
+      ...entry,
+      symbol: sign?.glyph,
+      symbolName: sign ? `${sign.name} — ${sign.meaning}` : undefined,
+      thread: ANCESTRAL_THREAD[entry.id],
+    };
+  });
 
   readonly entries = computed(() => {
     const found = this.found();

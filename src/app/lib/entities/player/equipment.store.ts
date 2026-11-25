@@ -5,13 +5,13 @@ export interface EquipmentData {
   weapon: WeaponId;
   arrows: number;
   maxArrows: number;
-  bandji: number;
-  maxBandji: number;
+  mixture: number;
+  maxMixture: number;
   /** Armes possédées, dans l'ordre du cycle de R. */
   owned: WeaponId[];
 }
 
-/** Inventaire d'Ama : arme en main, flèches restantes, gourdes de Bandji. */
+/** Inventaire d'Ama : arme en main, flèches restantes, poignées de mixture de soin. */
 @Injectable({ providedIn: 'root' })
 export class EquipmentStore {
   private readonly data = signal<EquipmentData>(this.initial());
@@ -31,9 +31,9 @@ export class EquipmentStore {
     this.toast.set(null);
   }
 
-  /** Remplit carquois et gourdes sans changer l'arme en main (changement de chapitre). */
+  /** Remplit carquois et mixtures sans changer l'arme en main (changement de chapitre). */
   refill() {
-    this.data.update((d) => ({ ...d, arrows: d.maxArrows, bandji: d.maxBandji }));
+    this.data.update((d) => ({ ...d, arrows: d.maxArrows, mixture: d.maxMixture }));
   }
 
   switchWeapon(): WeaponId {
@@ -51,8 +51,8 @@ export class EquipmentStore {
     if (this.data().owned.includes(weapon)) this.data.update((d) => ({ ...d, weapon }));
   }
 
-  setMaxBandji(maxBandji: number) {
-    this.data.update((d) => ({ ...d, maxBandji, bandji: Math.min(d.bandji, maxBandji) }));
+  setMaxMixture(maxMixture: number) {
+    this.data.update((d) => ({ ...d, maxMixture, mixture: Math.min(d.mixture, maxMixture) }));
   }
 
   /** Taille du carquois (prologue : arc limité). Le carquois est rempli. */
@@ -66,10 +66,10 @@ export class EquipmentStore {
     this.say(`+${count} flèches`);
   }
 
-  /** Gourde trouvée : une gorgée de plus jusqu'au prochain repos. */
-  addBandji(count: number) {
-    this.data.update((d) => ({ ...d, maxBandji: Math.max(d.maxBandji, d.bandji + count), bandji: d.bandji + count }));
-    this.say(`+${count} Bandji`);
+  /** Feuilles trouvées : une mixture de plus jusqu'au prochain repos. */
+  addMixture(count: number) {
+    this.data.update((d) => ({ ...d, maxMixture: Math.max(d.maxMixture, d.mixture + count), mixture: d.mixture + count }));
+    this.say(`+${count} mixture${count > 1 ? 's' : ''} de soin`);
   }
 
   /** Retire une flèche du carquois. Renvoie false s'il n'y en a plus. */
@@ -91,13 +91,13 @@ export class EquipmentStore {
     return true;
   }
 
-  /** Retire une gourde de Bandji. Renvoie false s'il n'y en a plus. */
-  consumeBandji(): boolean {
-    if (this.data().bandji <= 0) {
-      this.say('Plus de Bandji');
+  /** Retire une poignée de feuilles. Renvoie false s'il n'y en a plus. */
+  consumeMixture(): boolean {
+    if (this.data().mixture <= 0) {
+      this.say('Plus de mixture de soin');
       return false;
     }
-    this.data.update((d) => ({ ...d, bandji: d.bandji - 1 }));
+    this.data.update((d) => ({ ...d, mixture: d.mixture - 1 }));
     return true;
   }
 
@@ -116,8 +116,8 @@ export class EquipmentStore {
       weapon: 'spear',
       arrows: EQUIPMENT_CONFIG.maxArrows,
       maxArrows: EQUIPMENT_CONFIG.maxArrows,
-      bandji: EQUIPMENT_CONFIG.maxBandji,
-      maxBandji: EQUIPMENT_CONFIG.maxBandji,
+      mixture: EQUIPMENT_CONFIG.maxMixture,
+      maxMixture: EQUIPMENT_CONFIG.maxMixture,
       owned: ['spear', 'bow'],
     };
   }

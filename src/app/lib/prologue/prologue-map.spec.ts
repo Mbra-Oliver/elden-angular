@@ -1,7 +1,7 @@
 import { TerrainCollisionService } from '../engine/terrain-collision.service';
 import {
   BRIDGE, BRIDGE_PUSH, PROLOGUE_DUEL, CAMP, CLEARINGS, FOREST, PROLOGUE_AREA, PROLOGUE_FOYERS, PROLOGUE_SPAWNS, REMAINS, START, TRAIL, TRAIL_HALF,
-  inPrologue, walkable,
+  groundHeight, inPrologue, pathHeight, terrainHeight, walkable,
 } from './prologue-map';
 
 describe('Prologue map (1701)', () => {
@@ -46,5 +46,13 @@ describe('Prologue map (1701)', () => {
     const p = TRAIL[4];
     const south = terrain.move(p.x, p.y, p.x, p.y + 300, 10);
     expect(south.y).toBeLessThan(p.y + TRAIL_HALF + 40);
+  });
+
+  it('lifts the walkable trail toward the crest instead of leaving it flat', () => {
+    expect(pathHeight(TRAIL[0].x, TRAIL[0].y)).toBe(0);
+    expect(pathHeight(TRAIL[8].x, TRAIL[8].y)).toBeGreaterThan(120);
+    expect(pathHeight(TRAIL[TRAIL.length - 1].x, TRAIL[TRAIL.length - 1].y)).toBe(168);
+    expect(terrainHeight(TRAIL[6].x, TRAIL[6].y)).toBeGreaterThan(terrainHeight(TRAIL[1].x, TRAIL[1].y));
+    expect(groundHeight(1200, 800)).toBe(0);
   });
 });

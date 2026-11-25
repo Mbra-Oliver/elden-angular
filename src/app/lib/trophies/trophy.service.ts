@@ -17,7 +17,7 @@ export const TROPHIES: Record<TrophyId, Trophy> = {
   eternel: {
     id: 'eternel',
     name: 'L’Éternel',
-    description: 'Finir le chapitre 1 sans jamais boire de Bandji.',
+    description: 'Finir le chapitre 1 sans jamais avaler de mixture de soin.',
   },
   'premier-coup': {
     id: 'premier-coup',

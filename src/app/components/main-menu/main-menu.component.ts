@@ -11,6 +11,7 @@ import { GraphicsQuality, SettingsService } from '../../lib/platform/settings.se
 import { GameStateService } from '../../lib/services/game-state.service';
 import { SliceService } from '../../lib/slice/slice.service';
 import { BOSS_NAMES, Challenge, ChallengeService, describe, formatTime } from '../../lib/social/challenge.service';
+import { THREAD_LINE } from '../../lib/constants/adinkra';
 
 type Panel = 'codex' | 'settings' | null;
 
@@ -34,6 +35,7 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
   readonly describe = describe;
   readonly formatTime = formatTime;
   readonly bossNames = BOSS_NAMES;
+  readonly threadLine = THREAD_LINE;
   readonly touch = isTouchDevice();
 
   readonly panel = signal<Panel>(null);
@@ -109,6 +111,11 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
     buttons[(next + buttons.length) % buttons.length].focus();
   }
 
+  openDuel() {
+    this.audio.unlock();
+    this.gameState.openDuel();
+  }
+
   openPanel(panel: Panel) {
     this.panel.set(panel);
     queueMicrotask(() => document.querySelector<HTMLElement>('.menu-panel button, .menu-panel input')?.focus());
@@ -139,6 +146,7 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
 
   /** Nouvelle lignée : travelling de l'afena vers Kwadwo, puis le prologue de 1701. */
   newLineage() {
+    this.gameState.narrative.mark('opening');
     this.depart(() => {
       // Nouvelle partie : progression de la tranche remise à zéro.
       this.slice.newGame();
@@ -183,7 +191,7 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
       }, 380);
     });
     // Filet : si les images s'arrêtent (onglet en arrière-plan), on part quand même.
-    window.setTimeout(go, 6000);
+    window.setTimeout(go, 10500);
     if (travelling && this.scene) this.scene.travelToKwadwo(go);
     else window.setTimeout(go, 450);
     if (this.touch) enterImmersive();

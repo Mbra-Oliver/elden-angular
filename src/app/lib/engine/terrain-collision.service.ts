@@ -7,6 +7,8 @@ interface Point { x: number; y: number }
 interface Circle extends Point { radius: number }
 
 const CELL = 96;
+const GROUND_STEP = 2;
+const GROUND_CACHE_LIMIT = 4096;
 const CIRCLES: Circle[] = [
   ...HUTS.map(([x, y, radius]) => ({ x, y: y + 5, radius: radius * 0.82 })),
   ...TREES.map(({ x, y, radius }) => ({ x, y: y + 3, radius: radius * 0.68 })),
@@ -15,6 +17,8 @@ const CIRCLES: Circle[] = [
 @Injectable({ providedIn: 'root' })
 export class TerrainCollisionService {
   private arena: DuelArena | null = null;
+  private groundSampler: ((x: number, y: number) => number) | null = null;
+  private readonly groundCache = new Map<string, number>();
   private readonly cells = new Map<number, Circle[]>();
   private readonly columns = Math.ceil(WORLD.WIDTH / CELL) + 2;
 
@@ -34,6 +38,33 @@ export class TerrainCollisionService {
 
   setArena(arena: DuelArena | null) {
     this.arena = arena;
+  }
+
+  setGroundSampler(sampler: ((x: number, y: number) => number) | null) {
+    this.groundSampler = sampler;
+    this.groundCache.clear();
+  }
+
+  groundAt(x: number, y: number): number {
+    if (!this.groundSampler) return 0;
+    const gx = Math.round(x / GROUND_STEP);
+    const gy = Math.round(y / GROUND_STEP);
+    const key = `${gx},${gy}`;
+    const cached = this.groundCache.get(key);
+    if (cached !== undefined) return cached;
+    if (this.groundCache.size >= GROUND_CACHE_LIMIT) this.groundCache.clear();
+    const height = this.groundSampler(gx * GROUND_STEP, gy * GROUND_STEP);
+    this.groundCache.set(key, height);
+    return height;
+  }
+
+  gradeFactor(x: number, y: number, dirX: number, dirY: number): number {
+    if (!this.groundSampler) return 1;
+    const step = 14;
+    const gx = (this.groundAt(x + step, y) - this.groundAt(x - step, y)) / (2 * step);
+    const gy = (this.groundAt(x, y + step) - this.groundAt(x, y - step)) / (2 * step);
+    const climb = Math.max(0, gx * dirX + gy * dirY);
+    return 1 / (1 + climb * 2.4);
   }
 
   /** Obstacles mobiles ou destructibles (décor cassable), testés en plus du décor fixe. */

@@ -38,6 +38,8 @@ export interface Enemy {
   deadTime: number;
   /** Tir de fusil : trait visible quelques ms. */
   tracer: { x1: number; y1: number; x2: number; y2: number; life: number } | null;
+  /** Lueur de bouche après le départ du coup. */
+  shotFlash: number;
 }
 
 const PLAYER_RADIUS = PLAYER_CONFIG.size / 2;
@@ -85,7 +87,7 @@ export class EnemiesService {
       id, kind, homeX: x, homeY: y, x, y, hp: config.hp, maxHp: config.hp,
       facingX: 0, facingY: 1, state: 'idle', timer: 0, move: null, hitDone: false,
       aimX: 0, aimY: 1, cooldown: 600, strafe: id % 2 ? 1 : -1, engaged: false,
-      flash: 0, deadTime: 0, tracer: null,
+      flash: 0, deadTime: 0, tracer: null, shotFlash: 0,
     };
   }
 
@@ -110,6 +112,7 @@ export class EnemiesService {
         if (enemy.tracer.life <= 0) enemy.tracer = null;
       }
       enemy.flash = Math.max(0, enemy.flash - dt * 1000);
+      enemy.shotFlash = Math.max(0, enemy.shotFlash - dt * 1000);
       if (enemy.state === 'dead') {
         enemy.deadTime += dt;
         continue;
@@ -265,8 +268,11 @@ export class EnemiesService {
     const length = Math.hypot(dx, dy);
     if (length < 0.01) return;
     const radius = ENEMIES[enemy.kind].radius;
+    const dirX = dx / length;
+    const dirY = dy / length;
+    const grade = this.terrain.gradeFactor(enemy.x, enemy.y, dirX, dirY);
     const moved = this.terrain.move(enemy.x, enemy.y,
-      enemy.x + dx / length * speed * dt, enemy.y + dy / length * speed * dt, radius);
+      enemy.x + dirX * speed * grade * dt, enemy.y + dirY * speed * grade * dt, radius);
     enemy.x = moved.x;
     enemy.y = moved.y;
     if (face && enemy.state === 'return') this.turnToward(enemy, dx, dy, 6, dt);
@@ -295,7 +301,8 @@ export class EnemiesService {
       const mound = MOUNDS.some((m) => Math.hypot(x - m.x, y - m.y) < m.r);
       if (wall || mound) { endX = x; endY = y; break; }
     }
-    enemy.tracer = { x1: enemy.x + enemy.aimX * 14, y1: enemy.y + enemy.aimY * 14, x2: endX, y2: endY, life: 110 };
+    enemy.tracer = { x1: enemy.x + enemy.aimX * 14, y1: enemy.y + enemy.aimY * 14, x2: endX, y2: endY, life: 160 };
+    enemy.shotFlash = 90;
     this.renderer.shake(3);
     const px = this.player.centerX - enemy.x;
     const py = this.player.centerY - enemy.y;

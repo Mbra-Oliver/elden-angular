@@ -8,7 +8,7 @@ export type PlayerState =
   | 'hurt' // Le joueur a reçu un dégât (état prioritaire)
   | 'exhausted' // Le joueur est en exhaus­tion
   | 'shooting' // Bande l'arc puis décoche une flèche
-  | 'drinking' // Boit une gourde de Bandji (immobile, interruptible)
+  | 'drinking' // Avale des feuilles écrasées en mixture de soin (immobile, interruptible)
   | 'dead'; // Le joueur n'a plus de PV
 
 //Fiche de stat globale du joueur

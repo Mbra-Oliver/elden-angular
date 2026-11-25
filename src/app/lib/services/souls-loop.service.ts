@@ -23,7 +23,7 @@ export interface SoulsPrompt { kind: 'rest'; foyer: Foyer; label: string }
  * Boucle de mort et de progression façon soulslike :
  * - les cauris gagnés tombent là où Ama meurt ; il faut revenir les toucher
  *   avant de mourir à nouveau, sinon ils sont perdus ;
- * - les foyers soignent, remplissent les gourdes, sauvegardent et servent de
+ * - les foyers soignent, remplissent les mixtures, sauvegardent et servent de
  *   point de retour ;
  * La sauvegarde passe par SaveService (IndexedDB, clé 'souls') ; les niveaux,
  * ennemis et raccourcis du donjon sont sauvegardés à part par la tranche.

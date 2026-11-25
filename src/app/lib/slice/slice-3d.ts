@@ -8,6 +8,9 @@ import {
   type EnemyKind, type ItemId,
 } from './slice-map';
 import type { SliceService } from './slice.service';
+import { TerrainCollisionService } from '../engine/terrain-collision.service';
+import { HIP_X, SHOULDER_X, hideProxy, skinHuman } from '../engine/human-body';
+import { soldierOutfit } from '../engine/human-outfits';
 
 /**
  * Vue 3D de la tranche verticale, branchée par World3D.addLayer.
@@ -31,6 +34,7 @@ interface EnemyRig {
   arms: T.Group[];
   legs: T.Group[];
   weapon: T.Object3D;
+  muzzle?: T.Object3D;
   flash: T.MeshStandardMaterial[];
   bar: T.Sprite;
   barBack: T.Sprite;
@@ -52,8 +56,12 @@ export class Slice3D {
   private readonly lever = new T.Group();
   private leverArm!: T.Object3D;
   private readonly aimLine: T.Mesh<T.BoxGeometry, T.MeshBasicMaterial>[] = [];
+  private readonly groundLine: T.Mesh<T.BoxGeometry, T.MeshBasicMaterial>[] = [];
   private readonly tracers: T.Mesh<T.BoxGeometry, T.MeshBasicMaterial>[] = [];
   private readonly rings: T.Mesh<T.RingGeometry, T.MeshBasicMaterial>[] = [];
+  private readonly muzzles: T.Sprite[] = [];
+  private readonly muzzlePos = new T.Vector3();
+  private muzzleTexture?: T.CanvasTexture;
   private readonly time = { value: 0 };
   private readonly fires: T.Object3D[] = [];
   private warmFrames = 2;
@@ -66,6 +74,7 @@ export class Slice3D {
     private readonly slice: SliceService,
     private readonly enemies: EnemiesService,
     private readonly player: PlayerEntity,
+    private readonly terrain: TerrainCollisionService,
   ) {
     this.buildWalls();
     this.buildDoors();
@@ -310,6 +319,16 @@ export class Slice3D {
       material.customProgramCacheKey = () => 'slice-drowned';
     };
 
+    // Tenues : matériaux partagés par couleur entre tous les soldats.
+    const outfitMaterials = new Map<string, T.Material>();
+    const outfitMaterial = (color: string) => {
+      let material = outfitMaterials.get(color);
+      if (!material) outfitMaterials.set(color, material = this.mat(flat(color)));
+      return material;
+    };
+    const eyeWhite = this.mat(flat('#d8c9ae'));
+    const eyeDark = this.mat(flat('#161010'));
+
     for (const enemy of this.enemies.list) {
       const kind = enemy.kind;
       const root = new T.Group();
@@ -331,35 +350,50 @@ export class Slice3D {
       add(torso, geos.chest, dress, 0, 4, 0);
       add(torso, geos.hips, dress, 0, -2, 0);
       add(torso, geos.head, skin, 0, 11, 0.4);
-      if (kind === 'pilleur') add(torso, geos.wrap, shared.red, 0, 12.6, 0.2);
-      if (kind === 'fusilier' || kind === 'tireur') {
-        const belt = add(torso, geos.wrap, shared.leather, 0, 4, 0);
-        belt.scale.set(1.5, 0.6, 1.5);
-        belt.rotation.z = 0.7;
-      }
-      if (kind === 'noye') {
-        for (const [ex, ey] of [[-1.2, 11.5], [1.2, 11.5]]) add(torso, geos.head, shared.eye, ex, ey, 2.9).scale.setScalar(0.18);
-        for (let i = 0; i < 6; i++) {
-          const weed = add(torso, geos.weed, this.materials.at(-1)!, Math.cos(i) * 4.4, 0, Math.sin(i) * 4.4);
-          weed.rotation.x = Math.PI;
-        }
-      }
       const arms: T.Group[] = [];
       const legs: T.Group[] = [];
       for (const side of [-1, 1]) {
         const arm = new T.Group();
-        arm.position.set(side * 4.9, 7, 0);
+        arm.position.set(side * SHOULDER_X, 7, 0);
         torso.add(arm);
         arms.push(arm);
         add(arm, geos.limb, skin, 0, -3.4, 0);
         const leg = new T.Group();
-        leg.position.set(side * 2.5, 14, 0);
+        leg.position.set(side * HIP_X, 14, 0);
         body.add(leg);
         legs.push(leg);
         add(leg, geos.leg, kind === 'noye' ? skin : dress, 0, -6.2, 0);
         add(leg, geos.foot, skin, 0, -12.4, 0.8);
       }
+      // Corps humain commun (human-body.ts) ; les primitives ci-dessus deviennent des os invisibles.
+      for (const group of [torso, ...arms, ...legs]) for (const child of group.children) if (child instanceof T.Mesh) hideProxy(child);
+      const human = skinHuman({ root: body, torso, head: torso.children[2], arms, fore: arms, legs }, {
+        skin, outfit: soldierOutfit(outfitMaterial, kind, dress),
+        eyes: kind === 'noye' ? undefined : { white: eyeWhite, dark: eyeDark },
+      });
+      if (kind === 'pilleur') {
+        // Pillard : foulard rouge noué sur la tête.
+        const tie = add(human.bones.head, geos.wrap, shared.red, 0, 1.9, -0.3);
+        tie.scale.set(0.5, 0.55, 0.6);
+      }
+      if (kind === 'tireur' || kind === 'fusilier') {
+        // Ceinture de poudre : petites gourdes de poudre et poire en corne.
+        for (const [x, z] of [[-1.6, 1.75], [-0.4, 1.95], [0.8, 1.9], [2.6, 0.9]] as const) {
+          add(torso, geos.head, shared.wood, x, 1.0, z).scale.set(0.16, 0.24, 0.16);
+        }
+        const horn = add(torso, geos.weed, outfitMaterial('#c9b38a'), -2.9, 0.6, 0.6);
+        horn.rotation.z = 1.2;
+        horn.scale.set(0.9, 0.6, 0.9);
+      }
+      if (kind === 'noye') {
+        for (const [ex, ey] of [[-0.55, 0.62], [0.55, 0.62]]) add(human.bones.head, geos.head, shared.eye, ex, ey, 1.55).scale.setScalar(0.09);
+        for (let i = 0; i < 6; i++) {
+          const weed = add(torso, geos.weed, dress, Math.cos(i) * 2.9, 0, Math.sin(i) * 2.0);
+          weed.rotation.x = Math.PI;
+        }
+      }
       let weapon: T.Object3D;
+      let muzzle: T.Object3D | undefined;
       if (kind === 'pilleur') {
         weapon = add(arms[1], geos.blade, shared.iron, 0, -8, 6);
         weapon.rotation.x = Math.PI / 2 - 0.4;
@@ -392,6 +426,9 @@ export class Slice3D {
         barrel.rotation.x = Math.PI / 2;
         add(gun, geos.stock, shared.wood, 0, -1, -15);
         gun.position.set(0, -8, 8);
+        muzzle = new T.Object3D();
+        muzzle.position.set(0, 0, 15);
+        gun.add(muzzle);
         arms[1].add(gun);
         weapon = gun;
       } else {
@@ -421,7 +458,7 @@ export class Slice3D {
 
       this.root.add(root);
       this.rigs.push({
-        enemy, root, body, torso, arms, legs, weapon, flash: [skin, dress], bar, barBack: back,
+        enemy, root, body, torso, arms, legs, weapon, muzzle, flash: [skin, dress], bar, barBack: back,
         walk: 0, lastX: enemy.x, lastY: enemy.y, yaw: 0,
       });
     }
@@ -429,7 +466,7 @@ export class Slice3D {
 
   private buildTelegraphs() {
     const aim = this.mat(new T.MeshBasicMaterial({ color: '#ff3b2a', transparent: true, opacity: 0.5, depthWrite: false }));
-    const tracer = this.mat(new T.MeshBasicMaterial({ color: '#fff1c8', transparent: true, opacity: 0.9, depthWrite: false }));
+    const tracer = this.mat(new T.MeshBasicMaterial({ color: '#fff1c8', transparent: true, opacity: 0.95, depthWrite: false, blending: T.AdditiveBlending }));
     const ring = this.mat(new T.MeshBasicMaterial({ color: '#7ff2de', transparent: true, opacity: 0.45, depthWrite: false, side: T.DoubleSide }));
     const box = this.geo(new T.BoxGeometry(0.6, 0.6, 1));
     const ringGeometry = this.geo(new T.RingGeometry(0.82, 1, 40));
@@ -447,6 +484,35 @@ export class Slice3D {
       this.aimLine.push(line);
       this.tracers.push(flash);
       this.rings.push(telegraph);
+    }
+    const groundAim = this.mat(new T.MeshBasicMaterial({ color: '#ff3b2a', transparent: true, opacity: 0.4, depthWrite: false }));
+    for (let i = 0; i < 4; i++) {
+      const line = new T.Mesh(box, groundAim.clone());
+      this.materials.push(line.material);
+      line.visible = false;
+      this.root.add(line);
+      this.groundLine.push(line);
+    }
+    if (typeof document === 'undefined') return;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, '#fffbe6');
+    gradient.addColorStop(0.28, '#ffd27a');
+    gradient.addColorStop(1, '#ff6b2c00');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    this.muzzleTexture = new T.CanvasTexture(canvas);
+    for (let i = 0; i < 4; i++) {
+      const sprite = new T.Sprite(this.mat(new T.SpriteMaterial({
+        map: this.muzzleTexture, color: '#ffe8b0', transparent: true, opacity: 0,
+        blending: T.AdditiveBlending, depthWrite: false,
+      })));
+      sprite.visible = false;
+      this.root.add(sprite);
+      this.muzzles.push(sprite);
     }
   }
 
@@ -486,8 +552,10 @@ export class Slice3D {
     }
 
     let lines = 0;
+    let grounds = 0;
     let flashes = 0;
     let rings = 0;
+    let muzzleFlashes = 0;
     for (const rig of this.rigs) {
       const enemy = rig.enemy;
       const near = Math.abs(enemy.x - px) < VIEW_DISTANCE && Math.abs(enemy.y - py) < VIEW_DISTANCE;
@@ -501,12 +569,32 @@ export class Slice3D {
         const line = this.aimLine[lines++];
         const locked = enemy.timer <= SHOT_LOCK_MS;
         const length = this.shotLength(enemy);
+        const progress = 1 - enemy.timer / move.windup;
         line.visible = true;
         line.position.set(enemy.x + enemy.aimX * (14 + length / 2), 19, enemy.y + enemy.aimY * (14 + length / 2));
         line.rotation.set(0, Math.atan2(enemy.aimX, enemy.aimY), 0);
         line.scale.set(locked ? 1.6 : 1, locked ? 1.6 : 1, length);
         line.material.opacity = locked ? 0.95 : 0.25 + 0.2 * Math.sin(now * 18);
         line.material.color.set(locked ? '#ffe4b0' : '#ff3b2a');
+        if (grounds < this.groundLine.length) {
+          const ground = this.groundLine[grounds++];
+          ground.visible = true;
+          ground.position.set(enemy.x + enemy.aimX * (14 + length / 2), 0.6, enemy.y + enemy.aimY * (14 + length / 2));
+          ground.rotation.set(0, Math.atan2(enemy.aimX, enemy.aimY), 0);
+          ground.scale.set(9 + 6 * progress, 0.12, length);
+          ground.material.opacity = locked ? 0.6 : 0.14 + 0.28 * progress;
+        }
+      }
+      if (rig.muzzle && enemy.shotFlash > 0 && muzzleFlashes < this.muzzles.length) {
+        const sprite = this.muzzles[muzzleFlashes++];
+        const life = enemy.shotFlash / 90;
+        rig.root.updateMatrixWorld(true);
+        rig.muzzle.getWorldPosition(this.muzzlePos);
+        sprite.visible = true;
+        sprite.position.copy(this.muzzlePos);
+        sprite.material.opacity = life;
+        const size = 8 + (1 - life) * 12;
+        sprite.scale.set(size, size, 1);
       }
       if (enemy.tracer && flashes < this.tracers.length) {
         const t = enemy.tracer;
@@ -528,12 +616,14 @@ export class Slice3D {
       }
     }
     for (let i = lines; i < this.aimLine.length; i++) this.aimLine[i].visible = false;
+    for (let i = grounds; i < this.groundLine.length; i++) this.groundLine[i].visible = false;
     for (let i = flashes; i < this.tracers.length; i++) this.tracers[i].visible = false;
     for (let i = rings; i < this.rings.length; i++) this.rings[i].visible = false;
+    for (let i = muzzleFlashes; i < this.muzzles.length; i++) this.muzzles[i].visible = false;
   }
 
   private shotLength(enemy: Enemy) {
-    const reach = ENEMY_MOVES.shot.reach;
+    const reach = ENEMY_MOVES[enemy.move === 'longshot' ? 'longshot' : 'shot'].reach;
     for (let t = 16; t < reach; t += 8) {
       const x = enemy.x + enemy.aimX * t;
       const y = enemy.y + enemy.aimY * t;
@@ -549,7 +639,7 @@ export class Slice3D {
     rig.lastX = enemy.x;
     rig.lastY = enemy.y;
     rig.walk += Math.min(travel, 10) * (enemy.kind === 'noye' ? 0.09 : 0.15);
-    rig.root.position.set(enemy.x, 0, enemy.y);
+    rig.root.position.set(enemy.x, this.terrain.groundAt(enemy.x, enemy.y), enemy.y);
     const goal = Math.atan2(enemy.facingX, enemy.facingY);
     const turn = Math.atan2(Math.sin(goal - rig.yaw), Math.cos(goal - rig.yaw));
     rig.yaw += turn * (1 - Math.exp(-18 * dt));
@@ -618,5 +708,6 @@ export class Slice3D {
     this.scene.remove(this.root);
     this.geometries.forEach((geometry) => geometry.dispose());
     this.materials.forEach((material) => material.dispose());
+    this.muzzleTexture?.dispose();
   }
 }

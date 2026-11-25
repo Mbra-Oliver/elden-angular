@@ -1,8 +1,9 @@
-import { Component, OnDestroy, computed, inject, output, signal } from '@angular/core';
+import { Component, OnDestroy, computed, inject, input, output, signal } from '@angular/core';
 import { InputService } from '../../lib/services/input.service';
 import { GameStateService } from '../../lib/services/game-state.service';
 import { SliceService } from '../../lib/slice/slice.service';
 import { AsyncWorldService } from '../../lib/social/async-world.service';
+import { PrologueService } from '../../lib/prologue/prologue.service';
 
 type Pad = 'dodge' | 'attack' | 'heavy' | 'drink' | 'switch';
 
@@ -14,13 +15,19 @@ const PAD_KEYS: Record<Pad, string> = {
 /** Un appui très bref est tenu au moins ce temps, pour qu'une image de jeu le voie. */
 const MIN_HOLD_MS = 70;
 /** Rayon du joystick (px) et zone morte (fraction du rayon). */
-const STICK_RADIUS = 52;
-const DEADZONE = 0.28;
+const STICK_RADIUS = 46;
+const DEADZONE = 0.18;
+/** Au sortir de la zone morte on marche déjà un peu ; la courbe monte en douceur jusqu'à la course. */
+const STICK_MIN = 0.28;
+const STICK_CURVE = 1.6;
+
+/** Une seule invite à la fois, tapotée pour agir. */
+interface TouchPrompt { label: string; act: () => void }
 
 /**
  * Contrôles tactiles : joystick flottant à gauche (il apparaît sous le pouce),
  * quatre boutons d'action en arc à droite (esquive en bas, frappe légère au
- * centre, frappe lourde au-dessus, Bandji sur le côté) et l'icône de pause.
+ * centre, frappe lourde au-dessus, mixture sur le côté) et l'icône de pause.
  * Tout passe par InputService sous forme de touches virtuelles.
  */
 @Component({
@@ -31,12 +38,39 @@ const DEADZONE = 0.28;
 export class TouchControlsComponent implements OnDestroy {
   private readonly input = inject(InputService);
   readonly pause = output<void>();
+  /** Combat en cours : boutons secondaires (lourde, mixture, verrou) affichés. */
+  readonly combat = input(false);
   private readonly game = inject(GameStateService);
   private readonly slice = inject(SliceService);
   private readonly world = inject(AsyncWorldService);
-  /** Bouton d'interaction, seulement quand une invite est à portée (objet, foyer, reste, tache). */
-  readonly canInteract = computed(() =>
-    !this.game.dialogue() && (this.game.canTalk() || !!this.slice.prompt() || !!this.world.nearStain() || !!this.world.nearMessage()));
+  private readonly prologue = inject(PrologueService);
+  /**
+   * L'unique invite à l'écran, par priorité : parler / examiner, objet ou
+   * foyer, tache de sang, signe au sol ; le kaolin seulement en combat.
+   */
+  readonly prompt = computed<TouchPrompt | null>(() => {
+    if (this.game.dialogue()) return null;
+    const pressF = () => this.pressF();
+    if (this.game.canTalk()) return { label: this.game.interactLabel(), act: pressF };
+    const item = this.slice.prompt();
+    if (item) return { label: item.label, act: pressF };
+    if (this.world.nearStain()) return { label: 'Toucher la tache de sang', act: pressF };
+    if (this.world.nearMessage()) return { label: 'Apprécier le signe', act: pressF };
+    const kaolin = this.prologue.kaolin();
+    if (this.combat() && kaolin.owned && kaolin.left <= 0) {
+      return { label: 'Enduire la lame de kaolin', act: () => this.prologue.applyKaolin() };
+    }
+    return null;
+  });
+
+  /** Boutons de l'arc ; le changement d'arme se fait hors combat (pause tactique). */
+  readonly pads: readonly { id: Pad; label: string; glyph: string; combatOnly: boolean }[] = [
+    { id: 'dodge', label: 'Esquive (maintenir : sprint)', glyph: '↺', combatOnly: false },
+    { id: 'attack', label: 'Frappe légère', glyph: '⟋', combatOnly: false },
+    { id: 'heavy', label: 'Frappe lourde', glyph: '⟱', combatOnly: true },
+    { id: 'drink', label: 'Avaler la mixture', glyph: '🍃', combatOnly: true },
+    { id: 'switch', label: 'Changer d’arme', glyph: '⇄', combatOnly: false },
+  ];
 
   readonly stick = signal<{ x: number; y: number; dx: number; dy: number } | null>(null);
   readonly held = signal<ReadonlySet<Pad>>(new Set());
@@ -84,12 +118,19 @@ export class TouchControlsComponent implements OnDestroy {
     this.applyStick(0, 0);
   }
 
-  /** Huit directions : chaque axe s'allume au-delà de la zone morte et de 22,5°. */
+  /**
+   * Joystick analogique : zone morte, puis réponse progressive (pouce à
+   * mi-course = marche, à fond = course). Les flèches virtuelles restent
+   * posées pour les systèmes qui lisent une direction (esquive, menus).
+   */
   private applyStick(x: number, y: number) {
     const length = Math.hypot(x, y);
     const on = length > DEADZONE;
     const nx = on ? x / length : 0;
     const ny = on ? y / length : 0;
+    const t = on ? Math.min(1, (length - DEADZONE) / (1 - DEADZONE)) : 0;
+    const magnitude = on ? STICK_MIN + (1 - STICK_MIN) * t ** STICK_CURVE : 0;
+    this.input.setAnalog(nx * magnitude, ny * magnitude);
     const threshold = Math.sin(Math.PI / 8);
     this.input.setVirtual('ArrowRight', nx > threshold);
     this.input.setVirtual('ArrowLeft', nx < -threshold);
@@ -119,12 +160,17 @@ export class TouchControlsComponent implements OnDestroy {
     navigator.vibrate?.(8);
   }
 
-  /** Interaction : même chemin que la touche F (dialogues, objets, foyers, messages). */
+  /** Tap sur l'invite : son action (touche F simulée, ou kaolin). */
   interact(event: PointerEvent) {
     event.preventDefault();
+    this.prompt()?.act();
+    navigator.vibrate?.(8);
+  }
+
+  /** Même chemin que la touche F (dialogues, objets, foyers, messages). */
+  private pressF() {
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyF', key: 'f', bubbles: true }));
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyF', key: 'f', bubbles: true }));
-    navigator.vibrate?.(8);
   }
 
   padUp(pad: Pad) {

@@ -150,6 +150,12 @@ background: transparent;
 .results button { padding: 4px 10px; background: #7a3e1d; color: inherit; border: 1px solid #d8a23a; border-radius: 4px; cursor: pointer; font: inherit; }
 .copied, .unlock { text-align: center; color: #ffdc9a; font: 13px system-ui, sans-serif; }
 .copied input { width: min(420px, 80vw); font: 12px monospace; }
+.victory-card { display: flex; align-items: center; gap: 12px; max-width: 560px; margin: 0 auto 16px; padding: 10px 14px; text-align: left; background: #00000066; border: 1px solid #d8a23a88; }
+.victory-card .sign { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid #d8a23a; color: #ffdc9a; font: 28px/1 serif; }
+.victory-card div { display: grid; gap: 3px; flex: 1; color: #f3e2c4; font: 13px system-ui, sans-serif; }
+.victory-card small { color: #d6a85f; letter-spacing: 0.08em; }
+.victory-card p { margin: 0; font-style: italic; }
+.victory-card button { white-space: nowrap; }
 
 /* Écran de mort sobre : noir, lettres blanc cassé qui apparaissent lentement, aucune pulsation rouge. */
 .blood-overlay {

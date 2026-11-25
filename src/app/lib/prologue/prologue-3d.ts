@@ -1,11 +1,12 @@
 import * as T from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sceneryRandom } from '../constants/scenery';
+import { applyWind } from '../engine/wind';
 import {
   BLADES, BODIES, BOWS, CAMP_FIRES, CAMP_WARRIORS, CLEARINGS, FALLEN_TRUNK, FOREST, KEGS, LITTER, MUSKETS,
   PROLOGUE_AREA, PROLOGUE_FOYERS, REMAINS, SCORCHES, SMOKES, SPEARS, STREAM, TRAIL, TRAIL_HALF,
   UMBRELLA, type PropSpot, type RemainsId,
-  BRANCHES, BRIDGE, COVER_TRUNKS, CREST_FALLEN, KAPOK, DRUMMER, TRAIL_HALVES, PROLOGUE_CENTER, PROLOGUE_DUEL,
+  BRANCHES, BRIDGE, COVER_TRUNKS, CREST_FALLEN, KAPOK, DRUMMER, LOOKOUT, pathHeight, terrainHeight, TRAIL_HALVES, PROLOGUE_CENTER, PROLOGUE_DUEL,
 } from './prologue-map';
 
 /**
@@ -74,10 +75,17 @@ export class Prologue3D {
   readonly textures: T.Texture[] = [];
   private readonly materials: T.Material[] = [];
   private readonly flames: T.Mesh[] = [];
-  private readonly smoke: { sprite: T.Sprite; base: { x: number; y: number }; seed: number }[] = [];
+  private readonly smoke: { sprite: T.Sprite; base: { x: number; y: number }; seed: number; floor?: number }[] = [];
   private readonly glints: { sprite: T.Sprite; id: RemainsId }[] = [];
   private readonly vultures: { bird: T.Group; wings: T.Mesh[]; seed: number }[] = [];
   private embers?: T.Points<T.BufferGeometry, T.PointsMaterial>;
+  /** Cendres et braises qui flottent autour du héros. */
+  private motes?: T.Points<T.BufferGeometry, T.PointsMaterial>;
+  private embersAir?: T.Points<T.BufferGeometry, T.PointsMaterial>;
+  private readonly moteSeeds: number[] = [];
+  /** Incendies au fond de la vallée. */
+  private readonly valleyFires: T.Sprite[] = [];
+
   /** Tisons qui balisent le sentier (lueur qui pulse). */
   private readonly brands: T.Sprite[] = [];
   /** Feux de la crête, visibles de loin. */
@@ -98,6 +106,7 @@ export class Prologue3D {
     private readonly hasRead: (id: RemainsId) => boolean,
     private readonly championSpot: () => { x: number; y: number; yaw: number } | null = () => null,
     private readonly bridged: () => boolean = () => false,
+    private readonly hero: () => { x: number; y: number } | null = () => null,
   ) {
     const vertex = this.mat(new T.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }));
     this.buildGround();
@@ -112,6 +121,7 @@ export class Prologue3D {
     this.corpse = this.buildCorpse(vertex);
     this.buildSequences(vertex);
     this.buildGuidance(vertex);
+    this.buildAtmosphere(vertex);
     this.root.visible = false;
     scene.add(this.root);
   }
@@ -122,6 +132,8 @@ export class Prologue3D {
     if (!on) return;
     this.time += dt;
     const t = this.time;
+    this.updateMotes(dt);
+    this.valleyFires.forEach((f, i) => { f.material.opacity = 0.65 + 0.3 * Math.sin(t * (1.7 + i * 0.13) + i); });
     this.brands.forEach((b, i) => { b.material.opacity = 0.55 + 0.25 * Math.sin(t * 3.1 + i * 1.7) + 0.1 * Math.sin(t * 11 + i); });
     this.beacons.forEach((b, i) => { b.material.opacity = 0.7 + 0.2 * Math.sin(t * 2.3 + i * 2.1); });
     const down = this.bridged();
@@ -130,7 +142,7 @@ export class Prologue3D {
     const spot = this.championSpot();
     this.corpse.visible = !!spot;
     if (spot) {
-      this.corpse.position.set(spot.x, 0, spot.y);
+      this.corpse.position.set(spot.x, terrainHeight(spot.x, spot.y), spot.y);
       this.corpse.rotation.y = spot.yaw - Math.PI / 2;
     }
     this.flames.forEach((flame, i) => {
@@ -139,7 +151,7 @@ export class Prologue3D {
     });
     for (const puff of this.smoke) {
       const life = (t * 0.05 + puff.seed) % 1;
-      puff.sprite.position.set(puff.base.x + life * 70 + Math.sin(puff.seed * 9) * 8, 10 + life * 230, puff.base.y - life * 40);
+      puff.sprite.position.set(puff.base.x + life * 70 + Math.sin(puff.seed * 9) * 8, 10 + (puff.floor ?? 0) + life * 230, puff.base.y - life * 40);
       puff.sprite.scale.setScalar(26 + life * 120);
       puff.sprite.material.opacity = Math.sin(life * Math.PI) * 0.42;
     }
@@ -288,14 +300,52 @@ export class Prologue3D {
     }
     ctx.globalAlpha = 1;
 
+    // Parois de la gorge et de la montée : roche latéritique, plus claire que le sous-bois.
+    for (let py = 0; py < canvas.height; py += 6) {
+      for (let px = 0; px < canvas.width; px += 6) {
+        const wx = ox + px / scale;
+        const wz = oy + py / scale;
+        const relief = terrainHeight(wx, wz) - pathHeight(wx, wz);
+        if (relief < 34) continue;
+        ctx.globalAlpha = Math.min(1, (relief - 34) / 40);
+        ctx.fillStyle = ['#5e4a3c', '#6b5444', '#544438'][(px + py) % 3];
+        ctx.fillRect(px, py, 6, 6);
+      }
+    }
+    ctx.globalAlpha = 1;
+
     const texture = new T.CanvasTexture(canvas);
     texture.colorSpace = T.SRGBColorSpace;
     texture.anisotropy = 4;
     this.textures.push(texture);
-    const ground = new T.Mesh(new T.PlaneGeometry(w, h),
-      this.mat(new T.MeshStandardMaterial({ map: texture, roughness: 1 })));
+    // Sol en relief : le sentier monte, talus, parois et vallée l'entourent.
+    const segX = Math.round(w / 18);
+    const segY = Math.round(h / 18);
+    const plane = new T.PlaneGeometry(w, h, segX, segY);
+    const pos = plane.attributes['position'] as T.BufferAttribute;
+    const cx = ox + w / 2;
+    const cz = oy + h / 2;
+    const tint = new Float32Array(pos.count * 3);
+    const ember = new T.Color('#e0603a');
+    const white = new T.Color('#ffffff');
+    const c = new T.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const wx = cx + pos.getX(i);
+      const wz = cz - pos.getY(i);
+      const hgt = terrainHeight(wx, wz);
+      pos.setZ(i, hgt);
+      // Parois hautes : roche grise ; fond de la vallée : rougeoiement des incendies.
+      c.copy(white);
+      if (hgt < -40) c.lerp(ember, Math.min(0.8, (-hgt - 40) / 160));
+      c.toArray(tint, i * 3);
+    }
+    plane.setAttribute('color', new T.BufferAttribute(tint, 3));
+    plane.computeVertexNormals();
+    const ground = new T.Mesh(plane, this.mat(new T.MeshStandardMaterial({
+      map: texture, roughness: 1, flatShading: true, vertexColors: true,
+    })));
     ground.rotation.x = -Math.PI / 2;
-    ground.position.set(ox + w / 2, 0.05, oy + h / 2);
+    ground.position.set(cx, 0.05, cz);
     this.root.add(ground);
   }
 
@@ -311,14 +361,15 @@ export class Prologue3D {
     const o = this.tmp;
     FOREST.forEach((tree, i) => {
       const trunkHeight = tree.height * 0.8;
-      o.position.set(tree.x, 0, tree.y);
+      const base = terrainHeight(tree.x, tree.y) - 2;
+      o.position.set(tree.x, base, tree.y);
       o.rotation.set(0, tree.seed, 0);
       o.scale.set(tree.r, trunkHeight, tree.r);
       o.updateMatrix();
       trunks.setMatrixAt(i, o.matrix);
       for (let k = 0; k < 3; k++) {
         const spread = tree.r * 1.4;
-        o.position.set(tree.x + Math.cos(tree.seed + k * 2.1) * spread, tree.height * (0.62 + k * 0.13),
+        o.position.set(tree.x + Math.cos(tree.seed + k * 2.1) * spread, base + tree.height * (0.62 + k * 0.13),
           tree.y + Math.sin(tree.seed + k * 2.1) * spread);
         const s = tree.r * (3.2 - k * 0.5);
         o.scale.set(s, s * 0.62, s);
@@ -350,7 +401,7 @@ export class Prologue3D {
     }
     const bushes = new T.InstancedMesh(merge([[ball(1, 0), C.bush, m4(0, 0.4, 0, 0, 0, 0, 1, 0.7, 1)]]), material, edge.length);
     edge.forEach((b, i) => {
-      o.position.set(b.x, 0, b.y);
+      o.position.set(b.x, terrainHeight(b.x, b.y) - 1, b.y);
       o.rotation.set(0, b.yaw, 0);
       o.scale.setScalar(8 + b.variant * 3);
       o.updateMatrix();
@@ -367,7 +418,7 @@ export class Prologue3D {
     }
     const palmMesh = new T.InstancedMesh(merge(palmParts), material, palms.length);
     palms.forEach((p, i) => {
-      o.position.set(p.x, 0, p.y);
+      o.position.set(p.x, terrainHeight(p.x, p.y) - 1, p.y);
       o.rotation.set(0, p.yaw, (p.variant - 1.5) * 0.06);
       o.scale.setScalar(0.85 + p.variant * 0.1);
       o.updateMatrix();
@@ -424,7 +475,7 @@ export class Prologue3D {
     const mesh = new T.InstancedMesh(geometry, material, Math.max(1, spots.length));
     mesh.count = spots.length;
     spots.forEach((spot, i) => {
-      this.tmp.position.set(spot.x, 0, spot.y);
+      this.tmp.position.set(spot.x, terrainHeight(spot.x, spot.y), spot.y);
       this.tmp.rotation.set(0, spot.yaw, 0);
       this.tmp.scale.setScalar(1);
       place(spot, this.tmp);
@@ -541,7 +592,7 @@ export class Prologue3D {
       [cyl(4.4, 4.4, 1.2, 10), C.wood, m4(0, height * 0.7, 0)],
     ]);
     const standing = new T.Mesh(drum(18), material);
-    standing.position.set(5150, 0, 430);
+    standing.position.set(5150, terrainHeight(5150, 430), 430);
     standing.rotation.z = 0.08;
     const fallen = new T.Mesh(drum(16), material);
     fallen.position.set(5176, 4.4, 416);
@@ -555,7 +606,7 @@ export class Prologue3D {
       ...Array.from({ length: 12 }, (_, i): Part =>
         [cyl(0.9, 0.9, 0.4, 6), C.darkWood, m4(-5.5 + (i % 6) * 2.2, 2.05, i < 6 ? -1.2 : 1.2)]),
     ]), material);
-    awale.position.set(5355, 0, 450);
+    awale.position.set(5355, terrainHeight(5355, 450), 450);
     awale.rotation.set(0, 0.4, 0.5);
     const seeds = new T.InstancedMesh(merge([[ball(0.5, 0), '#2a2520', m4(0, 0.4, 0)]]), material, 24);
     for (let i = 0; i < 24; i++) {
@@ -570,7 +621,7 @@ export class Prologue3D {
       [cyl(0.8, 0.8, 22, 5), C.wood, m4(-18, 8, -12, 0.6, 0, 0.3)],
       [cyl(0.8, 0.8, 22, 5), C.wood, m4(18, 4, 12, -1.1, 0, 0)],
     ]), material);
-    shelter.position.set(5345, 0, 480);
+    shelter.position.set(5345, terrainHeight(5345, 480), 480);
     this.root.add(standing, fallen, horn, awale, seeds, shelter);
   }
 
@@ -578,7 +629,7 @@ export class Prologue3D {
 
   private fire(material: T.Material, x: number, y: number, size = 1) {
     const group = new T.Group();
-    group.position.set(x, 0, y);
+      group.position.set(x, terrainHeight(x, y), y);
     group.add(new T.Mesh(merge([
       ...Array.from({ length: 7 }, (_, i): Part => {
         const a = i / 7 * Math.PI * 2;
@@ -600,7 +651,7 @@ export class Prologue3D {
   private buildFires(material: T.Material) {
     for (const foyer of Object.values(PROLOGUE_FOYERS)) {
       const group = new T.Group();
-      group.position.set(foyer.x, 0, foyer.y);
+      group.position.set(foyer.x, terrainHeight(foyer.x, foyer.y), foyer.y);
       group.add(new T.Mesh(merge([
         [cyl(5.5, 3.2, 3.5, 9), '#4a3a2c', m4(0, 7.5, 0)],
         ...[0, 2.1, 4.2].map((a): Part => [cyl(0.5, 0.6, 9, 4), C.darkWood, m4(Math.cos(a) * 3.2, 3.5, Math.sin(a) * 3.2, Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3)]),
@@ -668,7 +719,7 @@ export class Prologue3D {
       [new T.DodecahedronGeometry(1, 0), '#352f2a', m4(-60, 18, 40, 0, 0.6, 0, 55, 60, 45)],
       [new T.DodecahedronGeometry(1, 0), '#40382f', m4(50, 12, -50, 0, 1.2, 0, 50, 45, 40)],
     ]), material);
-    spur.position.set(PROLOGUE_DUEL.x + 330, 0, PROLOGUE_DUEL.y - 40);
+    spur.position.set(PROLOGUE_DUEL.x + 330, terrainHeight(PROLOGUE_DUEL.x + 330, PROLOGUE_DUEL.y - 40), PROLOGUE_DUEL.y - 40);
     this.root.add(spur);
     for (const [dx, y, dz] of [[-10, 132, 0], [-70, 82, 40], [40, 62, -50]]) {
       const fire = new T.Sprite(this.mat(new T.SpriteMaterial({
@@ -699,7 +750,7 @@ export class Prologue3D {
     }
     const logs = new T.InstancedMesh(brandBody, material, spots.length);
     spots.forEach((s, i) => {
-      this.tmp.position.set(s.x, 0, s.y);
+      this.tmp.position.set(s.x, terrainHeight(s.x, s.y), s.y);
       this.tmp.rotation.set(0, i * 2.3, 0);
       this.tmp.scale.setScalar(1);
       this.tmp.updateMatrix();
@@ -708,7 +759,7 @@ export class Prologue3D {
         map: glowTexture, color: '#ff6a24', transparent: true, depthWrite: false, blending: T.AdditiveBlending,
       })));
       glow.position.set(s.x, 3, s.y);
-      glow.scale.setScalar(16);
+      glow.scale.setScalar(11);
       glow.userData['bloom'] = true;
       this.brands.push(glow);
       this.root.add(glow);
@@ -731,6 +782,144 @@ export class Prologue3D {
   }
 
   /**
+   * Finitions : vallée en flammes sous la crête (feux et fumées vus d'en
+   * haut), herbes hautes qui ondulent au vent le long du sentier, cendres
+   * grises qui tombent et braises qui montent autour du héros, cairn de
+   * pierres sur le promontoire.
+   */
+  private buildAtmosphere(material: T.Material) {
+    const rand = sceneryRandom(17011);
+    const glow = this.soft();
+    // Vallée de Feyiase en flammes : foyers au fond, colonnes de fumée qui montent jusqu'à la crête.
+    for (let i = 0; i < 16; i++) {
+      const x = 5050 + rand() * 900;
+      const lineY = 470 - (x - 5200) * 0.32;
+      const y = lineY - 200 - rand() * 260;
+      const h = terrainHeight(x, y);
+      const fire = new T.Sprite(this.mat(new T.SpriteMaterial({
+        map: glow, color: rand() < 0.5 ? '#ff6a24' : '#ff9a3c', transparent: true, depthWrite: false, blending: T.AdditiveBlending, fog: false,
+      })));
+      fire.position.set(x, h + 6, y);
+      fire.scale.setScalar(40 + rand() * 50);
+      fire.userData['bloom'] = true;
+      this.valleyFires.push(fire);
+      this.root.add(fire);
+      if (i % 3 === 0) {
+        for (let k = 0; k < 5; k++) {
+          const sprite = new T.Sprite(this.mat(new T.SpriteMaterial({
+            map: glow, color: k % 2 ? '#3a2c28' : '#4a3a32', transparent: true, depthWrite: false, opacity: 0,
+          })));
+          this.smoke.push({ sprite, base: { x, y }, seed: (k / 5 + i * 0.29) % 1, floor: h });
+          this.root.add(sprite);
+        }
+      }
+    }
+    // Herbes hautes au vent sur les talus du sentier.
+    const blades: number[] = [];
+    for (let b = 0; b < 5; b++) {
+      const a = b * 2.4;
+      const ox = Math.cos(a) * (0.6 + b * 0.5);
+      const oz = Math.sin(a) * (0.6 + b * 0.5);
+      const height = 6 + rand() * 5;
+      const lean = (rand() - 0.5) * 2;
+      blades.push(ox - 0.8, 0, oz, ox + 0.8, 0, oz, ox + lean, height, oz + lean * 0.4);
+    }
+    const tuft = new T.BufferGeometry();
+    tuft.setAttribute('position', new T.Float32BufferAttribute(blades, 3));
+    tuft.computeVertexNormals();
+    const grassMat = this.mat(applyWind(new T.MeshLambertMaterial({ side: T.DoubleSide, color: '#6b6a38' }),
+      { anchor: 0, tip: 10, amplitude: 1.6, sway: [1, 0.6], speed: 1.2 }));
+    const spots: { x: number; y: number }[] = [];
+    for (let i = 0; i < TRAIL.length - 1; i++) {
+      const a = TRAIL[i];
+      const b = TRAIL[i + 1];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const nx = -(b.y - a.y) / len;
+      const ny = (b.x - a.x) / len;
+      for (let k = 0; k < 26; k++) {
+        const u = rand();
+        const side = (rand() < 0.5 ? -1 : 1) * (TRAIL_HALVES[i] - 6 + rand() * 30);
+        spots.push({ x: a.x + (b.x - a.x) * u + nx * side, y: a.y + (b.y - a.y) * u + ny * side });
+      }
+    }
+    const grass = new T.InstancedMesh(tuft, grassMat, spots.length);
+    const color = new T.Color();
+    spots.forEach((p, i) => {
+      this.tmp.position.set(p.x, terrainHeight(p.x, p.y), p.y);
+      this.tmp.rotation.set(0, rand() * 6, 0);
+      this.tmp.scale.setScalar(0.8 + rand() * 0.9);
+      this.tmp.updateMatrix();
+      grass.setMatrixAt(i, this.tmp.matrix);
+      grass.setColorAt(i, color.set(['#6b6a38', '#7a6e3c', '#55613a', '#8a7a44'][i % 4]));
+    });
+    this.root.add(grass);
+    // Cairn de pierres sur le promontoire : on s'y arrête pour regarder la vallée.
+    const cairn = new T.Mesh(merge([
+      [new T.DodecahedronGeometry(4, 0), '#6c6650', m4(0, 3, 0, 0, 0, 0, 1.3, 0.8, 1.2)],
+      [new T.DodecahedronGeometry(3, 0), '#77705a', m4(0.5, 7.5, 0.3, 0.4, 0.6, 0)],
+      [new T.DodecahedronGeometry(2, 0), '#6c6650', m4(-0.2, 10.5, 0, 0, 1, 0.3)],
+    ]), material);
+    cairn.position.set(LOOKOUT.x - 18, terrainHeight(LOOKOUT.x - 18, LOOKOUT.y - 22), LOOKOUT.y - 22);
+    this.root.add(cairn);
+    // Cendres qui tombent, braises qui montent, autour du héros (boîte qui le suit).
+    const count = 260;
+    const ash = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      ash[i * 3] = (rand() - 0.5) * 360;
+      ash[i * 3 + 1] = 20 + rand() * 120;
+      ash[i * 3 + 2] = (rand() - 0.5) * 360;
+      this.moteSeeds.push(rand() * 10);
+    }
+    const ashGeo = new T.BufferGeometry();
+    ashGeo.setAttribute('position', new T.BufferAttribute(ash, 3));
+    // Points ronds et petits : vus de près, ils ne deviennent pas des carrés géants.
+    this.motes = new T.Points(ashGeo, this.mat(new T.PointsMaterial({
+      color: '#9a9088', size: 0.9, map: glow, alphaTest: 0.05, transparent: true, opacity: 0.7, depthWrite: false,
+    })));
+    const sparks = new Float32Array(60 * 3);
+    for (let i = 0; i < 60; i++) {
+      sparks[i * 3] = (rand() - 0.5) * 300;
+      sparks[i * 3 + 1] = rand() * 120;
+      sparks[i * 3 + 2] = (rand() - 0.5) * 300;
+    }
+    const sparkGeo = new T.BufferGeometry();
+    sparkGeo.setAttribute('position', new T.BufferAttribute(sparks, 3));
+    this.embersAir = new T.Points(sparkGeo, this.mat(new T.PointsMaterial({
+      color: '#ff8a3c', size: 1.1, map: glow, transparent: true, opacity: 0.85, depthWrite: false, blending: T.AdditiveBlending,
+    })));
+    this.embersAir.userData['bloom'] = true;
+    this.motes.frustumCulled = false;
+    this.embersAir.frustumCulled = false;
+    this.root.add(this.motes, this.embersAir);
+  }
+
+  /** La boîte de cendres suit le héros ; chaque point tombe (cendre) ou monte (braise) et revient en boucle. */
+  private updateMotes(dt: number) {
+    const hero = this.hero();
+    if (!hero || !this.motes || !this.embersAir) return;
+    const height = terrainHeight(hero.x, hero.y);
+    this.motes.position.set(hero.x, height, hero.y);
+    this.embersAir.position.set(hero.x, height, hero.y);
+    const t = this.time;
+    const ash = this.motes.geometry.attributes['position'] as T.BufferAttribute;
+    for (let i = 0; i < ash.count; i++) {
+      let y = ash.getY(i) - dt * (6 + (i % 5));
+      if (y < 0) y += 140;
+      ash.setY(i, y);
+      ash.setX(i, ash.getX(i) + Math.sin(t * 0.7 + this.moteSeeds[i]) * dt * 5);
+    }
+    ash.needsUpdate = true;
+    const sparks = this.embersAir.geometry.attributes['position'] as T.BufferAttribute;
+    for (let i = 0; i < sparks.count; i++) {
+      let y = sparks.getY(i) + dt * (10 + (i % 7) * 2);
+      if (y > 120) y -= 120;
+      sparks.setY(i, y);
+      sparks.setX(i, sparks.getX(i) + Math.sin(t * 2 + i) * dt * 8);
+    }
+    sparks.needsUpdate = true;
+  }
+
+  /**
    * Séquences 1 à 4 : charge de porteur renversée, troncs de la ravine,
    * rocher du tireur, autel profané, tronc du raccourci, grand fromager et
    * tambourinaire, rochers de la montée, morts aux pieds de Badu.
@@ -744,12 +933,12 @@ export class Prologue3D {
       [ball(2, 0), C.gourd, m4(-6, 1.6, 5)],
       [box(14, 1, 1), C.wood, m4(2, 0.6, -6, 0, 0.3, 0)],
     ]), material);
-    load.position.set(3830, 0, 1175);
+    load.position.set(3830, terrainHeight(3830, 1175), 1175);
     // Troncs brisés de la ravine (couverts contre le tir).
     const stump = merge([[cyl(1, 1.2, 1, 6), C.trunk, m4(0, 0.5, 0)], [cyl(0.4, 1, 0.25, 5), '#6a5a3a', m4(0.3, 1.1, 0, 0.3, 0, 0.2)]]);
     const stumps = new T.InstancedMesh(stump, material, COVER_TRUNKS.length);
     COVER_TRUNKS.forEach((c, i) => {
-      o.position.set(c.x, 0, c.y);
+      o.position.set(c.x, terrainHeight(c.x, c.y), c.y);
       o.rotation.set(0, i * 1.7, 0);
       o.scale.set(c.r, 34 + i * 6, c.r);
       o.updateMatrix();
@@ -777,7 +966,7 @@ export class Prologue3D {
     rocks.push({ x: 4418, y: 790, s: 16 }, { x: 4430, y: 752, s: 13 }, { x: 4392, y: 748, s: 10 });
     const rockMesh = new T.InstancedMesh(merge([[new T.DodecahedronGeometry(1, 0), '#5d5648', m4(0, 0.3, 0, 0, 0, 0, 1, 0.75, 1)]]), material, rocks.length);
     rocks.forEach((r, i) => {
-      o.position.set(r.x, 0, r.y);
+      o.position.set(r.x, terrainHeight(r.x, r.y) - 2, r.y);
       o.rotation.set(rand() * 0.4, rand() * 6, 0);
       o.scale.setScalar(r.s);
       o.updateMatrix();
@@ -791,11 +980,11 @@ export class Prologue3D {
       [ball(1.4, 0), '#b07a3a', m4(14, 0.8, 13)],
       [box(3, 0.4, 2), '#b5793a', m4(22, 0.4, 18, 0, 0.4, 0)],
     ]), material);
-    shrine.position.set(4300, 0, 605);
+    shrine.position.set(4300, terrainHeight(4300, 605), 605);
     // Tronc du raccourci : debout au bord du ravin, puis couché en travers.
     const trunk = merge([[cyl(5, 6, 96, 7), C.trunk, m4(0, 48, 0)], [ball(14, 0), C.leaves[1], m4(0, 96, 0)]]);
     this.trunkStanding = new T.Mesh(trunk, material);
-    this.trunkStanding.position.set(3600, 0, 1440);
+    this.trunkStanding.position.set(3600, terrainHeight(3600, 1440), 1440);
     this.trunkStanding.rotation.z = 0.12;
     this.trunkBridge = new T.Mesh(merge([[cyl(5, 6, 110, 7), C.trunk, m4(0, 0, 0, Math.PI / 2, 0, 0)]]), material);
     this.trunkBridge.position.set(3582, 4, 1382);
@@ -806,7 +995,7 @@ export class Prologue3D {
       ...Array.from({ length: 5 }, (_, i): Part => [box(2.5, 26, 22), '#6e6252', m4(0, 12, 0, 0, i * 1.26, 0).multiply(m4(0, 0, KAPOK.r))]),
       [ball(60, 0), C.leaves[0], m4(0, 210, 0, 0, 0, 0, 1, 0.45, 1)],
     ]), material);
-    kapok.position.set(KAPOK.x, 0, KAPOK.y);
+    kapok.position.set(KAPOK.x, terrainHeight(KAPOK.x, KAPOK.y), KAPOK.y);
     // Le tambourinaire : assis, adossé au fromager, une main sur la plaie, son tambour à côté.
     // Taille réelle d'un homme assis, tourné vers le sentier : on ne peut pas le rater.
     const drummer = new T.Mesh(merge([
@@ -821,7 +1010,7 @@ export class Prologue3D {
       [cyl(3.8, 2.4, 12, 9), C.darkWood, m4(10, 6, 4, 0, 0, 0.45)],
       [cyl(3.9, 3.9, 0.4, 9), C.bone, m4(12.6, 11.4, 4, 0, 0, 0.45)],
     ]), material);
-    drummer.position.set(DRUMMER.x, 0, DRUMMER.y);
+    drummer.position.set(DRUMMER.x, terrainHeight(DRUMMER.x, DRUMMER.y), DRUMMER.y);
     drummer.rotation.y = Math.PI + 0.35;
     // Petit feu à côté de lui : il éclaire la scène et attire l'œil depuis le sentier.
     this.fire(material, DRUMMER.fireX, DRUMMER.fireY, 0.8);
@@ -859,7 +1048,7 @@ export class Prologue3D {
       [cyl(24, 24, 5, 12, ), '#c39a3a', m4(0, 68, 0)],
       [ball(2.4, 0), '#c39a3a', m4(0, 81, 0)],
     ]), material);
-    umbrella.position.set(UMBRELLA.x, 0, UMBRELLA.y);
+    umbrella.position.set(UMBRELLA.x, terrainHeight(UMBRELLA.x, UMBRELLA.y), UMBRELLA.y);
     this.root.add(umbrella);
   }
 
@@ -898,7 +1087,7 @@ export class Prologue3D {
       const sprite = new T.Sprite(this.mat(new T.SpriteMaterial({
         map: texture, color: '#ffe2a8', transparent: true, depthWrite: false, blending: T.AdditiveBlending,
       })));
-      sprite.position.set(remains.x, 4, remains.y);
+      sprite.position.set(remains.x, terrainHeight(remains.x, remains.y) + 4, remains.y);
       sprite.scale.setScalar(7);
       sprite.userData['bloom'] = true;
       this.glints.push({ sprite, id: remains.id });

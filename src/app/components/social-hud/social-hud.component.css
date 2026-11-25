@@ -50,3 +50,6 @@ button { pointer-events: auto; font: inherit; color: inherit; cursor: pointer; }
   position: absolute; left: 50%; top: 70px; transform: translateX(-50%); margin: 0;
   padding: 4px 12px; background: #211b14d0; border-radius: 4px; font-size: 12px;
 }
+
+/* Mobile : l'unique invite vit dans les contrôles tactiles ; stats d'exploration masquées. */
+:host-context(html.touch-input) .prompt { display: none; }

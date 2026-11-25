@@ -2,13 +2,15 @@ import { Component, inject } from '@angular/core';
 import { DeathMenuComponent } from './components/death-menu/death-menu.component';
 import { GameCanvaComponent } from './components/game-canva/game-canva.component';
 import { MainMenuComponent } from './components/main-menu/main-menu.component';
+import { EpigraphComponent } from './components/epigraph/epigraph.component';
+import { DuelArenaComponent } from './components/duel-arena/duel-arena.component';
 import { GameStateService } from './lib/services/game-state.service';
 import { CodexService } from './lib/platform/codex.service';
 import { SettingsService } from './lib/platform/settings.service';
 
 @Component({
   selector: 'app-root',
-  imports: [DeathMenuComponent, MainMenuComponent, GameCanvaComponent],
+  imports: [DeathMenuComponent, MainMenuComponent, GameCanvaComponent, EpigraphComponent, DuelArenaComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
 })

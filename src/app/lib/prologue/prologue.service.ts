@@ -1,4 +1,5 @@
-import { inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
+import type { StoryBeatId } from '../narrative/story-beats';
 import { PLAYER_CONFIG } from '../constants/player.config-constant';
 import { TerrainCollisionService } from '../engine/terrain-collision.service';
 import { EquipmentStore } from '../entities/player/equipment.store';
@@ -8,7 +9,7 @@ import { EnemiesService } from '../slice/enemies.service';
 import {
   BRIDGE_PUSH, COVER_TRUNKS, PROLOGUE_SPAWNS,
   CAMP, CREST_GATE_X, DUEL_TRIGGER, FOREST, INSPECT_RADIUS, PROLOGUE_DUEL, PROLOGUE_AREA, REMAINS, SOLIDS, START, TRAIL,
-  inPrologue, walkable, type Remains, type RemainsId, type Spot,
+  inPrologue, walkable, LOOKOUT, type Remains, type RemainsId, type Spot,
 } from './prologue-map';
 
 /** Ouverture : défile seule (≈ 4,6 s par ligne), Espace pour passer. */
@@ -37,8 +38,8 @@ export const PROLOGUE_OUTRO: readonly string[] = [
 
 /** Taille du carquois quand l'arc est trouvé. [SUPPOSITION] */
 const START_ARROWS = 6;
-/** Gourdes de Bandji transmises par le blessé. [SUPPOSITION] */
-const BANDJI_GIFT = 3;
+/** Poignées de feuilles transmises par le blessé pour la mixture. [SUPPOSITION] */
+const MIXTURE_GIFT = 3;
 const LINE_SECONDS = 4.6;
 
 /**
@@ -59,17 +60,18 @@ export class PrologueService {
   readonly lines = signal<readonly string[]>(PROLOGUE_INTRO);
   /** Ce qu'on peut faire avec F à cet endroit (examiner un reste, pousser le tronc). */
   readonly prompt = signal<{ label: string; remains?: Remains; bridge?: boolean } | null>(null);
+  onStory?: (id: StoryBeatId, focus?: { x: number; y: number }) => void;
   /** Indication du premier combat (null : masquée). */
   readonly hint = signal<string | null>(null);
   /** Poudre de kaolin : possédée, et secondes restantes sur la lame. */
   readonly kaolin = signal<{ owned: boolean; left: number }>({ owned: false, left: 0 });
   /** Le tronc du raccourci est poussé : pont vers l'autel de départ. */
   bridged = false;
-  /** Le blessé a transmis sa gourde de Bandji (sans lui, pas de soin). */
-  bandjiGiven = false;
+  /** Le blessé a transmis ses feuilles à écraser (sans elles, pas de soin). */
+  mixtureGiven = false;
   /** L'arc de l'archer tombé a été ramassé. */
   bowFound = false;
-  /** Kwadwo a bu du Bandji pendant le chapitre (trophée « L'Éternel » perdu). */
+  /** Kwadwo a avalé de la mixture pendant le chapitre (trophée « L'Éternel » perdu). */
   healed = false;
   /** Nombre d'entrées dans le duel contre Badu (trophée du premier coup). */
   duelTries = 0;
@@ -85,7 +87,8 @@ export class PrologueService {
   /** Où il est tombé (le corps reste sur la crête). */
   championSpot: { x: number; y: number; yaw: number } | null = null;
 
-  private readonly read = new Set<RemainsId>();
+  private readonly read = signal(new Set<RemainsId>());
+  readonly relicBonus = computed(() => Math.min(3, Math.floor(this.read().size / 2)));
   private lineTime = 0;
   private readingUntil = 0;
   private outro = false;
@@ -124,9 +127,9 @@ export class PrologueService {
 
   /** Nouvelle partie : rien n'est lu, l'ouverture se lance. */
   begin() {
-    this.read.clear();
+    this.read.set(new Set());
     this.bridged = false;
-    this.bandjiGiven = false;
+    this.mixtureGiven = false;
     this.bowFound = false;
     this.healed = false;
     this.duelTries = 0;
@@ -152,13 +155,15 @@ export class PrologueService {
     this.line.set(null);
   }
 
-  /** Équipement d'un soldat de 1701 : afena, lance, arc et quelques flèches, Bandji. */
+  /** Équipement d'un soldat de 1701 : afena, lance, arc, flèches et mixture de soin. */
   equip() {
-    // Rien que sa lance : l'arc se trouve sur un archer tombé, le Bandji auprès du blessé.
+    // Rien que sa lance : l'arc se trouve sur un archer tombé, les feuilles auprès du blessé.
     this.equipment.setOwned(this.bowFound ? ['spear', 'bow'] : ['spear']);
     this.equipment.setWeapon('spear');
     this.equipment.setMaxArrows(START_ARROWS);
-    this.equipment.setMaxBandji(this.bandjiGiven ? BANDJI_GIFT : 0);
+    this.equipment.setMaxMixture(this.mixtureGiven ? MIXTURE_GIFT : 0);
+    const stamina = PLAYER_CONFIG.maxStamina + this.relicBonus() * 8;
+    this.playerStore.update({ maxStamina: stamina, stamina });
     this.equipment.refill();
   }
 
@@ -234,6 +239,16 @@ export class PrologueService {
     }
   }
 
+  /** Sol sous la caméra (relief du chapitre 1), 0 hors de la carte. */
+  cameraFloor(x: number, z: number) {
+    return inPrologue(x, z, 200) ? this.terrain.groundAt(x, z) : 0;
+  }
+
+  /** Sur le promontoire : la caméra recule et monte pour dévoiler la vallée. */
+  atLookout() {
+    return Math.hypot(LOOKOUT.x - this.player.centerX, LOOKOUT.y - this.player.centerY) < LOOKOUT.r + 10;
+  }
+
   /** Le héros est entré sur la crête alors que le porte-hache la tient encore. */
   duelDue() {
     if (this.championDown || this.blocking()) return false;
@@ -262,33 +277,47 @@ export class PrologueService {
       this.bridged = true;
       this.prompt.set(null);
       this.equipment.say('Le tronc bascule : un pont vers l’autel de mémoire');
+      this.onStory?.('bridge-glance', BRIDGE_PUSH);
       return true;
     }
     const target = prompt.remains!;
-    if (!this.read.has(target.id)) {
-      this.read.add(target.id);
+    if (!this.read().has(target.id)) {
+      const next = new Set(this.read());
+      next.add(target.id);
+      this.read.set(next);
       if (target.gives?.bow) {
         this.bowFound = true;
         this.equipment.setOwned(['spear', 'bow']);
       }
       if (target.gives?.arrows) this.equipment.addArrows(target.gives.arrows);
-      if (target.gives?.bandjiGift) {
-        this.bandjiGiven = true;
-        this.equipment.setMaxBandji(BANDJI_GIFT);
-        this.equipment.addBandji(BANDJI_GIFT);
+      if (target.gives?.mixtureGift) {
+        this.mixtureGiven = true;
+        this.equipment.setMaxMixture(MIXTURE_GIFT);
+        this.equipment.addMixture(MIXTURE_GIFT);
       }
-      if (target.gives?.bandji) this.equipment.addBandji(target.gives.bandji);
+      if (target.gives?.mixture) this.equipment.addMixture(target.gives.mixture);
       if (target.gives?.kaolin) {
         this.kaolin.set({ owned: true, left: 0 });
+      }
+      const maxStamina = PLAYER_CONFIG.maxStamina + this.relicBonus() * 8;
+      const player = this.playerStore.getData();
+      if (player.maxStamina < maxStamina) {
+        this.playerStore.update({ maxStamina, stamina: Math.min(maxStamina, player.stamina + 8) });
       }
     }
     this.reading.set(target);
     this.readingUntil = performance.now() + 11000;
+    if (target.id === 'tambourinaire') this.onStory?.('drummer', target);
     return true;
   }
 
   closeReading() {
     this.reading.set(null);
+  }
+
+  /** Lecture page à page (mobile) : la fiche reste ouverte tant qu'on la tapote. */
+  holdReading(ms = 11000) {
+    if (this.reading()) this.readingUntil = performance.now() + ms;
   }
 
   /** Repos à un feu du prologue : flèches de départ rendues. */
@@ -298,7 +327,7 @@ export class PrologueService {
   }
 
   hasRead(id: RemainsId) {
-    return this.read.has(id);
+    return this.read().has(id);
   }
 
   private goalFrom({ x, y }: Spot): { x: number; y: number; name: string } {

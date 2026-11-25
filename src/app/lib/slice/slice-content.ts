@@ -165,7 +165,7 @@ export const ITEMS: Record<ItemId, ItemInfo> = {
   },
   calebasse: {
     name: 'Calebasse fêlée de Kwabena',
-    effect: '+1 gourde de Bandji',
+    effect: '+1 poignée de feuilles pour la mixture',
     lore: 'Calebasse recousue avec de la ficelle de raphia. Gravée d’une corde à trois nœuds. Kwabena y gardait du vin de palme pour ceux qui tenaient la corde du gué. Kofi Brempong y a bu le premier.',
   },
 };

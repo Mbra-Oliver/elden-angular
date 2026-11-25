@@ -2,6 +2,8 @@ import * as T from 'three';
 import { BOSS_ATTACKS, shotAngles } from '../interfaces/BossAttackData';
 import { BOSS_CONFIG } from '../constants/boss.config-constant';
 import type { FighterRig } from './boss-rig-3d';
+import { dressHuman } from './human-body';
+import { baduOutfit } from './human-outfits';
 import type { Actor3D } from './world-3d';
 
 /**
@@ -426,6 +428,8 @@ export class ChampionGear {
   private readonly brokenMusket = new T.Group();
   private readonly outfit = new T.Group();
   private readonly crest = new T.Group();
+  /** Tenue skinnée de Badu (null sur un rig sans corps skinné). */
+  private dress: T.Group | null = null;
   private readonly fx = new T.Group();
   private readonly smoke: { sprite: T.Sprite; life: number; vx: number; vy: number; vz: number }[] = [];
   private readonly trails: T.Mesh<T.PlaneGeometry, T.MeshBasicMaterial>[] = [];
@@ -499,24 +503,19 @@ export class ChampionGear {
     this.brokenMusket.visible = false;
     scene.add(this.brokenMusket);
 
-    // Tenue : scarifications, pagne de guerre, ceinture, poire à poudre en corne, bourse à balles.
-    for (let i = 0; i < 9; i++) {
-      const side = i % 2 ? 1 : -1;
-      const scar = add(this.outfit, new T.BoxGeometry(1.6, 0.25, 0.3), flat('#2a1610'),
-        side * (1 + (i % 3)), 2.5 + Math.floor(i / 2) * 1.2, 4.9 - Math.abs(side) * 0.3, 0, 0, side * 0.5);
-      scar.userData['outline'] = false;
+    // Tenue (même corps humain que tous, human-body.ts) : torse nu scarifié,
+    // pagne de guerre sombre à pan rouge, ceinture et bandoulière de cuir.
+    // Kofi garde la sienne sur le même rig : on bascule l'une ou l'autre (setActive).
+    if (rig.body) {
+      this.dress = dressHuman(rig.body, baduOutfit((color) => flat(color), this.loincloth), true);
     }
-    add(this.outfit, new T.CylinderGeometry(5.9, 6.6, 7.5, 9), this.loincloth, 0, -3.4, 0);
-    add(this.outfit, new T.BoxGeometry(4, 9, 0.6), flat('#6e1f17'), 0, -6.5, 5.6);
-    add(this.outfit, new T.CylinderGeometry(4.6, 4.7, 1.5, 9), leather, 0, 0.6, 0);
-    add(this.outfit, new T.ConeGeometry(1.1, 6, 6), flat('#c9b38a'), 4.8, -1, 2.4, 0.3, 0, 1.2);
-    add(this.outfit, new T.SphereGeometry(1.6, 6, 5), leather, -4.6, -0.6, 2.4);
-    // Coiffe de cuir sombre à l'insigne d'or terne (pivote avec le regard).
+    // Poire à poudre en corne et bourse à balles, à la ceinture.
+    add(this.outfit, new T.ConeGeometry(0.75, 4.2, 6), flat('#c9b38a'), 3.05, -0.9, 0.9, 0.3, 0, 1.2);
+    add(this.outfit, new T.SphereGeometry(1.0, 6, 5), leather, -2.95, -0.5, 1.0);
+    // Coiffe de peau sombre à l'insigne d'or terne (pivote avec le regard, comme la tête).
     this.crest.position.set(0, 11, 0.5);
-    add(this.crest, new T.CylinderGeometry(3.3, 3.7, 2.6, 9), leather, 0, 2.2, -0.2);
-    add(this.crest, new T.BoxGeometry(2.4, 2.6, 0.5), gold, 0, 2.4, 3.4);
-    add(this.crest, new T.BoxGeometry(0.6, 0.5, 0.4), flat('#e6d3a0'), -1.1, -0.2, 3.1); // regard
-    add(this.crest, new T.BoxGeometry(0.6, 0.5, 0.4), flat('#e6d3a0'), 1.1, -0.2, 3.1);
+    add(this.crest, new T.CylinderGeometry(1.62, 1.72, 1.7, 9), leather, 0, 1.75, -0.35).scale.z = 1.22;
+    add(this.crest, new T.BoxGeometry(1.3, 1.4, 0.3), gold, 0, 1.85, 1.75);
     rig.torso.add(this.outfit, this.crest);
 
     // Effets : fumée noire, éclair de bouche, lueur de la platine, braise sur la ligne de tir.
@@ -554,7 +553,7 @@ export class ChampionGear {
 
   /** Objets à rendre visibles le temps de compiler leurs shaders. */
   get warmables(): T.Object3D[] {
-    return [this.rightHand, this.leftHand, this.outfit, this.crest, this.fx, this.brokenMusket];
+    return [this.rightHand, this.leftHand, this.outfit, this.crest, this.fx, this.brokenMusket, ...(this.dress ? [this.dress] : [])];
   }
 
   /** true : le rig du duelliste devient Badu (sinon Kofi retrouve son bâton et sa tenue). */
@@ -562,6 +561,8 @@ export class ChampionGear {
     if (on === this.active && this.swapped.length) return;
     this.active = on;
     for (const part of [this.rightHand, this.leftHand, this.outfit, this.crest, this.fx]) part.visible = on;
+    if (this.dress) this.dress.visible = on;
+    if (this.rig.body) this.rig.body.outfit.visible = !on;
     if (!on) this.brokenMusket.visible = false;
     if (this.staff) this.staff.visible = !on;
     this.rig.root.scale.setScalar(on ? BADU_SCALE : 1);

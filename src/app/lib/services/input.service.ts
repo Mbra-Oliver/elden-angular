@@ -36,6 +36,31 @@ export class InputService {
 
   clearVirtual() {
     this.virtualKeys.clear();
+    this.analog = null;
+  }
+
+  /** Joystick tactile analogique (x droite, y bas, longueur 0 → 1) ; null : relâché. */
+  private analog: { x: number; y: number } | null = null;
+
+  setAnalog(x: number, y: number) {
+    this.analog = x || y ? { x, y } : null;
+  }
+
+  /**
+   * Direction de déplacement : le joystick tactile s'il est tenu (longueur
+   * progressive), sinon clavier / croix / stick seuillés (longueur 1).
+   */
+  moveAxis(): { x: number; y: number } {
+    if (this.analog) return this.analog;
+    return {
+      x: (this.right() ? 1 : 0) - (this.left() ? 1 : 0),
+      y: (this.down() ? 1 : 0) - (this.up() ? 1 : 0),
+    };
+  }
+
+  /** Vrai quand le déplacement vient du stick tactile analogique. */
+  analogActive(): boolean {
+    return this.analog !== null;
   }
 
   //===============
@@ -81,7 +106,7 @@ export class InputService {
   }
 
   drink(): boolean {
-    // B comme Bandji
+    // B comme mixture de soin
     return this.isPressed('KeyB') || this.pad.button(PAD.X);
   }
 }

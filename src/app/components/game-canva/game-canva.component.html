@@ -1,4 +1,4 @@
-<div class="stage" [class.touch]="touch" [class.narrating]="narrating()">
+<div class="stage" [class.touch]="touch" [class.narrating]="narrating()" [class.combat]="combat()">
   <div #viewport class="game-viewport" (pointerdown)="onPointerDown($event)" (pointerup)="onPointerUp($event)"
     (contextmenu)="$event.preventDefault()"><app-combat-hud /><app-social-hud /><app-slice-hud /><app-prologue-hud /></div>
   @if (engineStatus() === 'loading') {
@@ -24,11 +24,11 @@
         <span class="icon" aria-hidden="true">➶</span> Arc
         <span class="count" [attr.aria-label]="gear.arrows + ' flèches'">{{ gear.arrows }}/{{ gear.maxArrows }}</span>
       </div>
-      <div class="slot bandji" [class.empty]="gear.bandji === 0">
-        <span class="icon" aria-hidden="true">⚱</span> Bandji
-        <span class="count" [attr.aria-label]="gear.bandji + ' gourdes'">{{ gear.bandji }}/{{ gear.maxBandji }}</span>
+      <div class="slot mixture" [class.empty]="gear.mixture === 0">
+        <span class="icon" aria-hidden="true">🍃</span> Mixture de soin
+        <span class="count" [attr.aria-label]="gear.mixture + ' poignées de feuilles'">{{ gear.mixture }}/{{ gear.maxMixture }}</span>
       </div>
-      <p class="keys"><app-key-hint action="switch" /> changer d’arme · <app-key-hint action="drink" /> boire</p>
+      <p class="keys"><app-key-hint action="switch" /> changer d’arme · <app-key-hint action="drink" /> avaler la mixture</p>
     </section>
     @if (equipment.notice(); as notice) {
       <p class="gear-notice" role="status">{{ notice }}</p>
@@ -41,11 +41,28 @@
     <app-dialogue-box [line]="line" (choose)="gameState.choose($event)" />
   }
   <div class="controls">
-    <app-key-hint action="move" /> se déplacer · <app-key-hint action="attack" /> combo / tir · <app-key-hint action="heavy" /> lourde / tir bandé · <app-key-hint action="dodge" /> esquive (maintenu : sprint) · <app-key-hint action="switch" /> lance ↔ arc · <app-key-hint action="drink" /> Bandji · <app-key-hint action="interact" /> interagir · <app-key-hint action="message" /> message
+    <app-key-hint action="move" /> se déplacer · <app-key-hint action="attack" /> combo / tir · <app-key-hint action="heavy" /> lourde / tir bandé · <app-key-hint action="dodge" /> esquive (maintenu : sprint) · <app-key-hint action="switch" /> lance ↔ arc · <app-key-hint action="drink" /> mixture de soin · <app-key-hint action="interact" /> interagir · <app-key-hint action="message" /> message
   </div>
+  @if (story.active(); as beat) {
+    <div class="story-overlay" [class.letterbox]="beat.letterbox" [class.skippable]="beat.skippable"
+      (pointerdown)="holdStory(true)" (pointerup)="holdStory(false)"
+      (pointerleave)="holdStory(false)" (pointercancel)="holdStory(false)">
+      @if (beat.letterbox) {
+        <div class="mask top"></div>
+        <div class="mask bottom"></div>
+      }
+      <div class="beat-label">{{ beat.label }}</div>
+      @if (beat.skippable && story.progress() >= skipHintAfter(beat)) {
+        <div class="skip">
+          <span>Maintenir <app-key-hint action="attack" /> · <app-skip-hint /></span>
+          <div class="skip-track"><div class="skip-fill" [style.width.%]="story.holdProgress() * 100"></div></div>
+        </div>
+      }
+    </div>
+  }
 </div>
 @if (touch && engineStatus() === 'ready' && !paused() && !narrating()) {
-  <app-touch-controls (pause)="pause()" />
+  <app-touch-controls [combat]="combat()" (pause)="pause()" />
 }
 @if (paused()) {
   <app-pause-menu (resume)="resume()" (quit)="quitToMenu()" />

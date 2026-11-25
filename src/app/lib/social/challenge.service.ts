@@ -5,11 +5,13 @@ import { PlayerStore } from '../entities/player/player.store';
 import { GameLoopService } from '../services/game-loop.service';
 import { GameStateService } from '../services/game-state.service';
 
-export type BossId = 'ford' | 'sluice';
+export type ChallengeBossId = 'ford' | 'sluice';
+export type BossId = ChallengeBossId | 'champion';
 
 export const BOSS_NAMES: Record<BossId, string> = {
   ford: 'Kofi Brempong',
   sluice: 'le Gardien de la retenue',
+  champion: 'Badu Ofosu',
 };
 
 /** Résultat d'un combat de boss gagné, partageable par URL. */
@@ -21,7 +23,7 @@ export interface BossResult {
   flasks: number;
 }
 
-export interface Challenge extends BossResult { v: 1 }
+export interface Challenge extends BossResult { v: 1; boss: ChallengeBossId }
 
 const UNLOCK_KEY = 'terre-rouge.boss-rush';
 const RECORDS_KEY = 'terre-rouge.records.v1';
@@ -43,7 +45,7 @@ export function decodeChallenge(code: string): Challenge | null {
   try {
     const padded = code.replace(/-/g, '+').replace(/_/g, '/');
     const raw = JSON.parse(atob(padded + '='.repeat((4 - padded.length % 4) % 4)));
-    const boss = raw.b === 'ford' || raw.b === 'sluice' ? raw.b as BossId : null;
+    const boss: ChallengeBossId | null = raw.b === 'ford' || raw.b === 'sluice' ? raw.b : null;
     const valid = (n: unknown, max: number) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= max;
     if (raw.v !== 1 || !boss || !valid(raw.t, 3_600_000) || !valid(raw.h, 999) || !valid(raw.f, 99)) return null;
     return { v: 1, boss, time: raw.t, hits: Math.round(raw.h), flasks: Math.round(raw.f) };
@@ -54,7 +56,7 @@ export function decodeChallenge(code: string): Challenge | null {
 
 export function describe(result: BossResult) {
   const hits = result.hits === 0 ? 'sans être touché' : `${result.hits} coup${result.hits > 1 ? 's' : ''} reçu${result.hits > 1 ? 's' : ''}`;
-  const flasks = result.flasks === 0 ? 'sans Bandji' : `${result.flasks} Bandji`;
+  const flasks = result.flasks === 0 ? 'sans mixture de soin' : `${result.flasks} mixture${result.flasks > 1 ? 's' : ''} de soin`;
   return `${BOSS_NAMES[result.boss]} vaincu en ${formatTime(result.time)}, ${hits}, ${flasks}`;
 }
 
@@ -87,7 +89,7 @@ export class ChallengeService {
   readonly rushTotal = computed(() => this.results().reduce((sum, r) => sum + r.time, 0));
   readonly copied = signal<string | null>(null);
 
-  private fight: { boss: BossId; time: number; hits: number; flasks: number; hp: number; bandji: number } | null = null;
+  private fight: { boss: BossId; time: number; hits: number; flasks: number; hp: number; mixture: number } | null = null;
   private latestTimer?: ReturnType<typeof setTimeout>;
   private readonly tick = (dt: number) => this.update(dt);
 
@@ -178,7 +180,7 @@ export class ChallengeService {
     const gear = this.equipment.getData();
     if (!this.fight || this.fight.boss !== encounter) {
       if (boss.state === 'dead') return;
-      this.fight = { boss: encounter, time: 0, hits: 0, flasks: 0, hp: player.hp, bandji: gear.bandji };
+      this.fight = { boss: encounter, time: 0, hits: 0, flasks: 0, hp: player.hp, mixture: gear.mixture };
     }
     const fight = this.fight;
     if (boss.state === 'dead') {
@@ -189,9 +191,9 @@ export class ChallengeService {
     if (this.game.introProgress !== null) return;
     fight.time += dt * 1000;
     if (player.hp < fight.hp) fight.hits++;
-    if (gear.bandji < fight.bandji) fight.flasks++;
+    if (gear.mixture < fight.mixture) fight.flasks++;
     fight.hp = player.hp;
-    fight.bandji = gear.bandji;
+    fight.mixture = gear.mixture;
     this.fightTime.set(fight.time);
   }
 

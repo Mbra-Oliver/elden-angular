@@ -112,7 +112,7 @@ button:hover { background: #ffe0ab; }
   font: 14px system-ui, sans-serif;
 }
 
-/* --- Équipement (lance, arc, Bandji) --- */
+/* --- Équipement (lance, arc, Mixture) --- */
 .loadout {
   position: absolute;
   left: 12px;
@@ -138,7 +138,7 @@ button:hover { background: #ffe0ab; }
 }
 
 .loadout .slot.active,
-.loadout .slot.bandji { opacity: 1; }
+.loadout .slot.mixture { opacity: 1; }
 .loadout .slot.active { border-color: #edbb78; background: #edbb7826; }
 .loadout .slot.empty .count { color: #ff8a6b; }
 .loadout .icon { width: 14px; text-align: center; color: #ffdc9a; }
@@ -173,3 +173,74 @@ button:hover { background: #ffe0ab; }
 .stage.touch.narrating .loadout,
 .stage.touch.narrating .talk,
 .stage.touch.narrating .gear-notice { display: none; }
+
+.story-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.story-overlay.skippable { pointer-events: auto; }
+
+.mask {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 9%;
+  background: #000;
+  animation: mask-in 480ms ease-out both;
+}
+
+.mask.top { top: 0; }
+.mask.bottom { bottom: 0; }
+
+.beat-label {
+  position: absolute;
+  top: calc(9% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: #e8d3ad;
+  font: 600 clamp(10px, 1.6vw, 13px)/1.4 system-ui, sans-serif;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 12px #000;
+}
+
+.story-overlay:not(.letterbox) .beat-label { display: none; }
+
+.skip {
+  position: absolute;
+  right: 4%;
+  bottom: calc(9% + 18px);
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  color: #f2dfbd;
+  font: 12px system-ui, sans-serif;
+  text-shadow: 0 2px 8px #000;
+}
+
+.skip kbd { margin: 0 3px; }
+
+.skip-track {
+  width: 150px;
+  height: 3px;
+  background: #ffffff3d;
+  overflow: hidden;
+}
+
+.skip-fill { height: 100%; background: #edbb78; }
+
+@keyframes mask-in {
+  from { transform: scaleY(0); }
+  to { transform: none; }
+}
+
+/*
+ * Mobile épuré : une seule invite (la pastille des contrôles tactiles), et
+ * l'équipement seulement en combat, en petit et translucide.
+ */
+.stage.touch .talk { display: none; }
+.stage.touch:not(.combat) .loadout { display: none; }
+.stage.touch .loadout { opacity: 0.75; font-size: 11px; background: #211b1480; border-color: #b9845440; }

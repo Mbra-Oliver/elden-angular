@@ -22,7 +22,7 @@ import { RendererService } from '../../lib/services/renderer.service';
 import { CombatHudComponent } from '../combat-hud/combat-hud.component';
 import { DialogueBoxComponent } from '../dialogue-box/dialogue-box.component';
 import { EquipmentStore } from '../../lib/entities/player/equipment.store';
-import { KeyHintComponent } from '../key-hint/key-hint.component';
+import { KeyHintComponent, SkipHintComponent } from '../key-hint/key-hint.component';
 import { SliceHudComponent } from '../slice-hud/slice-hud.component';
 import { PrologueHudComponent } from '../prologue-hud/prologue-hud.component';
 import { SliceService } from '../../lib/slice/slice.service';
@@ -42,8 +42,8 @@ const CLICK_PULSE_MS = 90;
 
 @Component({
   selector: 'app-game-canva',
-  imports: [CombatHudComponent, DialogueBoxComponent, KeyHintComponent, SocialHudComponent, SliceHudComponent, PrologueHudComponent,
-    TouchControlsComponent, PauseMenuComponent],
+  imports: [CombatHudComponent, DialogueBoxComponent, KeyHintComponent, SkipHintComponent, SocialHudComponent, SliceHudComponent,
+    PrologueHudComponent, TouchControlsComponent, PauseMenuComponent],
   templateUrl: './game-canva.component.html',
   styleUrl: './game-canva.component.css',
 })
@@ -51,6 +51,7 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
   @ViewChild('viewport') viewport!: ElementRef<HTMLDivElement>;
 
   readonly gameState = inject(GameStateService);
+  readonly story = this.gameState.narrative;
   readonly equipment = inject(EquipmentStore);
   private readonly slice = inject(SliceService);
   readonly engineStatus = signal<'loading' | 'ready' | 'failed'>('loading');
@@ -75,7 +76,14 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
    * mobile, les commandes et l'équipement s'effacent pour laisser lire.
    */
   readonly narrating = computed(() => this.gameState.prologue.blocking() || this.slice.blocking() ||
-    !!this.gameState.dialogue());
+    !!this.gameState.dialogue() || !!this.story.active() || !!this.gameState.prologue.reading());
+  /**
+   * Combat en cours (boss, ennemi engagé ou verrouillé) : sur mobile, les
+   * boutons secondaires et l'équipement n'apparaissent qu'à ce moment-là.
+   * Reste vrai 2 s après le dernier ennemi, pour ne pas faire clignoter l'écran.
+   */
+  readonly combat = signal(false);
+  private combatUntil = 0;
   private readonly offPad = inject(InputDeviceService).onPadPressed((button) => {
     if (button === PAD.MENU) { this.togglePause(); return; }
     if (this.paused()) return;
@@ -114,7 +122,7 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
   /** Pas de pause par-dessus un dialogue, une lecture ou un message en cours d'écriture. */
   private canPause() {
     return this.engineStatus() === 'ready' && !this.gameState.dialogue() && !this.gameState.uiLock() &&
-      !this.gameState.prologue.reading() && !this.gameState.prologue.blocking();
+      !this.gameState.prologue.reading() && !this.gameState.prologue.blocking() && !this.story.active();
   }
 
   togglePause() {
@@ -140,9 +148,19 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
   }
 
   /** Premier coup reçu hors duel : l'ennemi le plus en face est verrouillé (option des Paramètres). */
+  private watchCombat() {
+    const now = performance.now();
+    const engaged = !!this.gameState.hud()?.boss || this.gameState.lockActive ||
+      this.slice.enemies.list.some((enemy) => enemy.engaged && enemy.state !== 'dead');
+    if (engaged) this.combatUntil = now + 2000;
+    const combat = now < this.combatUntil;
+    if (combat !== this.combat()) this.zone.run(() => this.combat.set(combat));
+  }
+
   private autoLock() {
     const hp = this.player.getData().hp;
-    const hit = hp < this.lastHp && hp > 0;
+    // Première image : pas de PV de référence, ce n'est pas un coup reçu.
+    const hit = Number.isFinite(this.lastHp) && hp < this.lastHp && hp > 0;
     this.lastHp = hp;
     if (!hit || this.gameState.lockActive) return;
     if (currentSettings().autoLock) this.gameState.toggleLock();
@@ -169,9 +187,27 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
     window.setTimeout(() => this.input.setVirtual(code, false), CLICK_PULSE_MS);
   }
 
+  holdStory(held: boolean) {
+    this.story.setHold(held);
+  }
+
+  skipHintAfter(beat: { duration: number }) {
+    return beat.duration <= 5000 ? 0 : (beat.duration - 5000) / beat.duration;
+  }
+
+  @HostListener('window:keyup', ['$event'])
+  onKeyUp(event: KeyboardEvent) {
+    if (event.code === 'Space') this.holdStory(false);
+  }
+
   @HostListener('window:keydown', ['$event'])
   onKeydown(event: KeyboardEvent) {
     if (this.paused()) return;
+    if (this.story.active()?.skippable && event.code === 'Space') {
+      event.preventDefault();
+      this.holdStory(true);
+      return;
+    }
     const dialogue = this.gameState.dialogue();
     const choice = dialogue?.choices[event.code === 'Digit1' ? 0 : event.code === 'Digit2' ? 1 : -1];
     if (choice && !event.repeat) {
@@ -271,6 +307,7 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
             if (this.warming || this.paused()) return;
             this.loop.update(delta);
             this.autoLock();
+            if (this.touch) this.watchCombat();
           } },
         });
       });

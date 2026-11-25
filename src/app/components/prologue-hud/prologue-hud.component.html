@@ -24,14 +24,28 @@
     </button>
   }
 }
-@if (prologue.reading(); as item) {
+@if (!cinematic() && prologue.reading(); as item) {
+  @if (touch()) {
+    <!-- Mobile : bulle courte, une phrase à la fois ; on tapote pour avancer. -->
+    <aside class="reading-bubble" aria-live="polite" (click)="nextPage()">
+      @if (page() === 0) { <strong>{{ item.title }}</strong> }
+      <p [class.speech]="!!item.speaker">{{ sentences()[page()] }}</p>
+      @if (page() === sentences().length - 1) {
+        @if (item.gives?.arrows; as arrows) { <em>+{{ arrows }} flèches</em> }
+        @if (item.gives?.mixture; as mixture) { <em>+{{ mixture }} poignée{{ mixture > 1 ? 's' : '' }} de feuilles</em> }
+        @if (item.gives?.kaolin) { <em>Poudre de kaolin (30 s sur la lame, en combat)</em> }
+      }
+      <small>{{ page() + 1 }} / {{ sentences().length }} · touche pour continuer</small>
+    </aside>
+  } @else {
   <aside class="reading" aria-live="polite">
     <strong>{{ item.title }}</strong>
     @if (item.gives?.arrows; as arrows) { <em>+{{ arrows }} flèches</em> }
-    @if (item.gives?.bandji; as bandji) { <em>+{{ bandji }} gourde de soin</em> }
+    @if (item.gives?.mixture; as mixture) { <em>+{{ mixture }} poignée{{ mixture > 1 ? 's' : '' }} de feuilles</em> }
     @if (item.gives?.kaolin) { <em>Poudre de kaolin : <app-key-hint action="kaolin" /> enduire la lame (30 s)</em> }
     <p [class.speech]="!!item.speaker">{{ item.text }}</p>
   </aside>
+  }
 }
 @if (trophies.toast(); as trophy) {
   <aside class="trophy" role="status">

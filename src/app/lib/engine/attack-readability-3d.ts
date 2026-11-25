@@ -59,6 +59,8 @@ export interface ThreatPose {
   /** Avancement 0→1 de l'état courant. */
   progress: number;
   attack: BossAttackType;
+  /** Tir du boss : un couloir par balle. */
+  shotAngles?: readonly number[];
 }
 
 type Shape = 'cone' | 'disc' | 'lane' | 'ring';
@@ -75,6 +77,7 @@ export class AttackTelegraph3D {
   private readonly fill: T.MeshBasicMaterial;
   private readonly edge: T.MeshBasicMaterial;
   private readonly shapes = new Map<Shape, { fill: T.Mesh; edge: T.Mesh }>();
+  private readonly shotLanes: { fill: T.Mesh; edge: T.Mesh }[] = [];
   private readonly danger = new T.Color(PALETTE.danger);
   private readonly flash = new T.Color(PALETTE.dangerFlash);
   private release = 0;
@@ -91,6 +94,8 @@ export class AttackTelegraph3D {
     this.shapes.set('disc', this.pair(this.sector(1, Math.PI), this.sectorEdge(1, Math.PI)));
     this.shapes.set('ring', this.pair(this.sector(1, Math.PI), this.sectorEdge(1, Math.PI)));
     this.shapes.set('lane', this.pair(this.lane(), this.laneEdge()));
+    for (let i = 0; i < 3; i++) this.shotLanes.push(this.pair(this.lane(), this.laneEdge()));
+    this.shotLanes.forEach(({ fill, edge }) => { fill.visible = edge.visible = false; });
     this.coneRadius = { slash: coneRadius('slash'), combo: coneRadius('combo') };
     scene.add(this.group);
   }
@@ -99,7 +104,7 @@ export class AttackTelegraph3D {
 
   /** Zones cachées hors anticipation : précompilées par World3D.warmUp. */
   get warmables(): T.Object3D[] {
-    return [...this.shapes.values()].flatMap(({ fill, edge }) => [fill, edge]);
+    return [...[...this.shapes.values()], ...this.shotLanes].flatMap(({ fill, edge }) => [fill, edge]);
   }
 
   update(dt: number) {
@@ -110,41 +115,54 @@ export class AttackTelegraph3D {
     // Après le déclenchement, la zone reste un instant puis s'efface.
     this.release = active ? Math.max(0, this.release - dt * 6) : windup ? 1 : 0;
     this.shapes.forEach(({ fill, edge }) => { fill.visible = edge.visible = false; });
+    this.shotLanes.forEach(({ fill, edge }) => { fill.visible = edge.visible = false; });
     if (!pose || (!windup && !(active && this.release > 0)) || this.lastAttack === 'none') return;
 
     const attack = this.lastAttack as Exclude<BossAttackType, 'none'>;
     const shape = SHAPES[attack];
     // Attaque sans forme connue (nouveau coup) : pas de zone plutôt qu'une zone fausse.
     if (!shape || !BOSS_ATTACKS[attack]) return;
-    const parts = this.shapes.get(shape)!;
     const t = windup ? pose.progress : 1;
     const late = windup ? T.MathUtils.smoothstep(t, 0.72, 1) : 0;
     const size = BOSS_CONFIG.size;
-    const radius = shape === 'cone'
-      ? this.coneRadius[attack as 'slash' | 'combo'] ?? Math.min(BOSS_ATTACKS[attack].range * size, size * 2.2) + 9
-      : attack === 'slam' || attack === 'judgment' ? BOSS_ATTACKS[attack].range * size / 2
-      : attack === 'sweep' ? BOSS_ATTACKS.sweep.range * size / 2
-      : BOSS_ATTACKS[attack].range * size;
     const yaw = Math.atan2(pose.facingX, pose.facingY);
-    for (const mesh of [parts.fill, parts.edge]) {
-      mesh.visible = true;
-      mesh.position.set(pose.x, 0.9, pose.y);
-      mesh.rotation.y = yaw;
-    }
-    if (shape === 'lane') {
-      // Charge : la course ; tir : la ligne de la balle (mince, très longue).
-      const shot = attack === 'shot';
-      const length = shot ? BOSS_ATTACKS.shot.range * size
-        : attack === 'furrow' ? BOSS_CONFIG.chargeSpeed * 1.1 * BOSS_ATTACKS.furrow.attackDuration / 1000
-        : BOSS_CONFIG.chargeSpeed * BOSS_ATTACKS.charge.attackDuration / 1000;
-      const width = shot ? SHOT_WIDTH * 2 : size * 0.7;
-      parts.edge.scale.set(width, 1, length);
-      parts.fill.scale.set(width, 1, length * Math.max(0.04, t));
+    if (attack === 'shot') {
+      const angles = pose.shotAngles ?? [0];
+      const length = BOSS_ATTACKS.shot.range * size;
+      const width = SHOT_WIDTH + 8;
+      this.shotLanes.forEach((lane, i) => {
+        if (i >= angles.length) return;
+        for (const mesh of [lane.fill, lane.edge]) {
+          mesh.visible = true;
+          mesh.position.set(pose.x, 0.9, pose.y);
+          mesh.rotation.y = yaw + angles[i];
+        }
+        lane.edge.scale.set(width, 1, length);
+        lane.fill.scale.set(width, 1, length * Math.max(0.04, t));
+      });
     } else {
-      parts.edge.scale.set(radius, 1, radius);
-      // Anneaux d'eau : la zone se remplit depuis l'extérieur (là où frappe la vague).
-      const grow = Math.max(0.04, shape === 'ring' ? 1 : t);
-      parts.fill.scale.set(radius * grow, 1, radius * grow);
+      const parts = this.shapes.get(shape)!;
+      const radius = shape === 'cone'
+        ? this.coneRadius[attack as 'slash' | 'combo'] ?? Math.min(BOSS_ATTACKS[attack].range * size, size * 2.2) + 9
+        : attack === 'slam' || attack === 'judgment' ? BOSS_ATTACKS[attack].range * size / 2
+        : attack === 'sweep' ? BOSS_ATTACKS.sweep.range * size / 2
+        : BOSS_ATTACKS[attack].range * size;
+      for (const mesh of [parts.fill, parts.edge]) {
+        mesh.visible = true;
+        mesh.position.set(pose.x, 0.9, pose.y);
+        mesh.rotation.y = yaw;
+      }
+      if (shape === 'lane') {
+        const length = attack === 'furrow' ? BOSS_CONFIG.chargeSpeed * 1.1 * BOSS_ATTACKS.furrow.attackDuration / 1000
+          : BOSS_CONFIG.chargeSpeed * BOSS_ATTACKS.charge.attackDuration / 1000;
+        parts.edge.scale.set(size * 0.7, 1, length);
+        parts.fill.scale.set(size * 0.7, 1, length * Math.max(0.04, t));
+      } else {
+        parts.edge.scale.set(radius, 1, radius);
+        // Anneaux d'eau : la zone se remplit depuis l'extérieur (là où frappe la vague).
+        const grow = Math.max(0.04, shape === 'ring' ? 1 : t);
+        parts.fill.scale.set(radius * grow, 1, radius * grow);
+      }
     }
     const fade = windup ? 1 : this.release;
     this.fill.color.copy(this.danger).lerp(this.flash, late * 0.6);

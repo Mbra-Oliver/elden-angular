@@ -34,6 +34,7 @@ export class PostFx {
   private readonly quadScene = new T.Scene();
   private readonly quadCamera = new T.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly clear = new T.Color();
+  private readonly texel = new T.Vector2();
   private readonly glowing: T.Object3D[] = [];
   private rescan = 0;
   private vignette = 0;
@@ -44,14 +45,24 @@ export class PostFx {
     this.composite.uniforms['aspect'].value = aspect;
   }
 
+  /** Garde les tampons de bloom alignés sur le canvas quand le format change. */
+  setSize(width: number, height: number) {
+    const w = Math.max(1, Math.ceil(width / 4));
+    const h = Math.max(1, Math.ceil(height / 4));
+    if (w === this.bloomA.width && h === this.bloomA.height) return;
+    this.bloomA.setSize(w, h);
+    this.bloomB.setSize(w, h);
+    this.texel.set(1 / w, 1 / h);
+  }
+
   constructor(private readonly renderer: T.WebGLRenderer, width: number, height: number) {
-    const options = { type: T.HalfFloatType, depthBuffer: true };
+    const options = { type: T.UnsignedByteType, depthBuffer: true };
     this.bloomA = new T.WebGLRenderTarget(Math.ceil(width / 4), Math.ceil(height / 4), options);
     this.bloomB = new T.WebGLRenderTarget(Math.ceil(width / 4), Math.ceil(height / 4), { ...options, depthBuffer: false });
-    const texel = new T.Vector2(1 / this.bloomA.width, 1 / this.bloomA.height);
+    this.texel.set(1 / this.bloomA.width, 1 / this.bloomA.height);
 
     this.blur = new T.ShaderMaterial({
-      uniforms: { map: { value: null }, direction: { value: new T.Vector2() }, texel: { value: texel } },
+      uniforms: { map: { value: null }, direction: { value: new T.Vector2() }, texel: { value: this.texel } },
       vertexShader: QUAD_VERTEX,
       fragmentShader: /* glsl */ `
         uniform sampler2D map; uniform vec2 direction; uniform vec2 texel;

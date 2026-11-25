@@ -24,4 +24,12 @@ describe('TerrainCollisionService', () => {
     expect(terrain.move(1275, 701, 1365, 701, 10).x).toBeLessThan(1291);
     expect(terrain.move(1270, 792, 1365, 792, 19).x).toBeCloseTo(1365);
   });
+
+  it('samples ground height and slows uphill movement', () => {
+    terrain.setGroundSampler((x) => x * 0.1);
+    expect(terrain.groundAt(100, 0)).toBeCloseTo(10);
+    expect(terrain.gradeFactor(100, 0, 1, 0)).toBeLessThan(1);
+    expect(terrain.gradeFactor(100, 0, -1, 0)).toBe(1);
+    terrain.setGroundSampler(null);
+  });
 });

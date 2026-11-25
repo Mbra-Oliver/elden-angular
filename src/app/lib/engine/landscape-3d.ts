@@ -14,7 +14,8 @@ import { groundFree, LANDMARKS, onPath, PALETTE, RUINS } from '../constants/land
  * hauteurs et lignes de vue avant les modèles définitifs.
  */
 export class Landscape3D {
-  private readonly root = new T.Group();
+  /** Masqué sur les cartes qui ont leur propre horizon (prologue). */
+  readonly root = new T.Group();
   private readonly sky: T.Mesh;
   private readonly sunGlow: T.Sprite;
   /** Centre de la carte en cours (monde principal, ou prologue à l'est). */

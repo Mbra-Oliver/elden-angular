@@ -77,6 +77,8 @@ export const CLEARINGS: readonly (Circle & { id: string })[] = [
   // Plateau rocheux avant la crête : second brasero (retour rapide au boss).
   { id: 'plateau', x: 5378, y: 418, r: 52 },
   { id: 'fromager', x: 4990, y: 600, r: 60 },
+  // Promontoire au bord de la vallée en flammes (LOOKOUT) : moment de calme, la caméra recule.
+  { id: 'promontoire', x: 5112, y: 440, r: 44 },
   // La crête : le porte-hache du Denkyira y garde l'abri du roi (combat de boss).
   { id: 'crete', x: 5640, y: 330, r: 262 },
   { id: 'camp', x: 6080, y: 250, r: 140 },
@@ -123,11 +125,89 @@ export function walkable(x: number, y: number, radius = 0, bridged = false) {
   return CLEARINGS.some((c) => Math.hypot(x - c.x, y - c.y) + radius <= c.r);
 }
 
+// ─── Relief ──────────────────────────────────────────────────────────────
+
+/**
+ * Hauteur de la paroi de chaque tronçon du sentier : talus en forêt, parois
+ * de la gorge (séquence 2) et de la montée (séquence 3), épaulement de la crête.
+ * [SUPPOSITION] Valeurs de level design à régler en jeu.
+ */
+const RISE: readonly number[] = [26, 30, 120, 115, 34, 40, 46, 105, 70, 60, 46];
+
+/** Altitude du sentier lui-même : départ bas, montée continue vers la crête, plateau au camp. */
+const PATH_HEIGHTS: readonly number[] = [0, 6, 18, 30, 42, 58, 78, 100, 124, 146, 160, 168];
+
+/** Promontoire au bord de la vallée : point de vue avant la montée (moment de calme). */
+export const LOOKOUT: Circle = { x: 5112, y: 440, r: 44 };
+
+/** Distance au bord du praticable (négative dedans) et tronçon de sentier le plus proche. */
+export function edgeDistance(x: number, y: number): { d: number; segment: number } {
+  let d = Infinity;
+  let segment = 0;
+  for (let i = 0; i < TRAIL.length - 1; i++) {
+    const e = distanceToSegment(x, y, TRAIL[i], TRAIL[i + 1]) - TRAIL_HALVES[i];
+    if (e < d) { d = e; segment = i; }
+  }
+  for (const branch of BRANCHES) d = Math.min(d, distanceToPolyline(x, y, branch.points) - branch.half);
+  for (const c of CLEARINGS) d = Math.min(d, Math.hypot(x - c.x, y - c.y) - c.r);
+  return { d, segment };
+}
+
+/**
+ * Au nord de la montée et de la crête, le sol plonge vers la vallée de
+ * Feyiase en flammes (ligne approximative le long du sentier, côté nord).
+ */
+function valleyDepth(x: number, y: number, d: number) {
+  if (x < 4980) return 0;
+  const lineY = 470 - (x - 5200) * 0.32;
+  const north = lineY - 60 - y;
+  if (north <= 0) return 0;
+  const k = Math.min(1, north / 160) * Math.min(1, (x - 4980) / 120);
+  return -230 * k * k * Math.min(1, d / 40);
+}
+
+const smoothstep = (a: number, b: number, v: number) => {
+  const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/** Hauteur du sentier : interpolation douce entre les points de montée. */
+export function pathHeight(x: number, y: number): number {
+  if (x <= TRAIL[0].x) return PATH_HEIGHTS[0];
+  for (let i = 0; i < TRAIL.length - 1; i++) {
+    if (x <= TRAIL[i + 1].x) {
+      const t = (x - TRAIL[i].x) / (TRAIL[i + 1].x - TRAIL[i].x);
+      return PATH_HEIGHTS[i] + (PATH_HEIGHTS[i + 1] - PATH_HEIGHTS[i]) * smoothstep(0, 1, t);
+    }
+  }
+  return PATH_HEIGHTS[PATH_HEIGHTS.length - 1];
+}
+
+/** Hauteur du sol sous un acteur : le relief du prologue, 0 dans le monde principal. */
+export function groundHeight(x: number, y: number): number {
+  return inPrologue(x, y, 200) ? terrainHeight(x, y) : 0;
+}
+
+/**
+ * Hauteur du sol : montée du sentier, talus et parois autour, creux de la vallée.
+ * Le praticable n'est plus un plan : les personnages suivent la pente.
+ */
+export function terrainHeight(x: number, y: number): number {
+  const base = pathHeight(x, y);
+  const { d, segment } = edgeDistance(x, y);
+  const valley = valleyDepth(x, y, d);
+  if (valley < 0) return base + valley;
+  const bumps = Math.sin(x * 0.021) * Math.cos(y * 0.017) * 9 + Math.sin(x * 0.007 + y * 0.011) * 14;
+  const bed = Math.max(0, 1 - distanceToPolyline(x, y, STREAM) / 26);
+  const rise = RISE[segment] * smoothstep(0, 110, d) + bumps * smoothstep(0, 60, d);
+  return base + rise * (1 - bed) - 3 * bed;
+}
+
 // ─── Récit du décor ─────────────────────────────────────────────────────────
 
 export type RemainsId =
   | 'kwasi' | 'traces' | 'fusil' | 'archer' | 'ruisseau' | 'ligne' | 'gourde' | 'tambours' | 'awale'
-  | 'sanctuaire' | 'talisman' | 'tambourinaire';
+  | 'sanctuaire' | 'talisman' | 'tambourinaire' | 'bracelet' | 'cairn';
 
 export interface Remains extends Spot {
   id: RemainsId;
@@ -136,7 +216,7 @@ export interface Remains extends Spot {
   title: string;
   text: string;
   /** Ce que l'on ramasse, s'il y a quelque chose. */
-  gives?: { arrows?: number; bandji?: number; kaolin?: boolean; bow?: boolean; bandjiGift?: boolean };
+  gives?: { arrows?: number; mixture?: number; kaolin?: boolean; bow?: boolean; mixtureGift?: boolean };
   /** Parole d'un personnage (affichée comme une réplique). */
   speaker?: string;
 }
@@ -179,10 +259,10 @@ export const REMAINS: readonly Remains[] = [
     text: 'Ici, les fusiliers du Denkyira tenaient en rang. Les tonnelets de poudre ont brûlé l’herbe autour d’eux. Quand la ligne a cédé, ils ont jeté leurs fusils pour courir plus vite.',
   },
   {
-    id: 'sanctuaire', x: 4290, y: 615, label: 'Ramasser la décoction',
-    title: 'Décoction d’écorce amère',
-    text: 'Sur l’autel forestier profané, une calebasse de décoction d’écorce amère, laissée en offrande. Elle referme les plaies.',
-    gives: { bandji: 1 },
+    id: 'sanctuaire', x: 4290, y: 615, label: 'Ramasser les feuilles',
+    title: 'Feuilles d’écorce amère',
+    text: 'Sur l’autel forestier profané, un tas de feuilles amères pilées, laissées en offrande. Écrasées puis avalées, elles referment les plaies.',
+    gives: { mixture: 1 },
   },
   {
     id: 'talisman', x: 4322, y: 648, label: 'Examiner le talisman',
@@ -193,13 +273,23 @@ export const REMAINS: readonly Remains[] = [
     id: 'tambourinaire', x: 4948, y: 606, label: 'S’approcher du blessé',
     title: 'Le tambourinaire agonisant',
     speaker: 'Le tambourinaire',
-    text: '« Ofori… tu es vivant. Ils nous attendaient ici : la plupart des leurs étaient embusqués dans la gorge, et ils nous ont taillés en pièces avant de tomber à leur tour. La guerre est presque gagnée. Le Denkyira a fui, et les nôtres ont tous suivi Osei Tutu vers l’est. Moi, je n’irai pas plus loin. Prends ma gourde : c’est du Bandji, il te rendra des forces. Et cette poudre de kaolin pour ta lame. Sur la crête, le porte-hache de Ntim Gyakari refuse de plier… Il frappe comme la foudre. » Il ferme les yeux.',
-    gives: { kaolin: true, bandjiGift: true },
+    text: '« Ofori… tu es vivant. Ils nous attendaient ici : la plupart des leurs étaient embusqués dans la gorge, et ils nous ont taillés en pièces avant de tomber à leur tour. La guerre est presque gagnée. Le Denkyira a fui, et les nôtres ont tous suivi Osei Tutu vers l’est. Moi, je n’irai pas plus loin. Prends ces feuilles : écrase-les entre tes paumes, avale la pâte, la mixture te rendra des forces. Et cette poudre de kaolin pour ta lame. Sur la crête, le porte-hache de Ntim Gyakari refuse de plier… Il frappe comme la foudre. » Il ferme les yeux.',
+    gives: { kaolin: true, mixtureGift: true },
   },
   {
-    id: 'gourde', x: 4885, y: 615, label: 'Examiner la gourde',
-    title: 'Gourde percée',
-    text: 'Une gourde de porteur, percée d’une balle. Le vin de palme a coulé dans la boue. Rien à boire ici.',
+    id: 'bracelet', x: 4160, y: 1172, label: 'Ramasser le bracelet',
+    title: 'Bracelet de tribut',
+    text: 'Un bracelet d’or martelé, tombé d’un panier du Denkyira. Chaque année, les chefs asante en envoyaient de pareils à la cour de Ntim Gyakari. Celui-ci ne partira plus.',
+  },
+  {
+    id: 'cairn', x: 5100, y: 428, label: 'Regarder la vallée',
+    title: 'Le promontoire',
+    text: 'En bas, la vallée de Feyiase brûle. Des silhouettes fuient vers l’ouest, d’autres marchent en colonne vers l’est, derrière les tambours. Les guetteurs ont empilé ces pierres pour se souvenir de l’endroit.',
+  },
+  {
+    id: 'gourde', x: 4885, y: 615, label: 'Examiner les feuilles',
+    title: 'Feuilles piétinées',
+    text: 'Un paquet de feuilles médicinales écrasées dans la boue. La sève a coulé, il n’en reste rien à avaler.',
   },
   {
     id: 'tambours', x: 5165, y: 445, label: 'Examiner les tambours',
@@ -342,7 +432,7 @@ export const SMOKES: readonly Spot[] = [
 ];
 /** Tonnelets de poudre éventrés (ligne de fusiliers). */
 export const KEGS: readonly PropSpot[] = near({ x: 4730, y: 670 }, 5, 70);
-/** Gourdes, sandales, ceintures tombées. */
+/** Feuilles, sandales, ceintures tombées. */
 export const LITTER: readonly PropSpot[] = along(14, 44, 0, 1);
 
 /** Gros obstacles (collision) : tronc couché du réveil, tambours, abri écrasé. */

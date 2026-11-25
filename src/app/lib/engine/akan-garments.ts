@@ -192,6 +192,8 @@ export function attachToga(torso: T.Object3D, texture: T.Texture, wearer: 'man' 
     group.add(tie);
   }
 
+  // Ajusté au corps skinné (human-body.ts), plus étroit que l'ancien buste cylindrique.
+  group.scale.set(0.62, 1, 0.5);
   torso.add(group);
   return group;
 }
@@ -229,6 +231,7 @@ export function attachBatakari(torso: T.Object3D) {
       }
     }
   }
+  group.scale.set(0.62, 1, 0.5);
   torso.add(group);
   return group;
 }

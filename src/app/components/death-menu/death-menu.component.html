@@ -22,6 +22,19 @@
               Objectif : {{ formatTime(target.time) }} · toi : {{ formatTime(last.time) }}.</p>
           }
         }
+        @if (challenge.latest(); as last) {
+          @if (last.boss === 'champion') {
+            <section class="victory-card">
+              <span class="sign" [attr.title]="victorySign.meaning">{{ victorySign.glyph }}</span>
+              <div>
+                <small>{{ victorySign.name }} · Feyiase 1701</small>
+                <strong>{{ describe(last) }}</strong>
+                <p>Le fil ancestral passe à la génération suivante.</p>
+              </div>
+              <button type="button" (click)="challenge.share(last)">Partager la carte</button>
+            </section>
+          }
+        }
         @if (challenge.results().length) {
           <ul class="results" aria-label="Défis à partager">
             @for (result of challenge.results(); track $index) {

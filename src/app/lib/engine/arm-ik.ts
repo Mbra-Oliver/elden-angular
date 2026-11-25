@@ -8,7 +8,7 @@ import * as T from 'three';
  * Le squelette partagé (humanoid-rig.ts) n'a qu'un os par bras. Pour le
  * joueur seulement, `splitArm` coupe ce bras en bras + avant-bras (os
  * Mixamo `LeftForeArm` / `RightForeArm`), sans toucher au duelliste ni aux
- * villageois. Tout ce qui pendait au bout du bras (main, arc, gourde…) passe
+ * villageois. Tout ce qui pendait au bout du bras (main, arc, feuilles…) passe
  * dans l'avant-bras à la même place : bras tendu, rien ne bouge.
  */
 
@@ -51,12 +51,17 @@ export function splitArm(arm: T.Group, side: -1 | 1, keep: readonly T.Object3D[]
     const fore = new T.Mesh(upper.geometry, upper.material);
     fore.scale.set(0.9, (FORE + 0.2) / 8, 0.9);
     fore.position.y = -(FORE + 0.2) / 2;
+    // Même visibilité que le bras d'origine (os invisible sous un corps skinné).
+    fore.layers.mask = upper.layers.mask;
+    Object.assign(fore.userData, upper.userData);
     elbow.add(fore);
   }
   if (hand) {
     // Rotule du coude : cache la jointure quand le bras plie.
     const cap = new T.Mesh(hand.geometry, hand.material);
     cap.scale.setScalar(0.92);
+    cap.layers.mask = hand.layers.mask;
+    Object.assign(cap.userData, hand.userData);
     elbow.add(cap);
   }
   arm.add(elbow);

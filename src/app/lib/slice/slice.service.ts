@@ -128,7 +128,7 @@ export class SliceService {
     void this.save(0);
   }
 
-  /** Points de vie, endurance, armes et gourdes selon la progression. */
+  /** Points de vie, endurance, armes et mixtures selon la progression. */
   applyLoadout() {
     const maxHp = this.progression.maxHp();
     const maxStamina = this.progression.maxStamina();
@@ -136,7 +136,7 @@ export class SliceService {
     const items = this.progression.items();
     const owned: WeaponId[] = items.includes('afena') ? ['spear', 'afena', 'bow'] : ['spear', 'bow'];
     this.equipment.setOwned(owned);
-    this.equipment.setMaxBandji(3 + (items.includes('calebasse') ? 1 : 0));
+    this.equipment.setMaxMixture(3 + (items.includes('calebasse') ? 1 : 0));
     this.equipment.refill();
   }
 
@@ -356,7 +356,7 @@ export class SliceService {
       this.equipment.setOwned(['spear', 'afena', 'bow']);
     }
     if (item.id === 'calebasse') {
-      this.equipment.setMaxBandji(4);
+      this.equipment.setMaxMixture(4);
       this.equipment.refill();
     }
     this.pickup.set(info);

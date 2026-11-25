@@ -1,5 +1,5 @@
 import * as T from 'three';
-import type { WeaponId } from '../constants/equipment.config-constant';
+import { EQUIPMENT_CONFIG, type WeaponId } from '../constants/equipment.config-constant';
 
 interface ArrowView {
   x: number;
@@ -24,12 +24,16 @@ const FLIGHT_HEIGHT = 19;
 
 /**
  * Équipement visible du joueur en 3D : lance (le bâton déjà tenu en main
- * droite), arc en main gauche, gourde de Bandji, et flèches en vol / au sol.
+ * droite), arc en main gauche, feuilles de mixture à avaler, et flèches en vol / au sol.
  * Séparé de World3D pour rester indépendant du reste de la scène.
  */
 export class Equipment3D {
   private readonly bow = new T.Group();
-  private readonly gourd = new T.Group();
+  private readonly mixture = new T.Group();
+  private readonly healAura = new T.Group();
+  private readonly auraMaterial = new T.MeshBasicMaterial({
+    color: '#9be58a', transparent: true, opacity: 0, side: T.DoubleSide, depthWrite: false,
+  });
   private readonly quiver = new T.Group();
   private readonly arrows: T.Group[] = [];
   private weapon: WeaponId = 'spear';
@@ -79,15 +83,33 @@ export class Equipment3D {
     this.quiver.visible = false;
     torso.add(this.quiver);
 
-    // Gourde de Bandji (calebasse) : apparaît pendant qu'Ama boit.
-    const calabash = new T.MeshStandardMaterial({ color: '#b98b4a', roughness: 0.7 });
-    const belly = new T.Mesh(new T.SphereGeometry(2.4, 8, 6), calabash);
-    const neck = new T.Mesh(new T.CylinderGeometry(0.7, 1.1, 2.6, 6), calabash);
-    neck.position.y = 2.8;
-    this.gourd.add(belly, neck);
-    this.gourd.position.set(0, -9.6, 1.2);
-    this.gourd.visible = false;
-    arms[0].add(this.gourd);
+    const leaf = new T.MeshStandardMaterial({ color: '#4f8f3a', roughness: 0.85, side: T.DoubleSide });
+    const leafLight = new T.MeshStandardMaterial({ color: '#7fbf58', roughness: 0.8, side: T.DoubleSide });
+    for (let i = 0; i < 5; i++) {
+      const blade = new T.Mesh(new T.SphereGeometry(1, 6, 4), i % 2 ? leaf : leafLight);
+      blade.scale.set(1.15 + i * 0.14, 2.7 + i * 0.22, 0.16);
+      blade.position.set((i - 2) * 0.75, -0.4 - i * 0.16, 0);
+      blade.rotation.z = (i - 2) * 0.24;
+      this.mixture.add(blade);
+    }
+    this.mixture.position.set(0, -8.6, 1.4);
+    this.mixture.rotation.x = -0.5;
+    this.mixture.visible = false;
+    arms[0].add(this.mixture);
+
+    const ring = new T.Mesh(new T.TorusGeometry(6.4, 0.22, 4, 24), this.auraMaterial);
+    ring.rotation.x = Math.PI / 2;
+    this.healAura.add(ring);
+    for (let i = 0; i < 6; i++) {
+      const mote = new T.Mesh(new T.SphereGeometry(0.55, 5, 4), this.auraMaterial);
+      const angle = (i / 6) * Math.PI * 2;
+      mote.position.set(Math.cos(angle) * 6.4, Math.sin(angle * 2) * 1.8, Math.sin(angle) * 3.2);
+      mote.scale.set(0.6, 1.6, 0.28);
+      this.healAura.add(mote);
+    }
+    this.healAura.position.y = 3;
+    this.healAura.visible = false;
+    torso.add(this.healAura);
 
     // Afena : poignée, garde ronde et lame en feuille, alignée comme la lance.
     this.afenaBlade = new T.MeshStandardMaterial({ color: TIERS[0].color, metalness: 0.35, roughness: 0.6, flatShading: true });
@@ -122,6 +144,8 @@ export class Equipment3D {
       this.batakari.add(charm);
     }
     this.batakari.visible = false;
+    // Ajusté au corps skinné (human-body.ts), plus étroit que l'ancien buste cylindrique.
+    this.batakari.scale.set(0.64, 1, 0.46);
     torso.add(this.batakari);
 
     // Réserve de flèches partagée (même géométrie et matériau).
@@ -184,10 +208,17 @@ export class Equipment3D {
     const bow = this.weapon === 'bow';
     this.bow.visible = bow && !drinking;
     this.quiver.visible = bow;
-    this.gourd.visible = drinking;
+    this.mixture.visible = drinking;
     if (this.spear) this.spear.visible = this.weapon === 'spear' && !drinking;
     this.afena.visible = this.weapon === 'afena' && !drinking;
     if (this.look.ready) this.afenaBlade.emissiveIntensity = 0.6 + Math.sin(performance.now() / 160) * 0.35;
+    if (!drinking) {
+      this.healAura.visible = false;
+      this.auraMaterial.opacity = 0;
+      this.mixture.position.y = -8.6;
+      this.mixture.scale.setScalar(1);
+      this.mixture.rotation.z = 0;
+    }
 
     const [left, right] = this.arms;
     if (pose.state === 'aiming' || pose.state === 'release') {
@@ -197,11 +228,23 @@ export class Equipment3D {
       right.rotation.set(-1.3 * Math.max(draw, 0.2), 0, 0.55 * draw);
       this.torso.rotation.set(0, -0.32 * draw, 0);
     } else if (drinking) {
-      // Lève la calebasse aux lèvres puis la redescend.
-      const lift = Math.sin(Math.min(1, pose.phase) * Math.PI);
-      left.rotation.set(-2.35 * lift, 0, 0.55 * lift);
-      right.rotation.set(0, 0, -0.14);
-      this.torso.rotation.set(-0.18 * lift, 0, 0);
+      const phase = Math.min(1, Math.max(0, pose.phase));
+      const lift = Math.min(1, phase / 0.45);
+      const crush = Math.min(1, Math.max(0, (phase - 0.45) / 0.2));
+      const swallow = Math.min(1, Math.max(0, (phase - 0.65) / 0.35));
+      const restored = Math.min(1, Math.max(0,
+        (phase - EQUIPMENT_CONFIG.mixtureHealAt) / (1 - EQUIPMENT_CONFIG.mixtureHealAt)));
+
+      this.mixture.position.y = -8.6 + lift * 2.4 - swallow * 1.2;
+      this.mixture.scale.setScalar(1 - crush * 0.38);
+      this.mixture.rotation.z = crush * 0.7;
+      this.healAura.visible = restored > 0;
+      this.healAura.scale.setScalar(0.7 + restored * 0.6);
+      this.auraMaterial.opacity = Math.sin(restored * Math.PI) * 0.75;
+
+      left.rotation.set(-2.3 * lift + 0.7 * swallow, 0, 0.5 * lift);
+      right.rotation.set(-1.8 * lift + 0.9 * swallow, 0, -0.4 * lift);
+      this.torso.rotation.set(-0.12 * lift + 0.2 * swallow, 0, 0);
     }
   }
 }

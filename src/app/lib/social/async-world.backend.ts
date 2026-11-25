@@ -76,7 +76,7 @@ export const MESSAGE_TEMPLATES = [
 ] as const;
 
 export const MESSAGE_WORDS = [
-  'l’esquive', 'la riposte', 'la lance', 'l’arc', 'le Bandji', 'la patience',
+  'l’esquive', 'la riposte', 'la lance', 'l’arc', 'la mixture de soin', 'la patience',
   'la charge', 'la vague', 'le flanc gauche', 'le flanc droit', 'la fuite',
   'Kofi', 'le Gardien', 'l’eau', 'un piège', 'un ami',
 ] as const;

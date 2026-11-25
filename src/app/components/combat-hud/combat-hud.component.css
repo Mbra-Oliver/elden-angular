@@ -12,6 +12,27 @@
 .hud { position: absolute; inset: 0; transition: opacity 0.35s ease; }
 .hud.hidden { opacity: 0; }
 
+.hit-direction { position: absolute; inset: 0; pointer-events: none; --hit-angle: 0deg; }
+.hit-direction .arc {
+  position: absolute; left: 50%; top: 50%; width: 62cqi; height: 62cqi;
+  margin: -31cqi 0 0 -31cqi; border-radius: 50%;
+  background: conic-gradient(from calc(var(--hit-angle) - 32deg), transparent 0deg,
+    #c8221a99 26deg, #ffd2a8ee 32deg, #c8221a99 38deg, transparent 64deg);
+  -webkit-mask: radial-gradient(circle, transparent 54%, #000 70%, #000 100%);
+  mask: radial-gradient(circle, transparent 54%, #000 70%, #000 100%);
+  animation: hitArc .65s ease-out both;
+}
+.hit-direction .arrow {
+  position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+  border: 10px solid transparent; border-bottom-color: #ffd2a8;
+  transform-origin: 50% 50%;
+  transform: translate(-50%, -50%) rotate(var(--hit-angle)) translateY(-34cqi) rotate(180deg);
+  filter: drop-shadow(0 0 4px #000);
+  animation: hitArc .65s ease-out both;
+}
+.hit-direction[data-kind='shot'] .arc { filter: saturate(1.4) brightness(1.2); }
+@keyframes hitArc { from { opacity: 1; } to { opacity: 0; } }
+
 /* --- Barres à double jauge --- */
 .bar {
   position: relative;

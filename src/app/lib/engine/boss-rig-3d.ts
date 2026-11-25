@@ -1,4 +1,5 @@
 import * as T from 'three';
+import type { HumanBody } from './human-body';
 import type { Actor3D } from './world-3d';
 import { TripodGait } from './gait';
 
@@ -33,6 +34,8 @@ export interface FighterRig {
   torso: T.Group;
   arms: T.Group[];
   legs: T.Group[];
+  /** Corps skinné (human-body.ts), absent sur les rigs de test. */
+  body?: HumanBody;
 }
 
 interface Joints {
@@ -399,7 +402,8 @@ export class GuardianRig {
     const k = clamp01(pose.phase);
     const attack = pose.attack ?? 'none';
     const phase = (pose.bossPhase ?? 1) as 1 | 2 | 3;
-    this.root.position.set(pose.x, 0, pose.y);
+    const ground = pose.groundZ ?? 0;
+    this.root.position.set(pose.x, ground, pose.y);
 
     let pitch = 0, roll = 0, twist = 0, lift = Math.sin(now * 0.004) * 0.6;
     let reach = 0, spread = 0, jaw = 0.15, lid = 0, legSwing = 0.1, glow = 0.8 + phase * 0.35;
@@ -555,7 +559,7 @@ export class GuardianRig {
       const radius = radii[i];
       ring.visible = radius !== undefined;
       if (radius === undefined) return;
-      ring.position.set(pose.x, 1.5 + i * 0.2, pose.y);
+      ring.position.set(pose.x, ground + 1.5 + i * 0.2, pose.y);
       ring.scale.set(radius, radius, 1);
       ring.material.opacity = 0.68 - k * 0.3;
     });

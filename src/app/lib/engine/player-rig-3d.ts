@@ -216,6 +216,7 @@ export class PlayerAnimator {
   private side = 0;
   private turn = 0;
   private lean = 0;
+  private run = 0;
   private lastX = 0;
   private lastY = 0;
   private lastState = '';
@@ -293,7 +294,7 @@ export class PlayerAnimator {
     const fx = pose.facingX / fLen;
     const fy = pose.facingY / fLen;
     if (!frozen && dt > 0) {
-      const travel = Math.min(Math.hypot(dx, dy), 14);
+      const travel = Math.min(Math.hypot(dx, dy), 18);
       const speed = travel / dt;
       const blend = 1 - Math.exp(-14 * dt);
       const prevForward = this.forward;
@@ -302,6 +303,8 @@ export class PlayerAnimator {
       this.forward += ((dx * fx + dy * fy) * unit - this.forward) * blend;
       this.side += ((dx * fy - dy * fx) * unit - this.side) * blend;
       this.lean += ((this.forward - prevForward) * 8 - this.lean) * (1 - Math.exp(-6 * dt));
+      const runGoal = state === 'moving' || UPPER_BODY_STATES.has(state) ? smooth(225, 335, this.speed) : 0;
+      this.run += (runGoal - this.run) * (1 - Math.exp(-(runGoal > this.run ? 12 : 7) * dt));
       this.stepGait(state, travel, dt);
     }
 
@@ -451,7 +454,7 @@ export class PlayerAnimator {
     }
 
     // --- Bas du corps : la marche se superpose à une action du haut du corps.
-    const walking = clamp01((this.speed - 12) / 50);
+    const walking = clamp01((this.speed - 8) / 45);
     if (walking > 0 && UPPER_BODY_STATES.has(state)) {
       this.upper.set(this.target);
       this.fill(base);
@@ -563,28 +566,30 @@ export class PlayerAnimator {
     const s = this.side;
     const t = this.target;
     const lateral = Math.abs(this.lateral);
+    const run = this.run;
+    const stance = 0.05 + 0.07 * pace;
     // Jambes : rotation x > 0 envoie le pied en arrière, d'où le signe.
     t[I.lLx] = -left;
     t[I.lRx] = -right;
-    // Ce qui reste de pas chassé après la rotation des hanches : la jambe en l'air s'écarte.
-    t[I.lLz] = -0.08 * +engaged - 0.4 * lateral * g.fold[0];
-    t[I.lRz] = 0.08 * +engaged + 0.4 * lateral * g.fold[1];
+    // Écart permanent : moins de jambes qui se croisent en strafe.
+    t[I.lLz] = -stance - 0.08 * +engaged - 0.36 * lateral * g.fold[0];
+    t[I.lRz] = stance + 0.08 * +engaged + 0.36 * lateral * g.fold[1];
     // Bras en opposition des jambes ; le bras armé reste en garde au combat.
     t[I.aLx] += -right * (engaged ? 0.35 : 0.9);
     t[I.aRx] += -left * (engaged ? 0.25 : 0.75);
-    // Buste : penché dans la course et l'accélération, incliné dans les virages
-    // (plus on va vite, plus on se couche), épaules en contre-rotation du bassin.
-    t[I.rX] += 0.12 * pace * Math.abs(f) + T.MathUtils.clamp(this.lean, -0.2, 0.2);
-    t[I.rY] += (left - right) * 0.09;
-    t[I.rZ] += T.MathUtils.clamp(-this.turn * (0.015 + 0.05 * pace), -0.2, 0.2) + s * 0.05 * pace;
-    if (sprint) {
-      // Course : penché fort, bras qui pompent, lance ramenée le long du corps.
-      t[I.rX] += 0.22;
-      t[I.aLx] = -right * 1.5 - 0.2;
-      t[I.aLz] = -0.15;
-      t[I.aRx] = -left * 0.7 + 0.25;
-      t[I.wr] = -0.25;
-      t[I.aRz] = -0.1;
+    // Penché avant continu (vitesse) + lean d'accélération, roulis lisible en strafe.
+    t[I.rX] += 0.1 * pace * f + 0.16 * run * Math.max(0, f) + T.MathUtils.clamp(this.lean, -0.16, 0.16);
+    t[I.rY] += (left - right) * (0.07 + 0.05 * run);
+    t[I.rZ] += T.MathUtils.clamp(-this.turn * (0.015 + 0.05 * pace), -0.18, 0.18)
+      + s * (0.035 + 0.06 * run) * (0.35 + 0.65 * pace);
+    if (sprint || run > 0.25) {
+      const k = sprint ? Math.max(0.5, run) : smooth(0.25, 0.9, run);
+      t[I.rX] += 0.2 * k;
+      t[I.aLx] = T.MathUtils.lerp(t[I.aLx], -right * 1.5 - 0.2, k);
+      t[I.aLz] = T.MathUtils.lerp(t[I.aLz], -0.15, k);
+      t[I.aRx] = T.MathUtils.lerp(t[I.aRx], -left * 0.7 + 0.25, k);
+      t[I.wr] = T.MathUtils.lerp(t[I.wr], -0.25, k);
+      t[I.aRz] = T.MathUtils.lerp(t[I.aRz], -0.1, k);
     }
   }
 
@@ -629,7 +634,8 @@ export class PlayerAnimator {
       shakeX = Math.sin(now * 0.93) * amp;
       shakeZ = Math.cos(now * 1.37) * amp;
     }
-    root.position.set(pose.x + sin * forward + shakeX, drop + lift + pivotUp, pose.y + cos * forward + shakeZ);
+    const groundZ = pose.groundZ ?? 0;
+    root.position.set(pose.x + sin * forward + shakeX, groundZ + drop + lift + pivotUp, pose.y + cos * forward + shakeZ);
     root.rotation.set(pitch, yaw, 0);
     // Volume conservé : étiré vers l'avant (z local) ou tassé vers le sol (y).
     const sq = this.squash;
@@ -642,7 +648,7 @@ export class PlayerAnimator {
       root.scale.set(side, up, side);
     }
     if (this.shadow) {
-      this.shadow.position.set(root.position.x, 0.15, root.position.z);
+      this.shadow.position.set(root.position.x, groundZ + 0.15, root.position.z);
       const squash = 1 - 0.25 * Math.min(1, lift / 2.5);
       this.shadow.scale.setScalar(squash);
     }

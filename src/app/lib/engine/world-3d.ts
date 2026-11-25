@@ -10,9 +10,12 @@ import { CombatFeel3D } from './combat-feel-3d';
 import { PostFx } from './post-fx';
 import { CombatFx3D, HitFlash } from './combat-fx-3d';
 import type { FxEvent } from '../services/combat-fx.service';
-import { CinematicCamera, type CinematicShot, SHOTS } from './cinematic-camera';
+import { CinematicCamera, type CinematicShot, SHOTS, STORY_SHOTS } from './cinematic-camera';
+import { STORY_BEATS, type StoryBeatId, type StoryPoint, type StoryShotContext } from '../narrative/story-beats';
 import { Equipment3D, type GearLook } from './equipment-3d';
 import { buildHumanoid, type HumanoidRig } from './humanoid-rig';
+import type { Outfit } from './human-body';
+import { kwadwoOutfit, plainOutfit } from './human-outfits';
 import { PlayerAnimator } from './player-rig-3d';
 import { MartialArts3D } from './martial-arts-3d';
 import { BipedGait, DUELIST_GAIT } from './gait';
@@ -28,10 +31,43 @@ import { ChampionGear, animateBadu } from './champion-rig-3d';
 import type { BossId } from '../constants/boss-lore';
 import type { WeaponId } from '../constants/equipment.config-constant';
 import { renderPixelRatio } from '../platform/display';
-import { currentSettings } from '../platform/settings.service';
+import { currentSettings, type CameraMode } from '../platform/settings.service';
+import { RemotePlayer } from '../pvp/remote-player';
+import type { DuelPose } from '../pvp/duel-rules';
 
 interface Point { x: number; y: number }
+
+interface CameraProfile {
+  boom: number;
+  boomDistance: number;
+  vistaBoom: number;
+  shoulder: number;
+  height: number;
+  heightDistance: number;
+  vistaHeight: number;
+  lookHeight: number;
+  lead: number;
+  leadDistance: number;
+  pitchMin: number;
+  pitchMax: number;
+  floorClearance: number;
+}
+
+const CAMERA_PROFILES: Record<CameraMode, CameraProfile> = {
+  wide: {
+    boom: 74, boomDistance: 0.16, vistaBoom: 82, shoulder: 22,
+    height: 42, heightDistance: 0.16, vistaHeight: 58, lookHeight: 25,
+    lead: 30, leadDistance: 0.2, pitchMin: -18, pitchMax: 32, floorClearance: 12,
+  },
+  shoulder: {
+    boom: 50, boomDistance: 0.1, vistaBoom: 40, shoulder: 12,
+    height: 30, heightDistance: 0.08, vistaHeight: 40, lookHeight: 22,
+    lead: 24, leadDistance: 0.16, pitchMin: -14, pitchMax: 26, floorClearance: 8,
+  },
+};
+
 export interface Actor3D extends Point {
+  groundZ?: number;
   facingX: number;
   facingY: number;
   state: string;
@@ -89,6 +125,10 @@ export class World3D {
   private readonly playerAnim: PlayerAnimator;
   private readonly martial: MartialArts3D;
   private readonly duelist: Fighter;
+  private readonly remote: Fighter;
+  private readonly remotePlayer = new RemotePlayer();
+  private remotePose: DuelPose | null = null;
+  private remoteVisible = false;
   /** Habillage et armes du porte-hache du Denkyira sur le rig du duelliste. */
   private readonly champion: ChampionGear;
   private bossKind: BossId = 'duelist';
@@ -137,6 +177,7 @@ export class World3D {
   /** Temps passé à courir de côté par rapport à la caméra (recentrage doux). */
   private lateralTime = 0;
   private pitch = 0;
+  private cameraMode: CameraMode = currentSettings().cameraMode ?? 'wide';
   /** Secondes depuis le dernier geste de caméra (souris, stick droit). */
   private manualLook = 99;
   /** Recentrage derrière le héros demandé (Q / clic du stick droit). */
@@ -146,6 +187,8 @@ export class World3D {
    * (troncs et feuillage du prologue), en coordonnées monde (x, z, hauteur).
    */
   cameraBlocker: ((x: number, z: number, y: number) => boolean) | null = null;
+  /** Hauteur du sol sous la caméra (relief) : elle passe au-dessus des talus au lieu de rentrer dedans. */
+  cameraFloor: ((x: number, z: number) => number) | null = null;
   /** Ennemi verrouillé hors duel (GameStateService) : la caméra le cadre comme un boss. */
   private lockPoint: Point | null = null;
   /** Changement de cible demandé par un geste (souris, doigt, stick droit) : -1 gauche, 1 droite. */
@@ -176,7 +219,7 @@ export class World3D {
   private readonly layers: { update(dt: number): void; dispose(): void }[] = [];
   /** Tenues du héros, une seule visible selon l'acte (setHero). */
   private readonly togas: { kwabena: T.Group; ama: T.Group };
-  private hero: 'kwabena' | 'ama' | null = null;
+  private hero: 'kwadwo' | 'kwabena' | 'ama' | null = null;
 
   constructor(private readonly host: HTMLElement) {
     this.renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -195,7 +238,8 @@ export class World3D {
       if (this.dragPointer !== null) return;
       this.dragPointer = event.pointerId;
       this.dragging = { x: event.clientX, y: event.clientY };
-      this.dragSensitivity = currentSettings().sensitivity * (event.pointerType === 'touch' ? 1.35 : 1);
+      // Au doigt, plus doux qu'à la souris : un petit écran amplifie le moindre geste.
+      this.dragSensitivity = currentSettings().sensitivity * (event.pointerType === 'touch' ? 0.85 : 1);
       try { canvas.setPointerCapture(event.pointerId); } catch { /* pointeur déjà relâché */ }
     }, { signal });
     canvas.addEventListener('pointermove', (event) => {
@@ -213,7 +257,7 @@ export class World3D {
       if (!this.arena) {
         const dx = event.clientX - this.dragging.x;
         // Accélération : un grand balayage tourne plus vite (regarder derrière soi d'un geste).
-        const boost = 1 + T.MathUtils.clamp((Math.abs(dx) - 4) / 24, 0, 1) * 0.9;
+        const boost = 1 + T.MathUtils.clamp((Math.abs(dx) - 6) / 30, 0, 1) * 0.5;
         this.pendingYaw -= dx * 0.008 * this.dragSensitivity * boost;
         this.pendingPitch += (event.clientY - this.dragging.y) * 0.34 * this.dragSensitivity;
         this.manualLook = 0;
@@ -235,10 +279,10 @@ export class World3D {
     signal.addEventListener('abort', () => observer.disconnect());
     canvas.addEventListener('lostpointercapture', endDrag, { signal });
 
-    this.scene.fog = new T.FogExp2('#93866e', 0.0021);
-    this.scene.add(new T.HemisphereLight('#ffdfb0', '#576962', 2.05));
-    const sun = new T.DirectionalLight('#ffd3a0', 2.6);
-    sun.position.set(-250, 420, -170);
+    this.scene.fog = new T.FogExp2('#8d7f70', 0.0021);
+    this.scene.add(new T.HemisphereLight('#b8c8e0', '#5b3a2c', 1.8));
+    const sun = new T.DirectionalLight('#ffb066', 2.4);
+    sun.position.set(-320, 180, -210);
     this.scene.add(sun);
     this.ground = new T.Mesh(new T.PlaneGeometry(WORLD.WIDTH, WORLD.HEIGHT),
       new T.MeshStandardMaterial({ color: '#aa9677', roughness: 1 }));
@@ -246,14 +290,17 @@ export class World3D {
     this.ground.position.set(WORLD.WIDTH / 2, 0, WORLD.HEIGHT / 2);
     this.scene.add(this.ground);
     this.makeScenery();
-    this.player = this.makeFighter('#253c54', '#aa793f', true);
+    // Corps skinné commun (human-body.ts) ; tenue de Kwadwo, cachée sous les toges des autres héros.
+    this.player = this.makeFighter('#253c54', '#aa793f', true, kwadwoOutfit((color) => this.material(color)), true);
     // La lance est la dernière pièce ajoutée au bras droit par makeFighter.
     const spear = this.player.arms[1].children.at(-1);
     this.gear = new Equipment3D(this.scene, this.player.torso, this.player.arms, spear);
     this.playerAnim = new PlayerAnimator(this.scene, this.player, spear!);
     // Prise martiale : l'arme quitte le poignet, les deux mains la tiennent par IK.
     this.martial = new MartialArts3D(this.player, spear!);
-    this.duelist = this.makeFighter('#873f30', '#c2a176');
+    this.duelist = this.makeFighter('#873f30', '#c2a176', false, undefined, true);
+    this.remote = this.makeFighter('#6c3a2f', '#d0a85f');
+    this.remote.root.visible = false;
     this.duelist.gait = new BipedGait(DUELIST_GAIT);
     // Le bâton de Kofi est la dernière pièce du bras droit (buildHumanoid).
     this.champion = new ChampionGear(this.scene, this.duelist, this.duelist.arms[1].children.at(-1));
@@ -364,8 +411,8 @@ export class World3D {
   }
 
   /** Humanoïde du rig partagé (joueur, duelliste, villageois : même squelette). */
-  private makeFighter(clothColor: string, accentColor: string, bareChest = false): Fighter {
-    const rig = buildHumanoid((color) => this.material(color), clothColor, accentColor, { bareChest });
+  private makeFighter(clothColor: string, accentColor: string, bareChest = false, outfit?: Outfit, outline = false): Fighter {
+    const rig = buildHumanoid((color) => this.material(color), clothColor, accentColor, { bareChest, outfit, outline });
     this.scene.add(rig.root);
     return { ...rig, walk: 0 };
   }
@@ -414,7 +461,7 @@ export class World3D {
     }
     this.scene.add(props);
     for (const target of [...VILLAGE_STOPS, GATE, CROSSING]) {
-      const witness = this.makeFighter('#695b42', '#ba9c69', true);
+      const witness = this.makeFighter('#695b42', '#ba9c69', true, plainOutfit((color) => this.material(color), '#7a4a2c'));
       attachToga(witness.torso, adinkraTexture('#7a4a2c'));
       witness.root.scale.setScalar(0.82);
       witness.root.position.set(target.x + 12, 0, target.y - 16);
@@ -504,7 +551,7 @@ export class World3D {
     const travel = Math.min(Math.hypot(dx, dz), 12);
     const moving = pose.state === 'moving' || pose.state === 'chase';
     fighter.walk += travel * 0.14;
-    fighter.root.position.set(pose.x, 0, pose.y);
+    fighter.root.position.set(pose.x, pose.groundZ ?? 0, pose.y);
     const desired = Math.atan2(pose.facingX, pose.facingY);
     const angle = desired - fighter.root.rotation.y;
     fighter.root.rotation.y += Math.atan2(Math.sin(angle), Math.cos(angle)) * (1 - Math.exp(-25 * dt));
@@ -546,7 +593,7 @@ export class World3D {
       armL = -stride * 0.64;
       armR = stride * 0.53;
     }
-    fighter.root.position.y = drop;
+    fighter.root.position.y = (pose.groundZ ?? 0) + drop;
     fighter.torso.position.y = 16 + (fighter.bob ?? 0) - dash * 6;
     fighter.torso.rotation.set(dash * 0.87 - strike * 0.31 + ready * 0.19 + (gait?.pace ?? 0) * 0.08,
       strike * 0.55 - ready * 0.49 + (legL - legR) * 0.08,
@@ -578,10 +625,19 @@ export class World3D {
     this.fxSource?.drain(this.handleFx);
     this.playerAnim.update(player, dt, now, !!enemy);
     this.gear.applyPose(player);
-    // L'arc et la gourde posent les bras directement : l'animateur repart de
+    // L'arc et les feuilles posent les bras directement : l'animateur repart de
     // cette pose ensuite, pour un fondu sans à-coup.
     this.playerAnim.capture();
     this.martial.update(player, dt, now, !!enemy);
+    this.remotePlayer.update(this.remotePose, realDt);
+    this.remote.root.visible = this.remoteVisible;
+    if (this.remoteVisible) {
+      const remoteActor = this.remotePlayer.actor();
+      remoteActor.x += WORLD.WIDTH / 2;
+      remoteActor.y += WORLD.HEIGHT / 2;
+      this.animate(this.remote, remoteActor, dt);
+      this.feel.applyFlinch(this.remote.root, this.remote.torso, remoteActor);
+    }
     this.duelist.root.visible = !!enemy && duelist;
     this.veille.visible = !!enemy && !duelist;
     if (enemy && duelist) {
@@ -636,7 +692,7 @@ export class World3D {
       this.marker.rotation.y = now / 790;
     }
     this.focus = objective;
-    this.updateCamera(player, enemy, dt);
+    this.updateCamera(player, enemy, dt, realDt);
     const fov = this.feel.updateFov(player, realDt);
     if (!this.cine.active && Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov = fov;
@@ -715,11 +771,51 @@ export class World3D {
     this.cine.play(shot);
   }
 
+  /** Réserve le fondu de sortie dans la durée annoncée du beat narratif. */
+  private playTimedShot(shot: CinematicShot) {
+    const out = shot.blendOut ?? 450;
+    this.cine.play({ ...shot, duration: Math.max(200, shot.duration - out) });
+  }
+
+  /** Plans du récit (Chapitre 1), calés sur la durée du beat narratif. */
+  playStoryShot(id: StoryBeatId, ctx: StoryShotContext) {
+    const duration = STORY_BEATS[id].duration;
+    const player = ctx.player;
+    const focus = ctx.focus ?? ctx.boss ?? player;
+    if (id === 'badu-phase' || id === 'badu-fall' || id === 'badu-entrance') {
+      if (!ctx.boss) return;
+      const shot = id === 'badu-phase' ? STORY_SHOTS.baduPhase(ctx.boss, player, duration)
+        : id === 'badu-fall' ? STORY_SHOTS.baduFall(ctx.boss, player, duration)
+          : STORY_SHOTS.baduEntrance(ctx.boss, player, duration);
+      this.playTimedShot(shot);
+      return;
+    }
+    if (id === 'vista' || id === 'bridge-glance') {
+      this.playTimedShot((id === 'vista' ? STORY_SHOTS.vista : STORY_SHOTS.glance)(player, focus, duration));
+      return;
+    }
+    if (id === 'drummer') {
+      this.playTimedShot(STORY_SHOTS.drummer(player, focus, duration));
+      return;
+    }
+    this.playTimedShot(STORY_SHOTS.opening(ctx.sword ?? player, player, duration));
+  }
+
+  /** Micro-regard optionnel : la caméra revient seule au joueur. */
+  glanceAt(player: StoryPoint, point: StoryPoint, seconds = 1.5) {
+    this.playTimedShot(STORY_SHOTS.glance(player, point, seconds * 1000));
+  }
+
+  setRemotePose(pose: DuelPose | null, visible = true): void {
+    this.remotePose = pose;
+    this.remoteVisible = visible;
+  }
+
   /** Changement de phase : demi-tour lent autour du boss, de bas en haut. */
   playPhaseShot(from: Point, boss: () => Point, duration: number) {
     const look = new T.Vector3();
     const at = boss();
-    this.cine.play(SHOTS.phaseShift(at, from, duration, () => {
+    this.playTimedShot(SHOTS.phaseShift(at, from, duration, () => {
       const p = boss();
       return look.set(p.x, 22, p.y);
     }));
@@ -736,19 +832,19 @@ export class World3D {
    * remontée vers le visage), lancé au premier setIntro(k). Retourne true
    * tant que la cinématique pilote seule la caméra.
    */
-  private cinematicCamera(player: Actor3D, enemy: Point | null, dt: number) {
+  private cinematicCamera(player: Actor3D, enemy: Point | null, cineDt: number) {
     if (this.intro === null) {
       this.introStarted = false;
-    } else if (!this.introStarted && enemy) {
+    } else if (!this.introStarted && enemy && this.bossKind !== 'champion' && !this.cine.active) {
       this.introStarted = true;
-      // L'intro de GameStateService dure 3,8 s ; la caméra rend la main à 88 %.
-      this.cine.play(SHOTS.bossIntro(enemy, player, this.introDuration * 0.88 * (1 - this.intro)));
+      const duration = this.introDuration * 0.88 * (1 - this.intro);
+      this.playTimedShot(SHOTS.bossIntro(enemy, player, duration));
     }
-    return this.cine.drive(this.camera, dt);
+    return this.cine.drive(this.camera, cineDt);
   }
 
-  private updateCamera(player: Actor3D, boss: Point | null, dt: number) {
-    if (this.cinematicCamera(player, boss, dt)) return;
+  private updateCamera(player: Actor3D, boss: Point | null, dt: number, cineDt: number) {
+    if (this.cinematicCamera(player, boss, cineDt)) return;
     // Cible cadrée : le boss du duel, sinon l'ennemi verrouillé.
     const enemy = boss ?? this.lockPoint;
     // Pas de marqueur sur un boss qui tombe.
@@ -789,16 +885,34 @@ export class World3D {
     }
     const dx = Math.sin(this.viewYaw);
     const dy = Math.cos(this.viewYaw);
-    const boom = enemy ? 97 + Math.min(distance, 200) * 0.22 : 104;
-    const shoulder = enemy ? 31 : 24;
+    this.vista += (this.vistaTarget - this.vista) * (1 - Math.exp(-1.2 * dt));
+    const profile = CAMERA_PROFILES[this.cameraMode];
+    const boom = enemy
+      ? profile.boom + Math.min(distance, 200) * profile.boomDistance
+      : profile.boom + profile.vistaBoom * this.vista;
+    const shoulder = enemy ? profile.shoulder : profile.shoulder * 0.8;
+    const ground = player.groundZ ?? 0;
+    const height = enemy
+      ? profile.height + Math.min(distance, 220) * profile.heightDistance
+      : profile.height + this.pitch + profile.vistaHeight * this.vista;
     this.cameraGoal.set(player.x - dx * boom - dy * shoulder,
-      56 + (enemy ? Math.min(distance, 220) * 0.22 : this.pitch),
+      ground + height,
       player.y - dy * boom + dx * shoulder);
     // Shorten the boom before it reaches a hut when orbiting through the village.
-    this.cameraArmBase.set(player.x, 33, player.y);
+    // Relief : la caméra s'élève au-dessus des talus et des parois plutôt que de plonger dedans.
+    if (this.cameraFloor) {
+      let floor = -Infinity;
+      for (let fraction = 0.3; fraction <= 1.001; fraction += 0.35) {
+        const x = T.MathUtils.lerp(player.x, this.cameraGoal.x, fraction);
+        const z = T.MathUtils.lerp(player.y, this.cameraGoal.z, fraction);
+        floor = Math.max(floor, this.cameraFloor(x, z) * fraction);
+      }
+      if (this.cameraGoal.y < floor + profile.floorClearance) this.cameraGoal.y = floor + profile.floorClearance;
+    }
+    this.cameraArmBase.set(player.x, ground + 33, player.y);
     for (let fraction = 0.2; fraction < 0.98; fraction += 0.12) {
       const x = T.MathUtils.lerp(player.x, this.cameraGoal.x, fraction);
-      const y = T.MathUtils.lerp(33, this.cameraGoal.y, fraction);
+      const y = T.MathUtils.lerp(this.cameraArmBase.y, this.cameraGoal.y, fraction);
       const z = T.MathUtils.lerp(player.y, this.cameraGoal.z, fraction);
       if (HUTS.some(([hx, hz, radius]) => y < 49 &&
           (x - hx) ** 2 + (z - hz - 5) ** 2 < (radius * 0.9) ** 2) || this.cameraBlocker?.(x, z, y)) {
@@ -806,8 +920,10 @@ export class World3D {
         break;
       }
     }
-    const lead = enemy ? 35 + Math.min(distance, 160) * 0.24 : 36;
-    this.lookGoal.set(player.x + dx * lead, 27, player.y + dy * lead);
+    const lead = enemy
+      ? profile.lead + Math.min(distance, 160) * profile.leadDistance
+      : profile.lead;
+    this.lookGoal.set(player.x + dx * lead, ground + profile.lookHeight, player.y + dy * lead);
     if (this.initialized) {
       this.camera.position.lerp(this.cameraGoal, 1 - Math.exp(-10 * dt));
       // Le point visé est lissé lui aussi : les reculs et roulades ne font
@@ -834,11 +950,12 @@ export class World3D {
     this.manualLook += dt;
     this.padLook(dt);
     // Geste de caméra lissé : un doigt qui tremble ne fait pas sauter le cadre.
-    const ease = 1 - Math.exp(-16 * dt);
+    const ease = 1 - Math.exp(-12 * dt);
     const yawStep = this.pendingYaw * ease;
     const pitchStep = this.pendingPitch * ease;
     this.orbit += yawStep;
-    this.pitch = T.MathUtils.clamp(this.pitch + pitchStep, -24, 40);
+    const profile = CAMERA_PROFILES[this.cameraMode];
+    this.pitch = T.MathUtils.clamp(this.pitch + pitchStep, profile.pitchMin, profile.pitchMax);
     this.pendingYaw -= yawStep;
     this.pendingPitch -= pitchStep;
     const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -852,11 +969,12 @@ export class World3D {
       if (Math.abs(gap) < 0.03) this.recenter = false;
       return;
     }
-    if (this.manualLook < 0.9 || player.state !== 'moving') return;
+    // Suivi plus présent : la caméra reprend la main 0,7 s après le dernier geste.
+    if (this.manualLook < 0.7 || player.state !== 'moving') return;
     // Course vers la caméra : on garde le cadre (pas de demi-tour brutal).
     if (Math.abs(gap) > 2.1) return;
     const forward = Math.max(0, Math.cos(gap));
-    let rate = (player.sprint ? 2.2 : 1.5) * (0.12 + 0.88 * forward);
+    let rate = (player.sprint ? 2.6 : 1.9) * (0.25 + 0.75 * forward);
     if (this.lateralTime > 0.6) rate = Math.max(rate, 1.2);
     this.orbit += gap * (1 - Math.exp(-rate * dt));
   }
@@ -871,7 +989,8 @@ export class World3D {
     const ly = dead(pad.axes[3] ?? 0);
     if (lx || ly) {
       this.orbit -= lx * 2.6 * dt;
-      this.pitch = T.MathUtils.clamp(this.pitch + ly * 60 * dt, -24, 40);
+      const p = CAMERA_PROFILES[this.cameraMode];
+      this.pitch = T.MathUtils.clamp(this.pitch + ly * 60 * dt, p.pitchMin, p.pitchMax);
       this.manualLook = 0;
       this.recenter = false;
     }
@@ -908,6 +1027,18 @@ export class World3D {
     this.recenter = true;
   }
 
+  setCameraMode(mode: CameraMode) {
+    this.cameraMode = mode;
+    this.recenter = true;
+  }
+
+  private vista = 0;
+  private vistaTarget = 0;
+  /** Point de vue (promontoire) : 1 = la caméra recule et s'élève doucement, 0 = normale. */
+  setVista(amount: number) {
+    this.vistaTarget = amount;
+  }
+
   /** Ennemi verrouillé hors duel (null : caméra libre). */
   setLockTarget(point: Point | null) {
     this.lockPoint = point ? { x: point.x, y: point.y } : null;
@@ -924,13 +1055,20 @@ export class World3D {
     this.landscape.center.set(x, z);
   }
 
+  /** Horizon d'harmattan des actes suivants : masqué là où une carte a son propre ciel et son relief. */
+  setLandscapeVisible(visible: boolean) {
+    this.landscape.root.visible = visible;
+  }
+
   /** Arme en main et flèches (en vol ou au sol), mises à jour avant render(). */
   /** Héros incarné : Kwabena (acte I, 1824) ou Ama Serwaa (acte II, 1874). */
-  setHero(hero: 'kwabena' | 'ama') {
+  setHero(hero: 'kwadwo' | 'kwabena' | 'ama') {
     if (hero === this.hero) return;
     this.hero = hero;
     this.togas.kwabena.visible = hero === 'kwabena';
     this.togas.ama.visible = hero === 'ama';
+    // Pagne, bandoulière, brassards et sandales de Kwadwo (1701).
+    if (this.player.body) this.player.body.outfit.visible = hero === 'kwadwo';
   }
 
   setEquipment(weapon: WeaponId, arrows: readonly { x: number; y: number; dirX: number; dirY: number; grounded: boolean }[],
@@ -962,6 +1100,7 @@ export class World3D {
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
     this.post?.setAspect(aspect);
+    this.post?.setSize(internalWidth, VIEWPORT.HEIGHT);
   }
 
   /** Repère d'objectif, en coordonnées du canvas 2D 16:9 centré sur l'écran de jeu. */

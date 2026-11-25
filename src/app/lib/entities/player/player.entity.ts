@@ -50,10 +50,10 @@ export class PlayerEntity {
   readonly equipment = inject(EquipmentStore);
   private readonly arrows = inject(ArrowService);
 
-  // --- Équipement : tir à l'arc et Bandji
+  // --- Équipement : tir à l'arc et mixture de soin
   private shot: BowShotData = BOW_QUICK_SHOT;
   private arrowReleased = false;
-  private bandjiHealed = false;
+  private mixtureHealed = false;
   private switchHeld = false;
   private drinkHeld = false;
 
@@ -125,7 +125,7 @@ export class PlayerEntity {
     this.hurtIFrames = 0;
     this.lockTarget = undefined;
     this.arrowReleased = false;
-    this.bandjiHealed = false;
+    this.mixtureHealed = false;
     this.switchHeld = false;
     this.drinkHeld = false;
   }
@@ -244,13 +244,15 @@ export class PlayerEntity {
 
   /** Direction demandée au clavier, en coordonnées monde (relative à la caméra). */
   private inputDirection() {
-    const horizontal = (this.input.right() ? 1 : 0) - (this.input.left() ? 1 : 0);
-    const vertical = (this.input.down() ? 1 : 0) - (this.input.up() ? 1 : 0);
+    // Joystick tactile : vecteur analogique ; clavier et manette : -1, 0 ou 1 par axe.
+    const { x: horizontal, y: vertical } = this.input.moveAxis();
     const heading = this.cameraHeading;
     const dx = heading === null ? horizontal : -horizontal * Math.cos(heading) - vertical * Math.sin(heading);
     const dy = heading === null ? vertical : horizontal * Math.sin(heading) - vertical * Math.cos(heading);
     const length = Math.hypot(dx, dy);
-    return { x: length > 0 ? dx / length : 0, y: length > 0 ? dy / length : 0, length };
+    // Pouce à mi-course : on marche ; à fond : on court (le clavier reste à fond).
+    const magnitude = Math.min(1, length);
+    return { x: length > 0 ? dx / length : 0, y: length > 0 ? dy / length : 0, length, magnitude };
   }
 
   private handleMovement(deltaTime: number, dodgePressed: boolean, target?: { x: number; y: number }) {
@@ -276,7 +278,7 @@ export class PlayerEntity {
     //Lire les inputs sur les directions. dx -> directionX ; dy->directionY
 
     const heading = this.cameraHeading;
-    const { x: normX, y: normY, length } = this.inputDirection();
+    const { x: normX, y: normY, length, magnitude } = this.inputDirection();
 
     //Probleme sur les diagonales a gerer.
     //Si on appuie sur Haut + Droite: dx = 1 et dy = -1
@@ -288,9 +290,12 @@ export class PlayerEntity {
     // Sprint (Shift maintenu) tant qu'il reste du souffle ; marche plus posée
     // quand on tourne autour d'un ennemi verrouillé.
     const locked = heading !== null && !!target;
-    this.sprinting = length > 0 && this.shift.sprinting && data.stamina > 0;
-    const speed = this.sprinting ? PLAYER_CONFIG.sprintSpeed
-      : PLAYER_CONFIG.speed * (locked ? PLAYER_CONFIG.lockedSpeedFactor : 1);
+    const stickSprint = this.input.analogActive() && magnitude > 0.92;
+    this.sprinting = length > 0 && (this.shift.sprinting || stickSprint) && data.stamina > 0;
+    const grade = length > 0 ? this.terrain.gradeFactor(data.x + PLAYER_CONFIG.size / 2,
+      data.y + PLAYER_CONFIG.size / 2, normX, normY) : 1;
+    const speed = (this.sprinting ? PLAYER_CONFIG.sprintSpeed
+      : PLAYER_CONFIG.speed * (locked ? PLAYER_CONFIG.lockedSpeedFactor : 1) * magnitude) * grade;
 
     // Inertie courte : on accélère et on freine en quelques centièmes de seconde.
     const velocity = approachVelocity(data.vx, data.vy, normX * speed, normY * speed, deltaTime);
@@ -338,7 +343,7 @@ export class PlayerEntity {
       return;
     }
 
-    // Équipement : changer d'arme (R) et boire du Bandji (B), sur appui.
+    // Équipement : changer d'arme (R) et avaler la mixture de soin (B), sur appui.
     const switchDown = this.input.switchWeapon();
     const switchPressed = switchDown && !this.switchHeld;
     this.switchHeld = switchDown;
@@ -352,7 +357,7 @@ export class PlayerEntity {
     if (drinkPressed) {
       if (currentData.hp >= currentData.maxHp) {
         this.equipment.say('Déjà en pleine forme', 900);
-      } else if (this.equipment.consumeBandji()) {
+      } else if (this.equipment.consumeMixture()) {
         this.enterDrinking();
         return;
       }
@@ -640,7 +645,7 @@ export class PlayerEntity {
   }
 
   /**
-   * Pas lents pendant une action du haut du corps (boire, viser) : le
+   * Pas lents pendant une action du haut du corps (mastiquer, viser) : le
    * regard ne change pas, seules les jambes avancent (blending haut/bas
    * dans player-rig-3d.ts).
    */
@@ -658,15 +663,15 @@ export class PlayerEntity {
   }
 
   // ====================================================================
-  // BANDJI (vin de palme) : soin limité, pas lents pendant la gorgée
+  // MIXTURE DE SOIN : feuilles écrasées avalées, soin limité, pas lents pendant la mastication
   // ====================================================================
 
   private enterDrinking() {
-    this.bandjiHealed = false;
+    this.mixtureHealed = false;
     this.store.update({
       state: 'drinking',
       attackType: 'none',
-      stateTimer: EQUIPMENT_CONFIG.drinkDuration,
+      stateTimer: EQUIPMENT_CONFIG.mixtureDuration,
       vx: 0,
       vy: 0,
       comboCount: 0,
@@ -674,16 +679,16 @@ export class PlayerEntity {
     });
   }
 
-  /** Le soin tombe aux 60 % de la gorgée : un coup reçu avant fait perdre la gourde. */
+  /** Le soin tombe aux 60 % de la mastication : un coup reçu avant fait perdre les feuilles. */
   private handleDrinking(deltaTime: number) {
     this.walkWhileBusy(deltaTime, BUSY_WALK.drinking);
     const data = this.store.getData();
     const newTimer = data.stateTimer - deltaTime * 1000;
-    const progress = 1 - newTimer / EQUIPMENT_CONFIG.drinkDuration;
+    const progress = 1 - newTimer / EQUIPMENT_CONFIG.mixtureDuration;
     const changes: Partial<PlayerData> = { stateTimer: newTimer };
-    if (!this.bandjiHealed && progress >= EQUIPMENT_CONFIG.drinkHealAt) {
-      this.bandjiHealed = true;
-      changes.hp = Math.min(data.maxHp, data.hp + EQUIPMENT_CONFIG.bandjiHeal);
+    if (!this.mixtureHealed && progress >= EQUIPMENT_CONFIG.mixtureHealAt) {
+      this.mixtureHealed = true;
+      changes.hp = Math.min(data.maxHp, data.hp + EQUIPMENT_CONFIG.mixtureHeal);
     }
     if (newTimer <= 0) {
       changes.state = 'idle';
@@ -702,7 +707,7 @@ export class PlayerEntity {
         : { state: 'release', phase: (elapsed - this.shot.windup) / (this.shot.duration - this.shot.windup) };
     }
     if (d.state === 'drinking') {
-      return { state: 'drinking', phase: 1 - d.stateTimer / EQUIPMENT_CONFIG.drinkDuration };
+      return { state: 'drinking', phase: 1 - d.stateTimer / EQUIPMENT_CONFIG.mixtureDuration };
     }
     return null;
   }
