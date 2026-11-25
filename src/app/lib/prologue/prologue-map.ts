@@ -190,7 +190,7 @@ export const REMAINS: readonly Remains[] = [
     text: 'Talisman portant le sceau de Ntim Gyakari. Pendant des décennies, l’or, les récoltes et les fils du royaume furent livrés en tribut au Denkyira. Ce soir, le tribut se paie par le sang.',
   },
   {
-    id: 'tambourinaire', x: 5012, y: 618, label: 'S’approcher du blessé',
+    id: 'tambourinaire', x: 4948, y: 606, label: 'S’approcher du blessé',
     title: 'Le tambourinaire agonisant',
     speaker: 'Le tambourinaire',
     text: '« Ofori… tu es vivant. Ils nous attendaient ici : la plupart des leurs étaient embusqués dans la gorge, et ils nous ont taillés en pièces avant de tomber à leur tour. La guerre est presque gagnée. Le Denkyira a fui, et les nôtres ont tous suivi Osei Tutu vers l’est. Moi, je n’irai pas plus loin. Prends ma gourde : c’est du Bandji, il te rendra des forces. Et cette poudre de kaolin pour ta lame. Sur la crête, le porte-hache de Ntim Gyakari refuse de plier… Il frappe comme la foudre. » Il ferme les yeux.',
@@ -251,7 +251,9 @@ export const COVER_TRUNKS: readonly Circle[] = [
   { x: 4262, y: 888, r: 7 }, { x: 4330, y: 838, r: 7 }, { x: 4372, y: 860, r: 6 },
 ];
 /** Grand fromager où s'adosse le tambourinaire. */
-export const KAPOK: Circle = { x: 5040, y: 650, r: 18 };
+export const KAPOK: Circle = { x: 4972, y: 668, r: 18 };
+/** Le tambourinaire agonisant, assis au bord du sentier, dos au fromager, près d'un petit feu. */
+export const DRUMMER = { x: 4955, y: 628, fireX: 4925, fireY: 622 };
 
 // ─── Décor (positions générées une fois, partagées par la 3D et les collisions) ──
 

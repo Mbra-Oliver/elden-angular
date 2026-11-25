@@ -5,7 +5,7 @@ import {
   BLADES, BODIES, BOWS, CAMP_FIRES, CAMP_WARRIORS, CLEARINGS, FALLEN_TRUNK, FOREST, KEGS, LITTER, MUSKETS,
   PROLOGUE_AREA, PROLOGUE_FOYERS, REMAINS, SCORCHES, SMOKES, SPEARS, STREAM, TRAIL, TRAIL_HALF,
   UMBRELLA, type PropSpot, type RemainsId,
-  BRANCHES, BRIDGE, COVER_TRUNKS, CREST_FALLEN, KAPOK, TRAIL_HALVES, PROLOGUE_CENTER, PROLOGUE_DUEL,
+  BRANCHES, BRIDGE, COVER_TRUNKS, CREST_FALLEN, KAPOK, DRUMMER, TRAIL_HALVES, PROLOGUE_CENTER, PROLOGUE_DUEL,
 } from './prologue-map';
 
 /**
@@ -807,15 +807,24 @@ export class Prologue3D {
       [ball(60, 0), C.leaves[0], m4(0, 210, 0, 0, 0, 0, 1, 0.45, 1)],
     ]), material);
     kapok.position.set(KAPOK.x, 0, KAPOK.y);
+    // Le tambourinaire : assis, adossé au fromager, une main sur la plaie, son tambour à côté.
+    // Taille réelle d'un homme assis, tourné vers le sentier : on ne peut pas le rater.
     const drummer = new T.Mesh(merge([
-      [box(8, 10, 5), C.asanteSmock, m4(0, 7, 0, -0.35, 0, 0)],
-      [ball(2.6, 1), C.skin, m4(0, 14, -1.5)],
-      [box(9, 2.4, 3), C.indigo, m4(0, 1.2, 5)],
-      [cyl(3.4, 2.2, 10, 9), C.darkWood, m4(7, 5, 6, 0, 0, 0.4)],
-      [cyl(3.5, 3.5, 0.4, 9), C.bone, m4(9, 9.5, 6, 0, 0, 0.4)],
+      [box(9, 12, 6), C.asanteSmock, m4(0, 9, 0, -0.3, 0, 0)],
+      [box(1.6, 0.8, 1.2), C.talismanRed, m4(-2, 11, 3.2, -0.3, 0, 0)],
+      [ball(3, 1), C.skin, m4(0, 17.5, -2.4)],
+      [box(4.5, 2.4, 13), C.indigo, m4(-2.2, 1.4, 6)],
+      [box(4.5, 2.4, 13), C.indigo, m4(2.4, 1.4, 6, 0, -0.15, 0)],
+      [box(2.2, 9, 2.2), C.skin, m4(-5.5, 8, 2, 0.9, 0, 0.3)],
+      [box(2.2, 9, 2.2), C.skin, m4(5, 9, 1, -0.6, 0, -0.5)],
+      [box(5, 4, 1), '#5a1a12', m4(1.5, 8, 3.3, -0.3, 0, 0)],
+      [cyl(3.8, 2.4, 12, 9), C.darkWood, m4(10, 6, 4, 0, 0, 0.45)],
+      [cyl(3.9, 3.9, 0.4, 9), C.bone, m4(12.6, 11.4, 4, 0, 0, 0.45)],
     ]), material);
-    drummer.position.set(5016, 0, 628);
-    drummer.rotation.y = Math.PI * 0.85;
+    drummer.position.set(DRUMMER.x, 0, DRUMMER.y);
+    drummer.rotation.y = Math.PI + 0.35;
+    // Petit feu à côté de lui : il éclaire la scène et attire l'œil depuis le sentier.
+    this.fire(material, DRUMMER.fireX, DRUMMER.fireY, 0.8);
     this.root.add(load, stumps, rockMesh, shrine, this.trunkStanding, this.trunkBridge, kapok, drummer);
     // Trois guerriers asante tombés aux pieds de Badu.
     this.scatter(this.body(false, false), material, CREST_FALLEN.filter((b) => b.variant < 2), () => undefined);
