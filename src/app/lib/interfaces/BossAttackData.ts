@@ -1,4 +1,4 @@
-export type BossAttackType = 'slash' | 'slam' | 'charge' | 'combo' | 'surge' | 'sweep' | 'tide' | 'none';
+export type BossAttackType = 'slash' | 'slam' | 'charge' | 'combo' | 'surge' | 'sweep' | 'tide' | 'shot' | 'none';
 
 export const BOSS_COMBO_STEP = 3;
 
@@ -85,6 +85,17 @@ export const BOSS_ATTACKS: Record<
     range: 2.7,
   },
 
+  // Mousquet ensorcelé (porte-hache du Denkyira) : longue visée lisible, balle
+  // instantanée en ligne droite, long rechargement à punir. range en tailles de boss.
+  shot: {
+    damage: 28,
+    windupDuration: 1250,
+    attackDuration: 420,
+    recoverDuration: 1500,
+    hitBoxType: 'directional',
+    range: 6,
+  },
+
   // Double vague : deux anneaux décalés, deux esquives à rythmer.
   tide: {
     damage: 22,
@@ -118,6 +129,8 @@ export function isBossHitActive(attack: BossAttackType, progress: number) {
   }
   if (attack === 'sweep') return progress >= 0.15 && progress <= 0.82;
   if (attack === 'slash') return progress <= 0.72;
+  // La balle part au début : seul le départ du coup blesse, la fumée non.
+  if (attack === 'shot') return progress <= 0.3;
   return true;
 }
 
@@ -142,3 +155,11 @@ export function surgeRadius(size: number, remainingMs: number) {
   const progress = Math.max(0, Math.min(1, 1 - remainingMs / surge.attackDuration));
   return size * (0.45 + (surge.range - 0.45) * progress);
 }
+
+/** Directions (radians autour du regard) des balles d'un tir : éventail de trois en phase 3. */
+export function shotAngles(phase: number): number[] {
+  return phase >= 3 ? [-0.24, 0, 0.24] : [0];
+}
+
+/** Demi-largeur (unités) de la ligne de tir qui blesse. */
+export const SHOT_WIDTH = 14;

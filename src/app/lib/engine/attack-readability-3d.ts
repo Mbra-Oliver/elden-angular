@@ -1,7 +1,7 @@
 import * as T from 'three';
 import { BOSS_CONFIG } from '../constants/boss.config-constant';
 import { PALETTE } from '../constants/landscape';
-import { BOSS_ATTACKS, type BossAttackType } from '../interfaces/BossAttackData';
+import { BOSS_ATTACKS, SHOT_WIDTH, type BossAttackType } from '../interfaces/BossAttackData';
 
 /**
  * Lisibilité des coups en low poly :
@@ -64,7 +64,7 @@ export interface ThreatPose {
 type Shape = 'cone' | 'disc' | 'lane' | 'ring';
 
 const SHAPES: Record<Exclude<BossAttackType, 'none'>, Shape> = {
-  slash: 'cone', combo: 'cone', slam: 'disc', sweep: 'disc', charge: 'lane', surge: 'ring', tide: 'ring',
+  slash: 'cone', combo: 'cone', slam: 'disc', sweep: 'disc', charge: 'lane', surge: 'ring', tide: 'ring', shot: 'lane',
 };
 
 /** Couche 3D (World3D.addLayer) : zone de danger pendant l'anticipation. */
@@ -129,9 +129,13 @@ export class AttackTelegraph3D {
       mesh.rotation.y = yaw;
     }
     if (shape === 'lane') {
-      const length = BOSS_CONFIG.chargeSpeed * BOSS_ATTACKS.charge.attackDuration / 1000;
-      parts.edge.scale.set(size * 0.7, 1, length);
-      parts.fill.scale.set(size * 0.7, 1, length * Math.max(0.04, t));
+      // Charge : la course ; tir : la ligne de la balle (mince, très longue).
+      const shot = attack === 'shot';
+      const length = shot ? BOSS_ATTACKS.shot.range * size
+        : BOSS_CONFIG.chargeSpeed * BOSS_ATTACKS.charge.attackDuration / 1000;
+      const width = shot ? SHOT_WIDTH * 2 : size * 0.7;
+      parts.edge.scale.set(width, 1, length);
+      parts.fill.scale.set(width, 1, length * Math.max(0.04, t));
     } else {
       parts.edge.scale.set(radius, 1, radius);
       // Anneaux d'eau : la zone se remplit depuis l'extérieur (là où frappe la vague).

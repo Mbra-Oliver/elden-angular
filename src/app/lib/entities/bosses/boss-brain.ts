@@ -20,7 +20,9 @@ export const ATTACK_REACH: Record<Attack, { min: number; max: number }> = {
   sweep: { min: 0, max: S * 1.0 }, // moulinet de rayon 86
   surge: { min: 0, max: S * 3.1 }, // anneau jusqu'à ~260
   tide: { min: 0, max: S * 3.1 },
-  charge: { min: S * 1.5, max: S * 6.5 }, // il faut de l'élan, et rester dans l'arène
+  charge: { min: S * 1.5, max: S * 6.5 },
+  // Il tire de loin, mais pas à bout portant (il recule d'abord, voir mode retreat).
+  shot: { min: S * 1.3, max: S * 5.4 }, // il faut de l'élan, et rester dans l'arène
 };
 
 export function inReach(attack: Attack, distance: number) {

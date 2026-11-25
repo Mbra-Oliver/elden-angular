@@ -69,7 +69,9 @@ export class BossEntity {
   private renderer = inject(RendererService);
   private assets = inject(AssetLoaderService);
 
+  /** Combattant humain (rig humanoïde, cerveau de duelliste) : Kofi ou le porte-hache. */
   private duelist = false;
+  private kind: BossId = 'guardian';
   private lastAttack: BossAttackType = 'none';
   /** Attaque enchaînée après la récupération courante (combo de phase). */
   private queued: Attack | null = null;
@@ -103,15 +105,23 @@ export class BossEntity {
   }
 
   get id(): BossId {
-    return this.duelist ? 'duelist' : 'guardian';
+    return this.kind;
+  }
+
+  /** Vrai une fois l'animation de mort terminée (la suite du chapitre peut venir). */
+  get deathDone() {
+    const data = this.store.getData();
+    return data.state === 'dead' && data.stateTimer <= 0;
   }
 
   get lore() {
     return BOSS_LORE[this.id];
   }
 
-  configure(duelist: boolean) {
-    this.duelist = duelist;
+  /** true : Kofi (gué), false : le Gardien, ou un identifiant de boss. */
+  configure(boss: boolean | BossId) {
+    this.kind = typeof boss === 'string' ? boss : boss ? 'duelist' : 'guardian';
+    this.duelist = this.kind !== 'guardian';
     this.lastAttack = 'none';
     this.queued = null;
     this.attackCount = 0;
@@ -151,6 +161,8 @@ export class BossEntity {
     if (this.banner > 0) this.banner -= deltaTime * 1000;
     if (data.state === 'dead') {
       this.flinch = Math.max(0, this.flinch - deltaTime * 4.5);
+      // Horloge de l'animation de mort (progress() va de 0 à 1).
+      if (data.stateTimer > 0) this.store.update({ stateTimer: Math.max(0, data.stateTimer - deltaTime * 1000) });
       return;
     }
 
@@ -464,7 +476,8 @@ export class BossEntity {
 
     if (newHp <= 0) {
       this.queued = null;
-      this.enter('dead', 0, { vx: 0, vy: 0 });
+      this.pending = null;
+      this.enter('dead', BOSS_CONFIG.deathDuration, { vx: 0, vy: 0, currentAttack: 'none', comboStep: 0 });
       return;
     }
 
@@ -794,7 +807,8 @@ export class BossEntity {
       opening: intro !== null ? null
         : data.state === 'stunned' ? 'Étourdi'
         : data.state !== 'recover' ? null
-        : this.isExposed(data) ? 'Carapace ouverte' : 'Ouverture',
+        : this.isExposed(data) ? 'Carapace ouverte'
+        : data.currentAttack === 'shot' ? 'Il recharge' : 'Ouverture',
       banner: this.banner > 0 && data.phase > 1 && intro === null
         ? { phase: data.phase, title: phase.title, line: phase.line, duration: BOSS_CONFIG.shiftDuration + BANNER_TIME }
         : null,
@@ -846,6 +860,26 @@ export class BossEntity {
     const phase = this.store.getData().phase;
     const last = this.lastAttack;
     const turn = this.attackCount;
+
+    if (this.kind === 'champion') {
+      // Phase 1 : hache. Phase 2 : mousquet ensorcelé tiré de loin, hache de près.
+      // Phase 3 : sabre, tir en éventail, charge enchaînée sur un enchaînement.
+      if (phase === 3) {
+        if (opening) return { attack: 'combo' };
+        if (dist > 150 && last !== 'shot') return { attack: 'shot' };
+        if (dist > 105 && last !== 'charge') return { attack: 'charge', chain: 'combo' };
+        if (dist < 75 && last !== 'sweep') return { attack: 'sweep' };
+        return turn % 2 ? { attack: 'combo' } : { attack: 'slash', chain: 'slash' };
+      }
+      if (phase === 2) {
+        if (opening || (dist > 120 && last !== 'shot')) return { attack: 'shot' };
+        if (dist < 70) return last === 'sweep' ? { attack: 'slam' } : { attack: 'sweep' };
+        return turn % 3 === 0 ? { attack: 'charge', chain: 'slam' } : { attack: 'shot' };
+      }
+      if (opening) return { attack: 'slam' };
+      if (dist > 115 && last !== 'charge') return { attack: 'charge' };
+      return dist < 72 && last !== 'sweep' ? { attack: 'sweep' } : { attack: 'slam' };
+    }
 
     if (this.duelist) {
       if (phase === 3) {

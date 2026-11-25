@@ -35,13 +35,22 @@ describe('GameStateService', () => {
   };
 
   const finishPrologue = () => {
-    boss.update({ hp: 0, state: 'dead' });
+    boss.update({ hp: 0, state: 'dead', stateTimer: 0 }); // animation de mort déjà jouée
     game.update(1 / 60);
     expect(game.objective()).toBe(CROSSING);
     visit(CROSSING);
     game.talk();
     game.choose(game.dialogue()!.choices[0]);
   };
+
+  it('lets the boss death animation play before leaving the duel', () => {
+    TestBed.inject(BossEntity).takeDamage(9999, 0, 0, true);
+    expect(boss.getData().state).toBe('dead');
+    game.update(1 / 60);
+    expect(game.objective()).toBe(BATTLE);
+    for (let frame = 0; frame < 240; frame++) game.update(1 / 60);
+    expect(game.objective()).toBe(CROSSING);
+  });
 
   it('starts with the Akan battle, frames both fighters and returns to exploration at the crossing', () => {
     const camera = TestBed.inject(CameraService);
@@ -83,7 +92,7 @@ describe('GameStateService', () => {
     const stopped = terrain.move(x, y, x + radius + 55, y, 10);
     expect(stopped.x).toBeLessThanOrEqual(x + radius - 10);
     expect(stopped.x).toBeGreaterThan(x + radius - 20);
-    boss.update({ hp: 0, state: 'dead' });
+    boss.update({ hp: 0, state: 'dead', stateTimer: 0 }); // animation de mort déjà jouée
     game.update(1 / 60);
     const open = terrain.move(stopped.x, y, x + radius + 55, y, 10);
     expect(open.x).toBeGreaterThan(stopped.x + 10);
@@ -110,7 +119,7 @@ describe('GameStateService', () => {
     expect(game.objective()).toBe(CLEARING);
     expect(boss.getData().hp).toBe(225);
     const sealedEnding = game.ending();
-    boss.update({ hp: 0, state: 'dead' });
+    boss.update({ hp: 0, state: 'dead', stateTimer: 0 }); // animation de mort déjà jouée
     game.update(1 / 60);
     expect(game.currentScreen()).toBe('victory');
 

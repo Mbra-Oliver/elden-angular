@@ -1,4 +1,11 @@
 @if (hud(); as h) {
+  @if (playing() && h.defeated; as fallen) {
+    <!-- Hors du HUD masqué : l'annonce reste visible pendant le plan de caméra. -->
+    <section class="banner defeat" role="status">
+      <small>{{ fallen.label }}</small>
+      <strong>{{ fallen.name }}</strong>
+    </section>
+  }
   @if (playing()) {
     <div class="hud" [class.hidden]="h.cinematic">
       <section class="player" aria-label="Ama">

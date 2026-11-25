@@ -24,6 +24,8 @@ import { Destructibles3D } from './destructibles-3d';
 import { Souls3D } from './souls-3d';
 import { Slice3D } from '../slice/slice-3d';
 import { Prologue3D } from '../prologue/prologue-3d';
+import { ChampionGear } from './champion-rig-3d';
+import type { BossId } from '../constants/boss-lore';
 import type { WeaponId } from '../constants/equipment.config-constant';
 
 interface Point { x: number; y: number }
@@ -85,6 +87,9 @@ export class World3D {
   private readonly playerAnim: PlayerAnimator;
   private readonly martial: MartialArts3D;
   private readonly duelist: Fighter;
+  /** Habillage et armes du porte-hache du Denkyira sur le rig du duelliste. */
+  private readonly champion: ChampionGear;
+  private bossKind: BossId = 'duelist';
   private readonly guardian = new GuardianRig((color) => this.material(color));
   private readonly veille = this.guardian.root;
   private readonly bossFx = new BossFx();
@@ -204,6 +209,9 @@ export class World3D {
     this.martial = new MartialArts3D(this.player, spear!);
     this.duelist = this.makeFighter('#873f30', '#c2a176');
     this.duelist.gait = new BipedGait(DUELIST_GAIT);
+    // Le bâton de Kofi est la dernière pièce du bras droit (buildHumanoid).
+    this.champion = new ChampionGear(this.scene, this.duelist, this.duelist.arms[1].children.at(-1));
+    this.layerWarmables.push(...this.champion.warmables);
     this.makeVeille();
     this.mistTexture = this.makeMistTexture();
     this.mistMaterial = new T.SpriteMaterial({
@@ -523,8 +531,11 @@ export class World3D {
     if (enemy && duelist) {
       this.animate(this.duelist, enemy, dt);
       animateDuelist(this.duelist, enemy, now);
+      this.champion.update(this.bossKind === 'champion' ? enemy : null, now, dt);
       this.applyGlow(enemy);
       this.feel.applyFlinch(this.duelist.root, this.duelist.torso, enemy);
+    } else {
+      this.champion.update(null, now, dt);
     }
     if (enemy && !duelist) {
       this.guardian.update(enemy, now);
@@ -623,6 +634,17 @@ export class World3D {
       material.emissive.set(enemy.glow);
       material.emissiveIntensity = (enemy.glowIntensity ?? 0) * pulse;
     }
+  }
+
+  /** Boss incarné par le rig humain : Kofi ('duelist') ou le porte-hache ('champion'). */
+  setBossKind(kind: BossId) {
+    this.bossKind = kind;
+  }
+
+  /** Boss vaincu : la caméra recule et monte pendant qu'il tombe. */
+  playDefeatShot(from: Point, boss: Point) {
+    const look = new T.Vector3();
+    this.cine.play(SHOTS.defeat(boss, from, () => look.set(boss.x, 10, boss.y)));
   }
 
   /** Joue un plan de caméra sur spline ; la caméra de jeu reprend la main ensuite. */
@@ -820,6 +842,7 @@ export class World3D {
     this.feel.dispose();
     this.post.dispose();
     this.layers.forEach((layer) => layer.dispose());
+    this.champion.dispose();
     this.scene.traverse((object) => {
       if (object instanceof T.Mesh) {
         object.geometry.dispose();

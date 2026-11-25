@@ -8,6 +8,8 @@ import {
   BossAttackData,
   BossAttackType,
   SURGE_WIDTH,
+  SHOT_WIDTH,
+  shotAngles,
   surgeRadius,
   attackProgress,
   isBossHitActive,
@@ -37,7 +39,7 @@ import { FOYERS, SOULS, type Foyer, type FoyerId } from '../constants/souls-worl
 import { ruinBlocks } from '../constants/landscape';
 import { SLICE_DIALOGUES } from '../slice/slice-content';
 import { PrologueService } from '../prologue/prologue.service';
-import { PROLOGUE_CENTER, PROLOGUE_MOOD } from '../prologue/prologue-map';
+import { PROLOGUE_CENTER, PROLOGUE_DUEL, PROLOGUE_MOOD } from '../prologue/prologue-map';
 import { AttackData } from '../interfaces/AttackData';
 import { PlayerData } from '../interfaces/PlayerData';
 import { CollisionService } from './collision.service';
@@ -56,6 +58,8 @@ export interface CombatHud {
   maxStamina: number;
   boss: BossHud | null;
   counter: boolean;
+  /** Nom du boss qui vient de tomber (annonce pendant son animation de mort). */
+  defeated: { name: string; label: string } | null;
 }
 
 @Injectable({
@@ -104,7 +108,8 @@ export class GameStateService {
     view.addLayer((scene) => new L.Slice3D(scene, this.slice, this.slice.enemies, this.playerEntity));
     view.addLayer((scene) => new L.Souls3D(scene, () => this.souls.stash()));
     view.addLayer((scene) => new L.AttackTelegraph3D(scene, () => this.threatPose()));
-    view.addLayer((scene) => new L.Prologue3D(scene, () => this.chapter() === 'prologue', (id) => this.prologue.hasRead(id)));
+    view.addLayer((scene) => new L.Prologue3D(scene, () => this.chapter() === 'prologue', (id) => this.prologue.hasRead(id),
+      () => this.prologue.championSpot));
     view.cameraBlocker = (x, z, y) => this.prologue.blocksCamera(x, z, y);
   }
 
@@ -133,7 +138,19 @@ export class GameStateService {
   private readonly chapter = signal<'prologue' | 'battle' | 'crossing' | 'village'>('village');
   /** Prologue 1701 : le champ de bataille de Feyiase (lib/prologue). */
   readonly prologue = inject(PrologueService);
-  private readonly inCombat = computed(() => this.chapter() === 'battle' || this.decision() !== null);
+  /** Chapitre 1 : duel contre le porte-hache du Denkyira sur la crête. */
+  private readonly prologueDuel = signal(false);
+  private readonly inCombat = computed(() =>
+    this.chapter() === 'battle' || this.decision() !== null || this.prologueDuel());
+  /** Boss humain (rig de combattant) : Kofi au gué ou le porte-hache en 1701. */
+  private readonly humanBoss = computed(() => this.chapter() === 'battle' || this.prologueDuel());
+  /** Arène du combat en cours. */
+  private duelArena() {
+    return this.prologueDuel() ? PROLOGUE_DUEL : this.chapter() === 'battle' ? FORD_DUEL : SLUICE_DUEL;
+  }
+  /** Annonce « vaincu » affichée pendant l'animation de mort du boss. */
+  private readonly defeated = signal<{ name: string; label: string } | null>(null);
+  private defeatShot = false;
   readonly objective = computed(() => {
     if (this.chapter() === 'prologue') return this.prologue.goal();
     if (this.chapter() === 'battle') return BATTLE;
@@ -177,8 +194,11 @@ export class GameStateService {
   private rushNext: ('ford' | 'sluice')[] = [];
   private rushTransition = 0;
   readonly story = computed(() => {
+    if (this.prologueDuel()) {
+      return 'Chapitre 1, 1701. Badu Ofosu, le porte-hache du roi du Denkyira, tient encore la crête. Esquive la hache, guette la longue visée du mousquet : la fumée noire marque la ligne du tir. Frappe pendant qu’il recharge.';
+    }
     if (this.chapter() === 'prologue') {
-      return 'Prologue, 1701. La guerre de libération contre le Denkyira. Kwadwo Ofori, de l’arrière-garde, est resté en arrière. Suis le sentier laissé par la colonne jusqu’au camp, à l’est. Des soldats du Denkyira rôdent encore parmi les morts.';
+      return 'Chapitre 1, 1701. La guerre de libération contre le Denkyira. Kwadwo Ofori, de l’arrière-garde, est resté en arrière. Suis le sentier laissé par la colonne jusqu’au camp, à l’est. Des soldats du Denkyira rôdent encore parmi les morts.';
     }
     if (this.chapter() === 'battle') {
       return 'Acte I, 1824. Le Pra est en crue. Kwabena Ofori, de la lignée de Pokou, fait passer les familles de son clan qui fuient la guerre. Kofi Brempong, capitaine asafo, a l’ordre de ne laisser passer personne. Esquive ses charges et frappe quand il reprend son souffle.';
@@ -279,7 +299,7 @@ export class GameStateService {
     if (screen !== 'playing' && screen !== 'paused') return { zone: 'silence' };
     const paused = screen === 'paused';
     const chapter = this.chapter();
-    if (chapter === 'prologue') return { zone: 'depths', paused };
+    if (chapter === 'prologue') return { zone: this.prologueDuel() ? 'duel-ford' : 'depths', paused };
     if (chapter === 'battle') return { zone: 'duel-ford', paused };
     if (chapter === 'crossing') return { zone: 'river', paused };
     if (this.decision()) return { zone: 'duel-sluice', paused };
@@ -390,6 +410,8 @@ export class GameStateService {
 
   private enterPrologue() {
     this.chapter.set('prologue');
+    this.prologueDuel.set(false);
+    this.defeated.set(null);
     this.terrain.setArena(null);
     this.bossStore.reset();
     this.bossEntity.configure(false);
@@ -399,6 +421,36 @@ export class GameStateService {
     this.slice.hookLine.set(null);
     this.prologue.resume();
     this.prologue.equip();
+  }
+
+  /** Le héros arrive sur la crête : entrée du porte-hache, arène fermée. */
+  private startPrologueDuel() {
+    this.prologueDuel.set(true);
+    this.terrain.setArena(PROLOGUE_DUEL);
+    this.bossStore.reset();
+    this.bossEntity.configure('champion');
+    this.bossRewarded = false;
+    this.defeatShot = false;
+    this.counterTime.set(0);
+    this.bossStore.update({
+      x: PROLOGUE_DUEL.x + 95 - BOSS_CONFIG.size / 2, y: PROLOGUE_DUEL.y - 20 - BOSS_CONFIG.size / 2,
+      facingX: -1, facingY: 0, hp: 170, maxHp: 170, stateTimer: 1150,
+    });
+    // Le héros s'avance au centre pendant l'entrée : la caméra reste dans l'arène.
+    this.prologue.place({ x: PROLOGUE_DUEL.x - 70, y: PROLOGUE_DUEL.y + 10 }, 1, 0);
+    this.beginBossIntro();
+  }
+
+  /** Une fois par mort de boss : plan de caméra « vaincu » et annonce. */
+  private playDefeat() {
+    if (this.defeatShot) return;
+    this.defeatShot = true;
+    const boss = { x: this.bossEntity.centerX, y: this.bossEntity.centerY };
+    // Le Gardien n'est pas tué : le dernier nœud cède et il retourne au fleuve.
+    this.defeated.set({ name: this.bossEntity.lore.name,
+      label: this.bossEntity.id === 'guardian' ? 'Esprit libéré' : 'Adversaire vaincu' });
+    this.view3d?.playDefeatShot({ x: this.playerEntity.centerX, y: this.playerEntity.centerY }, boss);
+    this.gameloop.slowMotion(0.35, 700);
   }
 
   private prologueEnding = false;
@@ -545,7 +597,18 @@ export class GameStateService {
     const dyToPlayer = this.playerEntity.centerY - this.bossEntity.centerY;
     const distance = Math.hypot(dxToPlayer, dyToPlayer);
     const size = BOSS_CONFIG.size;
-    const hit = boss.currentAttack === 'surge'
+    // Mousquet ensorcelé : une balle (trois en phase 3) en ligne droite depuis le boss.
+    const shotHit = () => shotAngles(boss.phase).some((angle) => {
+      const c = Math.cos(angle);
+      const sn = Math.sin(angle);
+      const fx = boss.facingX * c - boss.facingY * sn;
+      const fy = boss.facingX * sn + boss.facingY * c;
+      const along = dxToPlayer * fx + dyToPlayer * fy;
+      const across = Math.abs(dxToPlayer * fy - dyToPlayer * fx);
+      return along > 0 && along < cfg.range * size && across < SHOT_WIDTH + 8;
+    });
+    const hit = boss.currentAttack === 'shot' ? shotHit()
+      : boss.currentAttack === 'surge'
       ? Math.abs(distance - surgeRadius(size, boss.stateTimer)) <= SURGE_WIDTH + 8
       : boss.currentAttack === 'tide'
       ? tideRadii(size, boss.stateTimer).some((radius) => Math.abs(distance - radius) <= SURGE_WIDTH + 8)
@@ -582,7 +645,7 @@ export class GameStateService {
       const ground = attack === 'slam' || attack === 'surge' || attack === 'tide';
       this.fx.hit({ x: this.playerEntity.centerX, y: this.playerEntity.centerY, height: 20,
         dirX: dx / len, dirY: dy / len, material: 'flesh', target: 'player',
-        style: ground ? 'slam' : attack === 'charge' ? 'thrust' : 'slash', strength: attack === 'slam' ? 1.8 : 1.5 });
+        style: ground ? 'slam' : attack === 'charge' || attack === 'shot' ? 'thrust' : 'slash', strength: attack === 'slam' ? 1.8 : 1.5 });
       this.playerHitThisFrame = true;
     }
   }
@@ -615,6 +678,7 @@ export class GameStateService {
       this.prologue.update(deltaTime);
       if (this.prologue.finished()) this.finishPrologue();
       if (this.prologue.blocking()) return;
+      if (!this.prologueDuel() && this.prologue.duelDue()) this.startPrologueDuel();
     }
     if (this.rushTransition > 0) {
       this.rushTransition -= deltaTime;
@@ -633,6 +697,10 @@ export class GameStateService {
 
     this.groundEffects.update(deltaTime);
     const inCombat = this.inCombat();
+    if (this.defeatShot && this.bossStore.getData().state !== 'dead') {
+      this.defeatShot = false;
+      this.defeated.set(null);
+    }
     this.destructibles.update(deltaTime, inCombat);
     const counter = this.counterTime();
     if (counter > 0) this.counterTime.set(Math.max(0, counter - deltaTime));
@@ -708,7 +776,7 @@ export class GameStateService {
     const x = this.playerEntity.centerX;
     const y = this.playerEntity.centerY;
     if (this.inCombat()) {
-      const shot = this.chapter() === 'battle' ? this.fordShot : this.sluiceShot;
+      const shot = this.humanBoss() ? this.fordShot : this.sluiceShot;
       this.camera.frameCombat(x, y, this.bossEntity.centerX, this.bossEntity.centerY, deltaTime, x - px, y - py, shot);
     } else {
       this.camera.follow(x, y, deltaTime);
@@ -753,7 +821,7 @@ export class GameStateService {
     const target = inCombat && boss.state !== 'dead'
       ? { x: this.bossEntity.centerX, y: this.bossEntity.centerY, radius: BOSS_CONFIG.size * 0.42 }
       : null;
-    const arena = inCombat ? this.chapter() === 'battle' ? FORD_DUEL : SLUICE_DUEL : null;
+    const arena = inCombat ? this.duelArena() : null;
     // Hors duel : les flèches visent les ennemis de la tranche et butent sur ses murs.
     const field = inCombat ? null : this.slice.arrowTargets();
     const hits = this.arrows.update(deltaTime, field ?? target,
@@ -842,7 +910,7 @@ export class GameStateService {
     const dx = x - this.bossEntity.centerX;
     const dy = y - this.bossEntity.centerY;
     const distance = Math.hypot(dx, dy);
-    const clearance = this.chapter() === 'battle' ? 18 : 36;
+    const clearance = this.humanBoss() ? 18 : 36;
     if (distance >= clearance) return;
     const player = this.playerStore.getData();
     const gap = clearance - distance;
@@ -979,6 +1047,10 @@ export class GameStateService {
     } else if (boss.state === 'dead') {
       this.counterTime.set(0);
       this.rewardBoss();
+      this.playDefeat();
+      // On laisse l'animation de mort se jouer avant la suite.
+      if (!this.bossEntity.deathDone) return;
+      this.defeated.set(null);
       if (this.mode() !== 'story') {
         // Boss Rush : court répit, puis boss suivant (seul le Gardien suit Kofi).
         if (this.rushTransition > 0) return;
@@ -988,6 +1060,15 @@ export class GameStateService {
           this.stopGame();
           this._currentScreen.set('victory');
         }
+      } else if (this.prologueDuel()) {
+        // Chapitre 1 : la crête est libre, le camp de l'arrière-garde est juste derrière.
+        this.prologueDuel.set(false);
+        this.prologue.championDown = true;
+        const fallen = this.bossStore.getData();
+        this.prologue.championSpot = { x: this.bossEntity.centerX, y: this.bossEntity.centerY,
+          yaw: Math.atan2(fallen.facingX, fallen.facingY) };
+        this.terrain.setArena(null);
+        this.slice.say('Le chemin du camp est libre.', 2600);
       } else if (this.chapter() === 'battle') {
         this.terrain.setArena(null);
         this.chapter.set('crossing');
@@ -1065,9 +1146,10 @@ export class GameStateService {
       enemyPose.state = 'shift';
       enemyPose.phase = (intro - 0.3) / 0.55;
     }
+    view.setBossKind(this.bossEntity.id);
     view.timeScale = this.gameloop.timeScale;
     view.render(this.environment.groundCanvas(), playerPose, enemyPose, duelist, combat ? null : this.objective(),
-      combat ? duelist ? FORD_DUEL : SLUICE_DUEL : undefined);
+      combat ? this.duelArena() : undefined);
     this.playerEntity.setCameraHeading(view.heading);
   }
 
@@ -1084,6 +1166,7 @@ export class GameStateService {
       hp: Math.round(player.hp), maxHp: player.maxHp,
       stamina: Math.round(player.stamina), maxStamina: player.maxStamina,
       boss: combat ? this.bossEntity.hud(this.introProgress) : null,
+      defeated: this.defeated(),
       counter: this.counterReady(),
     };
     const key = JSON.stringify(next);
@@ -1097,7 +1180,7 @@ export class GameStateService {
     if (!ctx) return;
 
     this.rendered.tickShake();
-    const duelist = this.chapter() === 'battle';
+    const duelist = this.humanBoss();
     const combat = this.inCombat();
     const view = this.view3d;
     this.rendered.clear(view ? null : '#04060a');
@@ -1113,7 +1196,7 @@ export class GameStateService {
       this.playerEntity.render(this.chapter() === 'village');
       this.arrows.render();
       if (combat && !bossBehind) this.bossEntity.render(duelist);
-      if (combat) this.fog.draw(ctx, duelist ? FORD_DUEL : SLUICE_DUEL);
+      if (combat) this.fog.draw(ctx, this.duelArena());
       this.rendered.endWorld();
 
       this.rendered.shadeCombatEdges((this.camera.zoom - 1) / 0.6);

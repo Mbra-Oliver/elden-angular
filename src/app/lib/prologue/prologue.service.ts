@@ -5,12 +5,13 @@ import { EquipmentStore } from '../entities/player/equipment.store';
 import { PlayerEntity } from '../entities/player/player.entity';
 import { PlayerStore } from '../entities/player/player.store';
 import {
-  CAMP, FOREST, INSPECT_RADIUS, PROLOGUE_AREA, REMAINS, SOLIDS, START, TRAIL,
+  CAMP, CREST_GATE_X, DUEL_TRIGGER, FOREST, INSPECT_RADIUS, PROLOGUE_DUEL, PROLOGUE_AREA, REMAINS, SOLIDS, START, TRAIL,
   inPrologue, walkable, type Remains, type RemainsId, type Spot,
 } from './prologue-map';
 
 /** Ouverture : défile seule (≈ 4,6 s par ligne), Espace pour passer. */
 export const PROLOGUE_INTRO: readonly string[] = [
+  'Chapitre 1 · La route de Feyiase',
   'Feyiase, 1701. Les Asante d’Osei Tutu se lèvent contre le Denkyira, à qui ils payaient tribut.',
   'Kwadwo Ofori marche dans l’arrière-garde, le kyidom. Sa sœur portera la lignée dont naîtra un jour Abla Pokou.',
   'Une balle de mousquet l’a jeté à terre au bord du sentier.',
@@ -19,10 +20,10 @@ export const PROLOGUE_INTRO: readonly string[] = [
 
 /** Fin : à l'arrivée au camp, avant le gué de 1824. */
 export const PROLOGUE_OUTRO: readonly string[] = [
-  'Kwadwo rejoint l’arrière-garde à la tombée du jour. Devant, le Denkyira est vaincu.',
+  'Le porte-hache du Denkyira est tombé sur la crête. Kwadwo rejoint l’arrière-garde à la tombée du jour.',
   'L’Asante ne paiera plus de tribut. Une confédération est née, et avec elle un royaume.',
   'Kwadwo garde sa lance. Ses neveux la porteront après lui, comme le veut la lignée des mères.',
-  'Cent vingt-trois ans plus tard, au bord du Pra…',
+  'Fin du chapitre 1.',
 ];
 
 /** Taille du carquois au réveil : quelques flèches seulement. [SUPPOSITION] */
@@ -53,6 +54,11 @@ export class PrologueService {
   /** Objectif affiché : un peu plus loin sur le sentier, puis le camp. */
   readonly goal = signal<{ x: number; y: number; name: string }>(this.goalFrom(START));
 
+  /** Le porte-hache du Denkyira est tombé : le chemin du camp est libre. */
+  championDown = false;
+  /** Où il est tombé (le corps reste sur la crête). */
+  championSpot: { x: number; y: number; yaw: number } | null = null;
+
   private readonly read = new Set<RemainsId>();
   private lineTime = 0;
   private readingUntil = 0;
@@ -63,6 +69,7 @@ export class PrologueService {
     this.terrain.addBlocker((x, y, radius) => {
       if (!inPrologue(x, y, 40)) return false;
       if (!walkable(x, y, radius)) return true;
+      if (!this.championDown && x + radius > CREST_GATE_X) return true;
       return SOLIDS.some((s) => (x - s.x) ** 2 + (y - s.y) ** 2 < (s.r + radius) ** 2);
     });
   }
@@ -70,6 +77,8 @@ export class PrologueService {
   /** Nouvelle partie : rien n'est lu, l'ouverture se lance. */
   begin() {
     this.read.clear();
+    this.championDown = false;
+    this.championSpot = null;
     this.finished.set(false);
     this.outro = false;
     this.reading.set(null);
@@ -137,7 +146,7 @@ export class PrologueService {
     if (goal.x !== this.goal().x || goal.y !== this.goal().y) this.goal.set(goal);
     const nearest = REMAINS.find((r) => Math.hypot(r.x - x, r.y - y) < INSPECT_RADIUS) ?? null;
     if (nearest !== this.prompt()) this.prompt.set(nearest);
-    if (!this.outro && Math.hypot(CAMP.x - x, CAMP.y - y) < CAMP.r && this.playerStore.getData().state !== 'dead') {
+    if (!this.outro && this.championDown && Math.hypot(CAMP.x - x, CAMP.y - y) < CAMP.r && this.playerStore.getData().state !== 'dead') {
       this.outro = true;
       this.prompt.set(null);
       this.reading.set(null);
@@ -145,6 +154,12 @@ export class PrologueService {
       this.line.set(0);
       this.lineTime = 0;
     }
+  }
+
+  /** Le héros est entré sur la crête alors que le porte-hache la tient encore. */
+  duelDue() {
+    if (this.championDown || this.blocking()) return false;
+    return Math.hypot(PROLOGUE_DUEL.x - this.player.centerX, PROLOGUE_DUEL.y - this.player.centerY) < DUEL_TRIGGER;
   }
 
   /** Touche F : examine le reste à portée. Renvoie vrai si pris. */

@@ -118,6 +118,9 @@
 }
 .banner p { margin: 4px 0 0; color: #e8d5ad; font-size: clamp(11px, 1.45cqi, 14px); }
 
+.banner.defeat { top: 40%; animation: banner 3.4s linear both; border-block-color: #e0b866cc; }
+.banner.defeat strong { font-size: clamp(20px, 3.4cqi, 34px); color: #f6e6c4; }
+
 @keyframes banner {
   0% { opacity: 0; }
   8% { opacity: 1; }

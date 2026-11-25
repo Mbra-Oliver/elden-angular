@@ -18,7 +18,7 @@ export type HitWeight = keyof typeof HIT_WEIGHT;
 
 export const POISE = {
   /** Réserve d'équilibre de chaque boss (en « dégâts bruts » encaissés). */
-  max: { duelist: 70, guardian: 110 } satisfies Record<BossId, number>,
+  max: { duelist: 70, guardian: 110, champion: 90 } satisfies Record<BossId, number>,
   /** Délai sans coup avant que l'équilibre se recharge (ms), puis vitesse (points/s). */
   regenDelay: 2200,
   regenRate: 28,
@@ -56,6 +56,7 @@ export const FOV = {
 /** Attaques imparables, annoncées par un éclat et un son aigu. */
 export const PERILOUS_ATTACKS: Record<BossId, readonly BossAttackType[]> = {
   duelist: ['charge', 'sweep'],
+  champion: ['shot', 'sweep'],
   guardian: ['tide', 'surge'],
 };
 

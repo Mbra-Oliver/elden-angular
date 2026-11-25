@@ -16,6 +16,8 @@ export const BOSS_CONFIG = {
   phase2RecorverMultiplier: 0.8,
   shiftDuration: 1700, // Transition de phase : invulnérable, repousse le joueur
   shiftPushRadius: 120,
+  /** Animation de mort (ms) avant la suite du chapitre. [SUPPOSITION] */
+  deathDuration: 3600,
   chainRecover: 0.3, // Fraction de récupération conservée quand une attaque est enchaînée
   chainWindup: 0.7, // Préparation raccourcie de l'attaque enchaînée
 };
@@ -52,6 +54,12 @@ export const BOSS_PHASE_PROFILE: Record<BossId, Record<1 | 2 | 3, BossPhaseProfi
     1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['slash', 'slam', 'charge'] },
     2: { timeScale: 1.1, emissive: '#5a1d08', emissiveIntensity: 0.6, attacks: ['slash', 'slam', 'charge', 'combo'] },
     3: { timeScale: 1.2, emissive: '#b8400f', emissiveIntensity: 0.85, attacks: ['slash', 'slam', 'charge', 'combo', 'sweep'] },
+  },
+  // Porte-hache du Denkyira : hache, puis mousquet ensorcelé, puis sabre. Lueur de braise sombre (poudre).
+  champion: {
+    1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['slam', 'sweep', 'charge'] },
+    2: { timeScale: 1.08, emissive: '#3a0d06', emissiveIntensity: 0.5, attacks: ['shot', 'slam', 'sweep', 'charge'] },
+    3: { timeScale: 1.18, emissive: '#7a1d0a', emissiveIntensity: 0.8, attacks: ['slash', 'combo', 'shot', 'charge', 'sweep'] },
   },
   guardian: {
     1: { timeScale: 1, emissive: '#27756c', emissiveIntensity: 1, attacks: ['surge', 'slam', 'charge'] },

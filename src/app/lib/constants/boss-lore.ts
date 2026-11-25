@@ -8,7 +8,7 @@
  * sont écrits de mémoire et doivent être relus par une personne akan.
  */
 
-export type BossId = 'duelist' | 'guardian';
+export type BossId = 'duelist' | 'guardian' | 'champion';
 export type BossPhase = 1 | 2 | 3;
 
 export interface BossPhaseLore {
@@ -33,6 +33,36 @@ export interface BossLore {
 }
 
 export const BOSS_LORE: Record<BossId, BossLore> = {
+  // Chapitre 1 (prologue, 1701) : personnage inventé ; le roi Ntim Gyakari reste hors champ.
+  champion: {
+    name: 'Badu Ofosu',
+    epithet: 'Porte-hache du roi du Denkyira',
+    chapter: 'Chapitre 1 · 1701 · La route de Feyiase',
+    lore: [
+      'Badu Ofosu porte la grande hache de guerre devant le roi Ntim Gyakari. Il a juré de tenir la crête tant que l’abri du roi n’aurait pas été vidé, et il la tient encore quand toute l’armée du Denkyira a fui.',
+      'Il porte le mousquet de traite des fusiliers du roi, mais il ne le charge pas comme eux : les prêtres du Denkyira ont mêlé à sa poudre la cendre d’un suman, un charme de guerre. Ses balles laissent une fumée noire qui brûle l’herbe, et les siens disent qu’elle ne manque jamais un homme qui fuit.',
+      'Quand il n’a plus le temps de recharger, il tire son sabre. Il ne recule pas : un porte-hache qui revient sans son roi n’a plus de nom.',
+    ],
+    phases: {
+      1: {
+        title: 'La grande hache',
+        line: '« Personne ne passe tant que l’abri du roi n’est pas vide. »',
+        design: 'Hache à deux mains : coup vertical lent (onde au sol), moulinet, charge épaule en avant. Longues fenêtres après la hache.',
+      },
+      2: {
+        title: 'La poudre des prêtres',
+        line: 'Il verse dans le canon une poudre noire mêlée de cendre. La fumée ne monte pas : elle rampe.',
+        design: 'Mousquet ensorcelé : longue visée (ligne au sol), tir en ligne qui brûle l’herbe. Hache entre deux tirs. Punir pendant le rechargement.',
+      },
+      3: {
+        title: 'Le sabre du serment',
+        line: '« Un porte-hache sans son roi n’a plus de nom. »',
+        design: 'Sabre rapide (coupe, enchaînement de trois), tir en éventail de trois balles, charge enchaînée. Récupérations courtes.',
+      },
+    },
+    thresholds: [0.66, 0.33],
+  },
+
   duelist: {
     name: 'Kofi Brempong',
     epithet: 'Capitaine asafo du gué',

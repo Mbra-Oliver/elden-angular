@@ -54,6 +54,9 @@ export function animateDuelist(f: FighterRig, pose: Actor3D, now: number) {
     torsoX: 0, torsoY: 0, torsoZ: 0, lift: 0, lunge: 0,
     armL: [-0.2, 0, 0.12], armR: [-0.55, 0, -0.14],
   };
+  // Basculement du corps entier (chute à la mort), dans le repère du regard.
+  f.root.rotation.order = 'YXZ';
+  f.root.rotation.x = 0;
 
   switch (pose.state) {
     case 'idle': {
@@ -111,6 +114,9 @@ export function animateDuelist(f: FighterRig, pose: Actor3D, now: number) {
       }
       break;
     }
+    case 'dead':
+      deathPose(f, j, k, now);
+      break;
     default:
       return;
   }
@@ -127,9 +133,41 @@ export function animateDuelist(f: FighterRig, pose: Actor3D, now: number) {
   }
 }
 
+/**
+ * Mort d'un combattant humain (k de 0 à 1 sur BOSS_CONFIG.deathDuration) :
+ * il titube en arrière, l'arme pèse, il tombe à genoux, reste un instant
+ * appuyé, puis bascule face contre terre et ne bouge plus.
+ */
+function deathPose(f: FighterRig, j: Joints, k: number, now: number) {
+  const stagger = easeOutCubic(clamp01(k / 0.16));
+  const kneel = easeInOut(clamp01((k - 0.14) / 0.24));
+  const fall = easeInCubic(clamp01((k - 0.58) / 0.2));
+  const settle = easeOutBack(clamp01((k - 0.78) / 0.12));
+  const tremble = k < 0.58 ? Math.sin(now * 0.07) * 0.03 * (1 - kneel * 0.5) : 0;
+  j.lunge = -6 * stagger;
+  j.torsoX = lerp(-0.4 * stagger, 0.55, kneel) + tremble;
+  j.torsoZ = 0.12 * stagger * (1 - kneel);
+  j.lift = -7.5 * kneel;
+  j.legL = -1.3 * kneel;
+  j.legR = 0.5 * kneel;
+  // Les bras tombent : l'arme traîne au sol.
+  j.armR = [lerp(-0.55, 0.15, stagger), 0, lerp(-0.14, -0.35, kneel)];
+  j.armL = [lerp(-0.2, 0.1, stagger), 0, lerp(0.12, 0.3, kneel)];
+  // Bascule vers l'avant (pivot aux pieds) ; léger rebond à l'arrivée.
+  f.root.rotation.x = 1.38 * fall - 0.05 * Math.sin(settle * Math.PI);
+  f.root.position.y += -3 * fall;
+}
+
 /** Anticipation : chaque attaque s'arme dans la direction opposée au coup. */
 function windupPose(j: Joints, attack: string, e: number) {
   switch (attack) {
+    case 'shot': // épaule le mousquet : les deux bras tendus, buste de profil
+      j.armR = [-0.55 - 1.0 * e, 0, -0.14 + 0.1 * e];
+      j.armL = [-0.2 - 1.3 * e, 0, 0.12 + 0.45 * e];
+      j.torsoY = -0.3 * e;
+      j.torsoX = -0.06 * e;
+      j.lift = -0.8 * e;
+      break;
     case 'slam': // arme levée à deux mains au-dessus de la tête, dos cambré
       j.armR = [-0.55 - 2.1 * e, 0, -0.14];
       j.armL = [-0.2 - 2.2 * e, 0, 0.12 - 0.3 * e];
@@ -169,6 +207,16 @@ function strikePose(j: Joints, attack: string, k: number, step: number, now: num
   const snap = easeOutExpo(clamp01(k / 0.3));
   const settle = easeInOut(clamp01((k - 0.3) / 0.7));
   switch (attack) {
+    case 'shot': { // recul du coup, puis il baisse l'arme pour recharger
+      const kick = Math.sin(clamp01(k / 0.35) * Math.PI) * (1 - settle);
+      j.armR = [-1.55 + 0.55 * kick + 0.3 * settle, 0, -0.04];
+      j.armL = [-1.5 + 0.5 * kick + 0.3 * settle, 0, 0.57];
+      j.torsoY = -0.3;
+      j.torsoX = -0.06 - 0.2 * kick;
+      j.lift = -0.8;
+      j.lunge = -3 * snap;
+      break;
+    }
     case 'slam': {
       const hit = easeInCubic(clamp01(k / 0.22));
       j.armR = [lerp(-2.65, -0.15, hit), 0, -0.14];
@@ -434,6 +482,23 @@ export class GuardianRig {
         }
         break;
       }
+      case 'dead': {
+        // Le dernier nœud cède : il se cabre, le cœur flambe, puis il
+        // s'affaisse et s'enfonce dans la vase pendant que la lueur s'éteint.
+        const rear = easeOutCubic(clamp01(k / 0.2));
+        const drop = easeInCubic(clamp01((k - 0.2) / 0.25));
+        const sink = easeInOut(clamp01((k - 0.45) / 0.55));
+        const tremble = Math.sin(now * 0.09) * 0.08 * (1 - sink);
+        pitch = lerp(-0.8 * rear, 0.3, drop) + tremble;
+        lift = lerp(7 * rear, -3, drop) - 24 * sink;
+        reach = lerp(-1.2 * rear, 0.6, drop);
+        spread = 0.8 * drop;
+        jaw = 0.9 * (1 - drop);
+        lid = -0.9 * rear * (1 - sink);
+        legSwing = 0;
+        glow = (1 + 5 * rear) * (1 - sink);
+        break;
+      }
     }
 
     // Orientation : suit le regard, sauf pendant le tourbillon qui ajoute un tour complet.
@@ -447,7 +512,7 @@ export class GuardianRig {
     })));
     const dt = this.lastNow ? Math.min(0.05, (now - this.lastNow) / 1000) : 0;
     this.lastNow = now;
-    const anchored = (pose.state === 'windup' && attack !== 'charge') || pose.state === 'shift' ||
+    const anchored = (pose.state === 'windup' && attack !== 'charge') || pose.state === 'shift' || pose.state === 'dead' ||
       (pose.state === 'recover' && !!pose.exposed);
     this.tripod.update(pose.x, pose.y, this.root.rotation.y, dt, anchored);
     // legSwing ne sert plus qu'à un frémissement des pattes (plus vif à la charge).
@@ -473,7 +538,7 @@ export class GuardianRig {
     this.shellMaterial.emissive.set(phase === 3 ? '#16303a' : '#000000');
     // Nœuds défaits : un par phase passée ; pendant la transition, le nœud qui cède tremble puis tombe.
     this.knots.forEach((knot, i) => {
-      const undone = i < phase - 1;
+      const undone = i < phase - 1 || (pose.state === 'dead' && k > 0.15);
       const loosening = pose.state === 'shift' && i === phase - 2;
       knot.visible = !undone || (loosening && k < 0.5);
       const loose = loosening ? k * 2 : 0;

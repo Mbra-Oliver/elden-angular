@@ -20,7 +20,7 @@ export interface Spot { x: number; y: number }
 export interface Circle extends Spot { r: number }
 
 /** Rectangle de la carte (bornes de déplacement quand on y est). */
-export const PROLOGUE_AREA = { x: 3400, y: 100, w: 2400, h: 1400 };
+export const PROLOGUE_AREA = { x: 3400, y: 100, w: 2900, h: 1400 };
 
 export function inPrologue(x: number, y: number, margin = 0) {
   const a = PROLOGUE_AREA;
@@ -38,7 +38,9 @@ export const TRAIL: readonly Spot[] = [
   { x: 4960, y: 570 },
   { x: 5200, y: 470 },
   { x: 5430, y: 390 },
-  { x: 5600, y: 340 },
+  { x: 5640, y: 330 },
+  { x: 5860, y: 290 },
+  { x: 6080, y: 250 },
 ];
 
 /** Demi-largeur praticable du sentier (herbes piétinées, sous-bois arraché). */
@@ -50,7 +52,9 @@ export const CLEARINGS: readonly (Circle & { id: string })[] = [
   { id: 'ruisseau', x: 4225, y: 885, r: 92 },
   { id: 'ligne', x: 4700, y: 700, r: 195 },
   { id: 'tambours', x: 5195, y: 475, r: 125 },
-  { id: 'camp', x: 5580, y: 350, r: 150 },
+  // La crête : le porte-hache du Denkyira y garde l'abri du roi (combat de boss).
+  { id: 'crete', x: 5640, y: 330, r: 262 },
+  { id: 'camp', x: 6080, y: 250, r: 140 },
 ];
 
 /** Ruisseau qui coupe le sentier (décor : on le passe à gué, il ne bloque pas). */
@@ -152,7 +156,7 @@ export const REMAINS: readonly Remains[] = [
 export const INSPECT_RADIUS = 34;
 
 /** Arrivée : le camp de l'arrière-garde, sur la crête. */
-export const CAMP: Spot & { r: number } = { x: 5600, y: 340, r: 70 };
+export const CAMP: Spot & { r: number } = { x: 6090, y: 250, r: 70 };
 
 /** Point de départ (sous le tronc couché, à côté de Kwasi). */
 export const START: Spot = { x: 3530, y: 1262 };
@@ -257,7 +261,7 @@ export const SCORCHES: readonly (PropSpot & { r: number })[] = [
 /** Fumées qui montent encore (feux de brousse allumés par la poudre). */
 export const SMOKES: readonly Spot[] = [
   { x: 3880, y: 1120 }, { x: 4560, y: 860 }, { x: 4760, y: 600 }, { x: 4900, y: 760 },
-  { x: 5310, y: 520 }, { x: 5700, y: 260 }, { x: 5520, y: 230 },
+  { x: 5310, y: 520 }, { x: 5760, y: 230 }, { x: 5520, y: 230 }, { x: 6230, y: 150 },
 ];
 /** Tonnelets de poudre éventrés (ligne de fusiliers). */
 export const KEGS: readonly PropSpot[] = near({ x: 4730, y: 670 }, 5, 70);
@@ -279,11 +283,20 @@ export const SOLIDS: readonly Circle[] = [
 
 /** Guerriers de l'arrière-garde au camp (silhouettes immobiles, autour des feux). */
 export const CAMP_WARRIORS: readonly PropSpot[] = [
-  { x: 5620, y: 300, yaw: 4.3, variant: 0 }, { x: 5650, y: 330, yaw: 4.0, variant: 1 },
-  { x: 5590, y: 280, yaw: 4.7, variant: 2 }, { x: 5680, y: 290, yaw: 4.2, variant: 3 },
-  { x: 5700, y: 360, yaw: 3.9, variant: 0 }, { x: 5640, y: 250, yaw: 4.6, variant: 1 },
+  { x: 6110, y: 210, yaw: 4.3, variant: 0 }, { x: 6140, y: 240, yaw: 4.0, variant: 1 },
+  { x: 6080, y: 190, yaw: 4.7, variant: 2 }, { x: 6170, y: 200, yaw: 4.2, variant: 3 },
+  { x: 6190, y: 270, yaw: 3.9, variant: 0 }, { x: 6130, y: 160, yaw: 4.6, variant: 1 },
 ];
-export const CAMP_FIRES: readonly Spot[] = [{ x: 5660, y: 310 }, { x: 5720, y: 250 }];
+export const CAMP_FIRES: readonly Spot[] = [{ x: 6150, y: 220 }, { x: 6210, y: 160 }];
+/** Parasol de chef (kyinie) au camp : repère visible de loin. */
+export const UMBRELLA: Spot = { x: 6180, y: 185 };
+
+/** Arène du porte-hache, sur la crête (rayon un peu sous la clairière). */
+export const PROLOGUE_DUEL = { x: 5640, y: 330, radius: 240 };
+/** Le combat se déclenche quand le héros entre de cette distance dans l'arène. */
+export const DUEL_TRIGGER = 215;
+/** Tant que le porte-hache tient la crête, le sentier du camp est barré au-delà. */
+export const CREST_GATE_X = 5895;
 
 /**
  * Ambiance : fin d'après-midi enfumée, poudre et feux de brousse sous la

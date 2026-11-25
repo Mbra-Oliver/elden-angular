@@ -4,7 +4,7 @@ import { sceneryRandom } from '../constants/scenery';
 import {
   BLADES, BODIES, BOWS, CAMP_FIRES, CAMP_WARRIORS, CLEARINGS, FALLEN_TRUNK, FOREST, KEGS, LITTER, MUSKETS,
   PROLOGUE_AREA, PROLOGUE_FOYERS, REMAINS, SCORCHES, SMOKES, SPEARS, STREAM, TRAIL, TRAIL_HALF,
-  type PropSpot, type RemainsId,
+  UMBRELLA, type PropSpot, type RemainsId,
 } from './prologue-map';
 
 /**
@@ -77,6 +77,8 @@ export class Prologue3D {
   private readonly glints: { sprite: T.Sprite; id: RemainsId }[] = [];
   private readonly vultures: { bird: T.Group; wings: T.Mesh[]; seed: number }[] = [];
   private embers?: T.Points<T.BufferGeometry, T.PointsMaterial>;
+  /** Corps du porte-hache, couché sur la crête après le combat. */
+  private readonly corpse: T.Group;
   private time = 0;
   private readonly tmp = new T.Object3D();
   private readonly random = sceneryRandom(91701);
@@ -85,6 +87,7 @@ export class Prologue3D {
     private readonly scene: T.Scene,
     private readonly active: () => boolean,
     private readonly hasRead: (id: RemainsId) => boolean,
+    private readonly championSpot: () => { x: number; y: number; yaw: number } | null = () => null,
   ) {
     const vertex = this.mat(new T.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }));
     this.buildGround();
@@ -96,6 +99,7 @@ export class Prologue3D {
     this.buildSmoke();
     this.buildGlints();
     this.buildVultures(vertex);
+    this.corpse = this.buildCorpse(vertex);
     this.root.visible = false;
     scene.add(this.root);
   }
@@ -106,6 +110,12 @@ export class Prologue3D {
     if (!on) return;
     this.time += dt;
     const t = this.time;
+    const spot = this.championSpot();
+    this.corpse.visible = !!spot;
+    if (spot) {
+      this.corpse.position.set(spot.x, 0, spot.y);
+      this.corpse.rotation.y = spot.yaw - Math.PI / 2;
+    }
     this.flames.forEach((flame, i) => {
       const f = 1 + Math.sin(t * 13 + i * 2.1) * 0.12 + Math.sin(t * 7.3 + i) * 0.08;
       flame.scale.set(1 / Math.sqrt(f), f, 1 / Math.sqrt(f));
@@ -469,6 +479,25 @@ export class Prologue3D {
     this.root.add(this.embers);
   }
 
+  /** Badu Ofosu tombé face contre terre, la hache à côté de lui. */
+  private buildCorpse(material: T.Material) {
+    const group = new T.Group();
+    const body = new T.Mesh(this.body(true, false), material);
+    body.scale.setScalar(1.15);
+    body.rotation.x = Math.PI;
+    body.position.y = 4.2;
+    const axe = new T.Mesh(merge([
+      [cyl(0.7, 0.85, 44, 6), C.wood, m4(0, 0.8, 0, 0, 0, Math.PI / 2)],
+      [box(2, 0.8, 16), C.iron, m4(21, 0.8, 4)],
+    ]), material);
+    axe.position.set(4, 0, 12);
+    axe.rotation.y = 0.5;
+    group.add(body, axe);
+    group.visible = false;
+    this.root.add(group);
+    return group;
+  }
+
   // ─── Tambours, plateau d'awalé ───────────────────────────────────────────
 
   private buildLandmarks(material: T.Material) {
@@ -567,7 +596,7 @@ export class Prologue3D {
       [cyl(24, 24, 5, 12, ), '#c39a3a', m4(0, 68, 0)],
       [ball(2.4, 0), '#c39a3a', m4(0, 81, 0)],
     ]), material);
-    umbrella.position.set(5690, 0, 275);
+    umbrella.position.set(UMBRELLA.x, 0, UMBRELLA.y);
     this.root.add(umbrella);
   }
 

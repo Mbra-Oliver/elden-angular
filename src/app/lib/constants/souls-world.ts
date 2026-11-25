@@ -44,7 +44,7 @@ export const SOULS = {
   interactRadius: 36,
   /** Distance pour ramasser les cauris perdus (contact). */
   stashRadius: 24,
-  bossReward: { duelist: 600, guardian: 1500 } as Record<string, number>,
+  bossReward: { duelist: 600, guardian: 1500, champion: 450 } as Record<string, number>,
 };
 
 /** Cauris trouvés dans chaque objet cassé. */
