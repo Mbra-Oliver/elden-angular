@@ -352,14 +352,16 @@ export class BossEntity {
     const len = distance || 1;
     const newTimer = data.stateTimer - deltaTime * 1000;
     // Le regard se verrouille juste avant le coup : c'est ce qui rend l'esquive lisible.
+    // Tir : verrouillage plus tôt pour afficher brièvement la trajectoire finale.
+    const lockAt = data.currentAttack === 'shot' ? 260 : 160;
     const locked = data.currentAttack === 'charge' || data.currentAttack === 'furrow' ||
-      data.currentAttack === 'leap' || newTimer < 160;
+      data.currentAttack === 'leap' || newTimer < lockAt;
     const facingX = locked ? data.facingX : dx / len;
     const facingY = locked ? data.facingY : dy / len;
 
     if (newTimer <= 0) {
       const cfg = this.attackConfig(data.currentAttack);
-      this.enter('attacking', cfg ? cfg.attackDuration : 200, { facingX, facingY, comboStep: 0 });
+      this.enter('attacking', cfg ? cfg.attackDuration : 200, { facingX: data.facingX, facingY: data.facingY, comboStep: 0 });
     } else {
       this.store.update({ stateTimer: newTimer, facingX, facingY });
     }

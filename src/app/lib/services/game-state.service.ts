@@ -736,15 +736,18 @@ export class GameStateService {
       if (!frame.hitbox && !events.includes('active-start')) return;
       const counterContact = player.attackType === 'counter' &&
         Math.hypot(this.playerEntity.centerX - this.bossEntity.centerX, this.playerEntity.centerY - this.bossEntity.centerY) < 67;
+      const darkJump = player.attackType === 'jump';
+      const jumpContact = darkJump &&
+        Math.hypot(this.playerEntity.centerX - this.bossEntity.centerX, this.playerEntity.centerY - this.bossEntity.centerY) <
+          PLAYER_CONFIG.size / 2 + attackData.range * PLAYER_CONFIG.size + BOSS_CONFIG.size * 0.42;
       // Case, tronc ou mur entre la lame et le boss : le coup rebondit au lieu de traverser.
-      if ((counterContact || this.playerStrikeReaches(player, attackData)) &&
+      if ((counterContact || jumpContact || this.playerStrikeReaches(player, attackData)) &&
         !this.obstruction.strikeBlocked(this.bossEntity.centerX, this.bossEntity.centerY, BOSS_CONFIG.size * 0.42)) {
         this.obstruction.noteHit();
         const knockbackX = player.facingX * 150;
         const knockbarY = player.facingY * 150;
 
         const backstab = this.isBackstab(boss);
-        const darkJump = player.attackType === 'jump';
         this.bossEntity.takeDamage(this.slice.meleeDamage(attackData.damage) * (darkJump ? 3 : 1), knockbackX * (darkJump ? 1.4 : 1), knockbarY * (darkJump ? 1.4 : 1), player.attackType === 'counter',
           { weight: player.attackType as HitWeight, backstab, poise: this.prologue.poiseBonus() });
         this.dilateOnCriticalHit(backstab ? 'backstab' : player.attackType === 'counter' ? 'counter' : null);
@@ -854,14 +857,20 @@ export class GameStateService {
     let bulletX = boss.facingX;
     let bulletY = boss.facingY;
     // Mousquet ensorcelé : une balle (trois en phase 3) en ligne droite depuis le boss.
-    const shotHit = () => shotAngles(boss.phase).some((angle) => {
+    // Ligne de tir depuis le canon ; le joueur derrière le boss n'est jamais touché.
+    const behindBoss = dxToPlayer * boss.facingX + dyToPlayer * boss.facingY < -size * 0.15;
+    const muzzleX = this.bossEntity.centerX + boss.facingX * size * 0.32;
+    const muzzleY = this.bossEntity.centerY + boss.facingY * size * 0.32;
+    const pxFromMuzzle = this.playerEntity.centerX - muzzleX;
+    const pyFromMuzzle = this.playerEntity.centerY - muzzleY;
+    const shotHit = () => !behindBoss && shotAngles(boss.phase).some((angle) => {
       const c = Math.cos(angle);
       const sn = Math.sin(angle);
       const fx = boss.facingX * c - boss.facingY * sn;
       const fy = boss.facingX * sn + boss.facingY * c;
-      const along = dxToPlayer * fx + dyToPlayer * fy;
-      const across = Math.abs(dxToPlayer * fy - dyToPlayer * fx);
-      if (along > 0 && along < cfg.range * size && across < SHOT_WIDTH + 8) {
+      const along = pxFromMuzzle * fx + pyFromMuzzle * fy;
+      const across = Math.abs(pxFromMuzzle * fy - pyFromMuzzle * fx);
+      if (along > 0 && along < cfg.range * size - size * 0.32 && across < SHOT_WIDTH) {
         bulletX = fx;
         bulletY = fy;
         return true;
@@ -1631,6 +1640,7 @@ export class GameStateService {
       sprint: this.playerEntity.sprinting,
       guarded: player.invicible && (player.state === 'idle' || player.state === 'moving'),
       dark: player.attackType === 'jump',
+      jumpPhase: player.attackType === 'jump' ? 1 - player.stateTimer / attack.duration : undefined,
       knockX: player.vx, knockY: player.vy,
       hpRatio: player.maxHp ? player.hp / player.maxHp : 1,
       ...this.playerEntity.equipmentPose(player),

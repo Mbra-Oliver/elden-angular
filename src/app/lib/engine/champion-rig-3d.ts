@@ -314,16 +314,16 @@ function partsOf(f: FighterRig) {
 function windup(j: Joints, attack: string, e: number, k: number, two: boolean) {
   switch (attack) {
     case 'shot': // il tire le mousquet du dos, puis l'épaule : buste de profil, joue sur la crosse
-      j.aim = easeInOut(clamp01((k - 0.4) / 0.4));
-      j.armR = [lerp(-0.55, -1.25, j.aim), lerp(0, 0.4, j.aim), lerp(-0.1, 0.2, j.aim)];
-      j.elbowR = lerp(-0.9, -1.15, j.aim);
-      j.armL = [lerp(j.armL[0], -1.2, j.aim), lerp(0, -0.2, j.aim), lerp(j.armL[2], -0.1, j.aim)];
-      j.torsoY = 0.5 * j.aim;
-      j.torsoX = 0.04;
-      j.lift = -2;
-      j.lunge = -3 * easeOutCubic(clamp01(k / 0.3));
-      j.legL = -0.35;
-      j.legR = 0.3;
+      j.aim = easeInOut(clamp01((k - 0.25) / 0.45));
+      j.armR = [lerp(-0.55, -1.2, j.aim), lerp(0, 0.18, j.aim), lerp(-0.1, 0.05, j.aim)];
+      j.elbowR = lerp(-0.9, -1.25, j.aim);
+      j.armL = [lerp(j.armL[0], -1.18, j.aim), lerp(0, -0.12, j.aim), lerp(j.armL[2], -0.06, j.aim)];
+      j.torsoY = 0.42 * j.aim;
+      j.torsoX = 0.03;
+      j.lift = -1.8;
+      j.lunge = -2.2 * easeOutCubic(clamp01(k / 0.3));
+      j.legL = -0.3;
+      j.legR = 0.28;
       break;
     case 'reap': // épaule droite ramenée loin en arrière, poids sur l'appui arrière
       j.torsoY = -1.0 * e;
@@ -423,17 +423,16 @@ function strike(j: Joints, attack: string, k: number, step: number, now: number,
   const settle = easeInOut(clamp01((k - 0.3) / 0.7));
   switch (attack) {
     case 'shot': { // départ du coup : l'épaule encaisse le recul
-      const kick = Math.sin(clamp01(k / 0.35) * Math.PI);
-      j.aim = 1;
-      j.armR = [-1.25 + 0.3 * kick, 0.4, 0.2];
-      j.elbowR = -1.15 - 0.25 * kick;
-      j.armL = [-1.2 + 0.25 * kick, -0.2, -0.1];
-      j.torsoY = 0.5;
-      j.torsoX = 0.04 - 0.22 * kick;
-      j.lift = -2;
-      j.lunge = -3 - 2.5 * kick;
-      j.legL = -0.35;
-      j.legR = 0.3;
+      const kick = Math.sin(clamp01(k / 0.22) * Math.PI);
+      const reload = easeInOut(clamp01((k - 0.45) / 0.55));
+      j.aim = 1 - reload * 0.15;
+      j.armR = [-1.2 + 0.25 * kick + reload * 0.35, 0.18 - reload * 0.08, 0.05];
+      j.elbowR = -1.25 - 0.22 * kick + reload * 0.3;
+      j.armL = [-1.18 + 0.22 * kick + reload * 0.35, -0.12 + reload * 0.06, -0.06];
+      j.torsoY = 0.42 - reload * 0.12;
+      j.torsoX = 0.03 - 0.16 * kick + reload * 0.06;
+      j.lift = -1.8;
+      j.lunge = -2.2 - 2.4 * kick;
       break;
     }
     case 'reap': { // deux balayages : droite→gauche puis gauche→droite, un pas à chacun

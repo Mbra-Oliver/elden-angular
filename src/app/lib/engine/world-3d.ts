@@ -98,6 +98,8 @@ export interface Actor3D extends Point {
   guarded?: boolean;
   /** Combo saut noir actif : aura sombre et dégâts magiques. */
   dark?: boolean;
+  /** Avancement global du saut noir (0 → 1), indépendant des segments windup/active/recover. */
+  jumpPhase?: number;
   /** Ennemi : sursaut du buste (1 → 0) et direction du coup reçu. */
   flinch?: number;
   flinchX?: number;

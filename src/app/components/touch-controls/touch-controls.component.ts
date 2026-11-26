@@ -4,14 +4,7 @@ import { GameStateService } from '../../lib/services/game-state.service';
 import { SliceService } from '../../lib/slice/slice.service';
 import { AsyncWorldService } from '../../lib/social/async-world.service';
 import { PrologueService } from '../../lib/prologue/prologue.service';
-import { SettingsService } from '../../lib/platform/settings.service';
-
-type Pad = 'dodge' | 'attack' | 'heavy' | 'drink' | 'switch' | 'guard';
-
-/** Chaque bouton tactile appuie sur la touche clavier équivalente. */
-const PAD_KEYS: Record<Pad, string> = {
-  dodge: 'ShiftLeft', attack: 'Space', heavy: 'KeyE', drink: 'KeyB', switch: 'KeyR', guard: 'KeyG',
-};
+import { SettingsService, TOUCH_ACTIONS, type TouchAction } from '../../lib/platform/settings.service';
 
 /** Un appui très bref est tenu au moins ce temps, pour qu'une image de jeu le voie. */
 const MIN_HOLD_MS = 70;
@@ -47,6 +40,11 @@ export class TouchControlsComponent implements OnDestroy {
   private readonly prologue = inject(PrologueService);
   readonly settings = inject(SettingsService);
   readonly uiScale = computed(() => this.settings.settings().touchScale);
+  readonly slots = computed(() => this.settings.settings().touchSlots.map((action, index) => ({
+    index,
+    action,
+    ...TOUCH_ACTIONS[action],
+  })));
   /**
    * L'unique invite à l'écran, par priorité : parler / examiner, objet ou
    * foyer, tache de sang, signe au sol ; le kaolin seulement en combat.
@@ -65,21 +63,11 @@ export class TouchControlsComponent implements OnDestroy {
     return null;
   });
 
-  /** Boutons de l'arc ; le changement d'arme se fait hors combat (pause tactique). */
-  readonly pads: readonly { id: Pad; label: string; glyph: string; combatOnly: boolean }[] = [
-    { id: 'dodge', label: 'Esquive (maintenir : sprint)', glyph: '↺', combatOnly: false },
-    { id: 'attack', label: 'Frappe légère', glyph: '⟋', combatOnly: false },
-    { id: 'heavy', label: 'Frappe lourde', glyph: '⟱', combatOnly: true },
-    { id: 'guard', label: 'Garder (maintenir)', glyph: '🛡', combatOnly: true },
-    { id: 'drink', label: 'Avaler la mixture', glyph: '🍃', combatOnly: true },
-    { id: 'switch', label: 'Changer d’arme', glyph: '⇄', combatOnly: false },
-  ];
-
   readonly stick = signal<{ x: number; y: number; dx: number; dy: number } | null>(null);
-  readonly held = signal<ReadonlySet<Pad>>(new Set());
+  readonly held = signal<ReadonlySet<number>>(new Set());
   private stickPointer: number | null = null;
-  private readonly pressedAt = new Map<Pad, number>();
-  private readonly releaseTimers = new Map<Pad, number>();
+  private readonly pressedAt = new Map<number, number>();
+  private readonly releaseTimers = new Map<number, number>();
 
   ngOnDestroy() {
     this.releaseTimers.forEach((timer) => clearTimeout(timer));
@@ -143,14 +131,20 @@ export class TouchControlsComponent implements OnDestroy {
 
   // ---------------------------------------------------------------- BOUTONS
 
-  padDown(pad: Pad, event: PointerEvent) {
+  padDown(slot: number, event: PointerEvent) {
+    const action = this.actionAt(slot);
+    if (!action) return;
     event.preventDefault();
     capture(event);
-    clearTimeout(this.releaseTimers.get(pad));
-    this.pressedAt.set(pad, performance.now());
-    this.input.setVirtual(PAD_KEYS[pad], true);
-    this.held.update((set) => new Set(set).add(pad));
+    clearTimeout(this.releaseTimers.get(slot));
+    this.pressedAt.set(slot, performance.now());
+    this.input.setVirtual(TOUCH_ACTIONS[action].key, true);
+    this.held.update((set) => new Set(set).add(slot));
     navigator.vibrate?.(8);
+  }
+
+  private actionAt(slot: number): TouchAction | undefined {
+    return this.settings.settings().touchSlots[slot];
   }
 
   /**
@@ -176,14 +170,16 @@ export class TouchControlsComponent implements OnDestroy {
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyF', key: 'f', bubbles: true }));
   }
 
-  padUp(pad: Pad) {
-    if (!this.pressedAt.has(pad)) return;
-    const elapsed = performance.now() - (this.pressedAt.get(pad) ?? 0);
-    this.pressedAt.delete(pad);
-    this.held.update((set) => { const next = new Set(set); next.delete(pad); return next; });
-    const release = () => this.input.setVirtual(PAD_KEYS[pad], false);
+  padUp(slot: number) {
+    const action = this.actionAt(slot);
+    if (!action || !this.pressedAt.has(slot)) return;
+    const elapsed = performance.now() - (this.pressedAt.get(slot) ?? 0);
+    this.pressedAt.delete(slot);
+    this.held.update((set) => { const next = new Set(set); next.delete(slot); return next; });
+    const key = TOUCH_ACTIONS[action].key;
+    const release = () => this.input.setVirtual(key, false);
     if (elapsed >= MIN_HOLD_MS) release();
-    else this.releaseTimers.set(pad, window.setTimeout(release, MIN_HOLD_MS - elapsed));
+    else this.releaseTimers.set(slot, window.setTimeout(release, MIN_HOLD_MS - elapsed));
   }
 }
 

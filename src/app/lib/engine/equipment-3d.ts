@@ -11,7 +11,7 @@ interface ArrowView {
   grounded: boolean;
 }
 
-interface Pose { state: string; phase: number }
+interface Pose { state: string; phase: number; dark?: boolean }
 
 export interface GearLook { batakari: boolean; tier: 0 | 1 | 2; ready: boolean }
 
@@ -595,7 +595,7 @@ export class Equipment3D {
       else if (pose.state === 'windup' && pose.phase > 0.8) trail = 0.4;
       else if (pose.state === 'recover' && pose.phase < 0.2) trail = 0.35;
     }
-    this.afenaTrail.push(this.afena, trail, this.look.ready ? [1, 0.68, 0.26] : [0.62, 0.9, 0.76]);
+    this.afenaTrail.push(this.afena, trail, pose.dark ? [0.58, 0.2, 1] : this.look.ready ? [1, 0.68, 0.26] : [0.62, 0.9, 0.76]);
   }
 
   private setBowDraw(draw: number) {

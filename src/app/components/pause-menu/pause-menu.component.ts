@@ -1,5 +1,7 @@
-import { AfterViewInit, Component, ElementRef, inject, output } from '@angular/core';
-import { GraphicsQuality, SettingsService } from '../../lib/platform/settings.service';
+import { AfterViewInit, Component, ElementRef, computed, inject, output } from '@angular/core';
+import {
+  DEFAULT_TOUCH_SLOTS, GraphicsQuality, SettingsService, TOUCH_ACTIONS, TOUCH_ACTION_IDS, type TouchAction,
+} from '../../lib/platform/settings.service';
 
 /** Pause en jeu (Échap, Start ou icône tactile) : reprendre, réglages, quitter. */
 @Component({
@@ -21,6 +23,19 @@ import { GraphicsQuality, SettingsService } from '../../lib/platform/settings.se
         <label>Caméra<input type="range" min="40" max="200" step="5" [value]="s.sensitivity * 100" (input)="set('sensitivity', $event)"></label>
         <label>Taille boutons<input type="range" min="80" max="160" step="5" [value]="s.touchScale * 100" (input)="setScale('touchScale', $event)"></label>
         <label>Taille HUD<input type="range" min="80" max="140" step="5" [value]="s.hudScale * 100" (input)="setScale('hudScale', $event)"></label>
+        <div class="touch-map">
+          <span class="map-title">Touches tactiles</span>
+          @for (slot of touchSlots(); track $index) {
+            <label><span>Bouton {{ $index + 1 }}</span>
+              <select [value]="slot" (change)="setTouchSlot($index, $event)">
+                @for (action of touchActions; track action) {
+                  <option [value]="action">{{ touchLabels[action] }}</option>
+                }
+              </select>
+            </label>
+          }
+          <button type="button" class="reset" (click)="resetTouchSlots()">Réinitialiser les touches</button>
+        </div>
         <label class="toggle"><input type="checkbox" [checked]="s.autoLock" (change)="settings.update({ autoLock: $any($event.target).checked })"> Verrouillage au premier coup reçu</label>
         <p class="hint">Garde : maintenir G / bouton bouclier</p>
       </div>
@@ -43,6 +58,11 @@ import { GraphicsQuality, SettingsService } from '../../lib/platform/settings.se
     .segmented button.on { border-color: #e5c17b; color: #e5c17b; background: #e5c17b18; }
     label { display: grid; grid-template-columns: 90px 1fr; align-items: center; font-size: 13px; color: #d9ccb2; }
     input { min-height: 36px; accent-color: #c9a25d; }
+    .touch-map { display: grid; gap: 5px; padding: 8px; border: 1px solid #e5c17b33; }
+    .map-title { color: #e5c17b; font-size: 12px; letter-spacing: .08em; }
+    .touch-map label { grid-template-columns: 78px 1fr; }
+    select, .reset { min-height: 34px; border: 1px solid #e5c17b44; background: #130e0b; color: #efe6d4; font: inherit; font-size: 12px; cursor: pointer; }
+    .reset { margin-top: 2px; background: none; }
     label.toggle { display: flex; gap: 10px; min-height: 44px; }
     label.toggle input { min-height: 0; width: 20px; height: 20px; }
     .hint { margin: 0; color: #cdbd9f; font-size: 12px; text-align: center; }
@@ -63,6 +83,9 @@ export class PauseMenuComponent implements AfterViewInit {
   readonly qualities: { id: GraphicsQuality; label: string }[] = [
     { id: 'low', label: 'Basse' }, { id: 'medium', label: 'Moyenne' }, { id: 'high', label: 'Haute' },
   ];
+  readonly touchActions = TOUCH_ACTION_IDS;
+  readonly touchLabels = Object.fromEntries(TOUCH_ACTION_IDS.map((id) => [id, TOUCH_ACTIONS[id].label])) as Record<TouchAction, string>;
+  readonly touchSlots = computed(() => this.settings.settings().touchSlots);
 
   ngAfterViewInit() {
     (this.host.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.link')?.focus();
@@ -80,5 +103,18 @@ export class PauseMenuComponent implements AfterViewInit {
 
   setScale(key: 'touchScale' | 'hudScale', event: Event) {
     this.settings.update({ [key]: Number((event.target as HTMLInputElement).value) / 100 });
+  }
+
+  setTouchSlot(index: number, event: Event) {
+    const action = (event.target as HTMLSelectElement).value as TouchAction;
+    const slots = [...this.settings.settings().touchSlots];
+    const previous = slots.indexOf(action);
+    if (previous >= 0) slots[previous] = slots[index];
+    slots[index] = action;
+    this.settings.update({ touchSlots: slots });
+  }
+
+  resetTouchSlots() {
+    this.settings.update({ touchSlots: [...DEFAULT_TOUCH_SLOTS] });
   }
 }

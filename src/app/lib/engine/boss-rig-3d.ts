@@ -165,11 +165,12 @@ function deathPose(f: FighterRig, j: Joints, k: number, now: number) {
 function windupPose(j: Joints, attack: string, e: number) {
   switch (attack) {
     case 'shot': // épaule le mousquet : les deux bras tendus, buste de profil
-      j.armR = [-0.55 - 1.0 * e, 0, -0.14 + 0.1 * e];
-      j.armL = [-0.2 - 1.3 * e, 0, 0.12 + 0.45 * e];
-      j.torsoY = -0.3 * e;
-      j.torsoX = -0.06 * e;
-      j.lift = -0.8 * e;
+      j.armR = [-1.35 - 0.25 * e, 0.08 * e, -0.04];
+      j.armL = [-1.45 - 0.2 * e, -0.08 * e, 0.45];
+      j.torsoY = -0.45 * e;
+      j.torsoX = -0.04 * e;
+      j.lift = -0.5 * e;
+      j.lunge = -1.5 * e;
       break;
     case 'slam': // arme levée à deux mains au-dessus de la tête, dos cambré
       j.armR = [-0.55 - 2.1 * e, 0, -0.14];
@@ -211,13 +212,14 @@ function strikePose(j: Joints, attack: string, k: number, step: number, now: num
   const settle = easeInOut(clamp01((k - 0.3) / 0.7));
   switch (attack) {
     case 'shot': { // recul du coup, puis il baisse l'arme pour recharger
-      const kick = Math.sin(clamp01(k / 0.35) * Math.PI) * (1 - settle);
-      j.armR = [-1.55 + 0.55 * kick + 0.3 * settle, 0, -0.04];
-      j.armL = [-1.5 + 0.5 * kick + 0.3 * settle, 0, 0.57];
-      j.torsoY = -0.3;
-      j.torsoX = -0.06 - 0.2 * kick;
-      j.lift = -0.8;
-      j.lunge = -3 * snap;
+      const recoil = Math.sin(clamp01(k / 0.18) * Math.PI);
+      const reload = easeInOut(clamp01((k - 0.45) / 0.55));
+      j.armR = [-1.6 + recoil * 0.35 + reload * 0.95, 0.08 - reload * 0.1, -0.04 + reload * 0.15];
+      j.armL = [-1.65 + recoil * 0.32 + reload * 1.0, -0.08 + reload * 0.1, 0.45 - reload * 0.2];
+      j.torsoY = -0.45 + reload * 0.15;
+      j.torsoX = -0.04 - recoil * 0.18 + reload * 0.1;
+      j.lift = -0.5;
+      j.lunge = -2.2 * recoil;
       break;
     }
     case 'slam': {

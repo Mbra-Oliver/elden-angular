@@ -40,7 +40,7 @@ const BUSY_WALK = { drinking: 0.35, aiming: 0.45, blocking: 0.45 };
 const GUARD_ANGLE = Math.cos((70 * Math.PI) / 180); // cône de garde ~140°
 const BLOCK_COST = 18; // endurance perdue par coup bloqué
 const BLOCK_KNOCK = 0.35; // recul gardé sur un coup bloqué
-const DARK_JUMP_ATTACK: AttackData = { damage: 42, staminaCost: 22, duration: 760, range: 2.2, windup: 260, active: 170, chain: 700 };
+const DARK_JUMP_ATTACK: AttackData = { damage: 42, staminaCost: 22, duration: 760, range: 2.2, windup: 320, active: 170, chain: 700 };
 
 @Injectable({
   providedIn: 'root',
@@ -467,8 +467,8 @@ export class PlayerEntity {
       state: 'attacking',
       attackType: 'jump',
       stateTimer: DARK_JUMP_ATTACK.duration,
-      vx: data.facingX * 360,
-      vy: data.facingY * 360,
+      vx: 0,
+      vy: 0,
       comboTimer: 0,
       comboCount: 0,
       stamina: Math.max(0, data.stamina - DARK_JUMP_ATTACK.staminaCost),
@@ -560,19 +560,28 @@ export class PlayerEntity {
 
     if (data.attackType === 'jump') {
       const newTimer = data.stateTimer - deltaTime * 1000;
-      const jumpProgress = 1 - newTimer / attack.duration;
-      const lunge = elapsed < attack.windup ? elapsed / attack.windup : Math.max(0, 1 - (elapsed - attack.windup) / (attack.active + 120));
-      this.store.update({
-        x: data.x + data.facingX * 320 * lunge * deltaTime,
-        y: data.y + data.facingY * 320 * lunge * deltaTime,
-        invicible: jumpProgress < 0.72,
-      });
+      const progress = 1 - Math.max(0, newTimer) / attack.duration;
+      const changes: Partial<PlayerData> = {
+        vx: 0,
+        vy: 0,
+        invicible: progress < 0.72,
+      };
+      // Saut sur place : on regarde la cible pendant la prise d'élan, mais le corps ne avance pas.
+      if (target && progress < 0.22) {
+        const dx = target.x - this.centerX;
+        const dy = target.y - this.centerY;
+        const distance = Math.hypot(dx, dy);
+        if (distance > 1) {
+          changes.facingX = dx / distance;
+          changes.facingY = dy / distance;
+        }
+      }
       if (newTimer <= 0) {
-        this.store.update({ state: 'idle', stateTimer: 0, vx: 0, vy: 0, attackType: 'none', invicible: this.hurtIFrames > 0, comboTimer: 0, comboCount: 0 });
+        this.store.update({ ...changes, state: 'idle', stateTimer: 0, attackType: 'none', invicible: this.hurtIFrames > 0, comboTimer: 0, comboCount: 0 });
         this.darkJump = false;
         if (this.store.getData().stamina <= 0) this.enterExhausted();
       } else {
-        this.store.update({ stateTimer: newTimer });
+        this.store.update({ ...changes, stateTimer: newTimer });
       }
       return;
     }

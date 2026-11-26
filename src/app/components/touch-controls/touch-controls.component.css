@@ -84,12 +84,12 @@
 .pad.held { transform: scale(0.92); background: #e5c17b44; }
 
 /* Esquive en bas, frappe légère au centre ; en combat : lourde au-dessus, mixture sur le côté, verrou en haut. */
-.pad.dodge { right: 0; bottom: 0; width: calc(62px * var(--touch-scale, 1)); height: calc(62px * var(--touch-scale, 1)); font-size: calc(22px * var(--touch-scale, 1)); }
-.pad.attack { right: calc(72px * var(--touch-scale, 1)); bottom: calc(20px * var(--touch-scale, 1)); width: calc(58px * var(--touch-scale, 1)); height: calc(58px * var(--touch-scale, 1)); font-size: calc(21px * var(--touch-scale, 1)); }
-.pad.heavy { right: calc(10px * var(--touch-scale, 1)); bottom: calc(74px * var(--touch-scale, 1)); }
-.pad.guard { right: calc(70px * var(--touch-scale, 1)); bottom: calc(90px * var(--touch-scale, 1)); width: calc(44px * var(--touch-scale, 1)); height: calc(44px * var(--touch-scale, 1)); font-size: calc(17px * var(--touch-scale, 1)); }
-.pad.drink { right: calc(132px * var(--touch-scale, 1)); bottom: calc(80px * var(--touch-scale, 1)); width: calc(42px * var(--touch-scale, 1)); height: calc(42px * var(--touch-scale, 1)); font-size: calc(16px * var(--touch-scale, 1)); }
-.pad.switch { right: calc(140px * var(--touch-scale, 1)); bottom: calc(8px * var(--touch-scale, 1)); width: calc(38px * var(--touch-scale, 1)); height: calc(38px * var(--touch-scale, 1)); font-size: calc(14px * var(--touch-scale, 1)); opacity: 0.7; }
+.pad.slot1 { right: 0; bottom: 0; width: calc(62px * var(--touch-scale, 1)); height: calc(62px * var(--touch-scale, 1)); font-size: calc(22px * var(--touch-scale, 1)); }
+.pad.slot2 { right: calc(72px * var(--touch-scale, 1)); bottom: calc(20px * var(--touch-scale, 1)); width: calc(58px * var(--touch-scale, 1)); height: calc(58px * var(--touch-scale, 1)); font-size: calc(21px * var(--touch-scale, 1)); }
+.pad.slot3 { right: calc(10px * var(--touch-scale, 1)); bottom: calc(74px * var(--touch-scale, 1)); }
+.pad.slot4 { right: calc(70px * var(--touch-scale, 1)); bottom: calc(90px * var(--touch-scale, 1)); width: calc(44px * var(--touch-scale, 1)); height: calc(44px * var(--touch-scale, 1)); font-size: calc(17px * var(--touch-scale, 1)); }
+.pad.slot5 { right: calc(132px * var(--touch-scale, 1)); bottom: calc(80px * var(--touch-scale, 1)); width: calc(42px * var(--touch-scale, 1)); height: calc(42px * var(--touch-scale, 1)); font-size: calc(16px * var(--touch-scale, 1)); }
+.pad.slot6 { right: calc(140px * var(--touch-scale, 1)); bottom: calc(8px * var(--touch-scale, 1)); width: calc(38px * var(--touch-scale, 1)); height: calc(38px * var(--touch-scale, 1)); font-size: calc(14px * var(--touch-scale, 1)); opacity: 0.7; }
 .pad.lock { right: calc(68px * var(--touch-scale, 1)); bottom: calc(136px * var(--touch-scale, 1)); width: calc(42px * var(--touch-scale, 1)); height: calc(42px * var(--touch-scale, 1)); font-size: calc(19px * var(--touch-scale, 1)); }
 
 @keyframes appear { from { opacity: 0; transform: scale(0.85); } }

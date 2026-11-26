@@ -3,6 +3,19 @@ import { AudioEngineService } from '../audio/audio-engine.service';
 
 export type GraphicsQuality = 'low' | 'medium' | 'high';
 export type CameraMode = 'wide' | 'shoulder';
+export type TouchAction = 'dodge' | 'attack' | 'heavy' | 'guard' | 'drink' | 'switch';
+
+export const TOUCH_ACTIONS: Record<TouchAction, { label: string; glyph: string; key: string; combatOnly: boolean }> = {
+  dodge: { label: 'Esquive / sprint', glyph: '↺', key: 'ShiftLeft', combatOnly: false },
+  attack: { label: 'Frappe légère', glyph: '⟋', key: 'Space', combatOnly: false },
+  heavy: { label: 'Frappe lourde / saut', glyph: '⟱', key: 'KeyE', combatOnly: true },
+  guard: { label: 'Garder (maintenir)', glyph: '🛡', key: 'KeyG', combatOnly: true },
+  drink: { label: 'Avaler la mixture', glyph: '🍃', key: 'KeyB', combatOnly: true },
+  switch: { label: 'Changer d’arme', glyph: '⇄', key: 'KeyR', combatOnly: false },
+};
+
+export const TOUCH_ACTION_IDS = Object.keys(TOUCH_ACTIONS) as TouchAction[];
+export const DEFAULT_TOUCH_SLOTS: TouchAction[] = ['dodge', 'attack', 'heavy', 'guard', 'drink', 'switch'];
 
 export interface GameSettings {
   quality: GraphicsQuality;
@@ -19,6 +32,7 @@ export interface GameSettings {
   touchScale: number;
   /** Taille du HUD (0.8 à 1.4). */
   hudScale: number;
+  touchSlots: TouchAction[];
   /** Le joueur a explicitement choisi son mode caméra. */
   cameraChosen?: boolean;
 }
@@ -38,6 +52,7 @@ const DEFAULTS: GameSettings = {
   cameraMode: 'shoulder',
   touchScale: 1,
   hudScale: 1,
+  touchSlots: [...DEFAULT_TOUCH_SLOTS],
 };
 
 /** Échelle de rendu par qualité, appliquée sous le plafond de densité (display.ts). */
@@ -81,10 +96,19 @@ function load(): GameSettings {
     if (raw?.music === 0.55) delete raw.music;
     // Caméra : l'ancien défaut « large » enregistré sans choix du joueur passe à l'épaule.
     if (raw && !raw.cameraChosen) delete raw.cameraMode;
-    return { ...DEFAULTS, ...(raw ?? {}) };
+    const settings: GameSettings = { ...DEFAULTS, ...(raw ?? {}) };
+    settings.touchSlots = normalizeTouchSlots(raw?.touchSlots);
+    return settings;
   } catch {
     return { ...DEFAULTS };
   }
+}
+
+function normalizeTouchSlots(value: unknown): TouchAction[] {
+  if (!Array.isArray(value) || value.length !== DEFAULT_TOUCH_SLOTS.length) return [...DEFAULT_TOUCH_SLOTS];
+  if (value.some((action) => !TOUCH_ACTION_IDS.includes(action as TouchAction))) return [...DEFAULT_TOUCH_SLOTS];
+  if (new Set(value).size !== value.length) return [...DEFAULT_TOUCH_SLOTS];
+  return value as TouchAction[];
 }
 
 function save(settings: GameSettings) {

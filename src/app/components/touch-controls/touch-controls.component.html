@@ -11,12 +11,12 @@
 
 <!-- Hors combat : frappe et esquive seulement. En combat : lourde, mixture et verrou s'ajoutent. -->
 <div class="arc" [class.combat]="combat()" [style.--touch-scale]="uiScale()" role="group" aria-label="Actions">
-  @for (pad of pads; track pad.id) {
+  @for (pad of slots(); track pad.index) {
     @if (combat() || !pad.combatOnly) {
-      <button type="button" [class]="'pad ' + pad.id" [class.held]="held().has(pad.id)"
+      <button type="button" [class]="'pad slot' + (pad.index + 1)" [class.held]="held().has(pad.index)"
         [attr.aria-label]="pad.label"
-        (pointerdown)="padDown(pad.id, $event)" (pointerup)="padUp(pad.id)"
-        (pointercancel)="padUp(pad.id)" (lostpointercapture)="padUp(pad.id)"
+        (pointerdown)="padDown(pad.index, $event)" (pointerup)="padUp(pad.index)"
+        (pointercancel)="padUp(pad.index)" (lostpointercapture)="padUp(pad.index)"
         (contextmenu)="$event.preventDefault()">
         <span aria-hidden="true">{{ pad.glyph }}</span>
       </button>

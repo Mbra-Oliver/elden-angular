@@ -53,6 +53,33 @@ const GUARD: Pose = {
   lLx: -0.3, lLz: -0.08, lRx: 0.24, lRz: 0.08,
 };
 
+const JUMP_CROUCH: Pose = {
+  rX: 0.5, tY: -2.2, tF: -1.5,
+  aRx: -0.25, aRz: 0.08, wr: 0.55,
+  aLx: -0.8, aLz: -0.5, lLx: -1, lRx: 1.2,
+};
+const JUMP_RISE: Pose = {
+  rX: -0.3, tY: 1.1, tF: -2.2,
+  aRx: -3.05, aRz: -0.12, wr: -0.35,
+  aLx: -2.35, aLz: -0.4, lLx: -1.25, lRx: 1.35,
+};
+const JUMP_APEX: Pose = {
+  rX: -0.16, tY: 0.3,
+  aRx: -3.2, aRz: 0.05, wr: -0.5,
+  aLx: -2.5, aLz: -0.2, lLx: -1.4, lRx: 1.5,
+};
+const JUMP_SLAM: Pose = {
+  rX: 1, tY: -2, tF: 6,
+  aRx: 0.35, aRz: 0.12, wr: 1.45,
+  aLx: 0.35, aLz: -0.75, lLx: -0.85, lRx: 0.95,
+};
+const JUMP_RECOVER: Pose = {
+  rX: 0.72, tY: -2.6, tF: 4.4,
+  aRx: -0.05, aRz: 0.1, wr: 1.2,
+  aLx: -0.15, aLz: -0.55, lLx: -1.05, lRx: 1.1,
+};
+const DARK_TRAIL_TINT: [number, number, number] = [0.58, 0.2, 1];
+
 /** Poses clés : a = anticipation (fin du windup), s = fin de l'impact. */
 const ATTACKS: Record<string, { a: Pose; s: Pose; tint: [number, number, number] }> = {
   // 1. Fauche horizontale : le buste s'arme côté lance puis balaie en travers.
@@ -98,9 +125,9 @@ const ATTACKS: Record<string, { a: Pose; s: Pose; tint: [number, number, number]
 /** Raideur (ω) et amortissement (ζ) des ressorts selon l'état. */
 function springFor(state: string, attack: string): [number, number] {
   switch (state) {
-    case 'windup': return attack === 'heavy' ? [15, 1] : [21, 1];
-    case 'attacking': return [46, 0.72];
-    case 'recover': return attack === 'heavy' ? [10, 0.68] : attack === 'light' ? [13, 0.66] : [11, 0.66];
+    case 'windup': return attack === 'heavy' || attack === 'jump' ? [15, 1] : [21, 1];
+    case 'attacking': return attack === 'jump' ? [38, 0.62] : [46, 0.72];
+    case 'recover': return attack === 'heavy' || attack === 'jump' ? [10, 0.68] : attack === 'light' ? [13, 0.66] : [11, 0.66];
     case 'rolling': return [30, 0.9];
     case 'hurt': return [22, 0.48];
     case 'exhausted': return [6, 1];
@@ -375,30 +402,68 @@ export class PlayerAnimator {
     let ground = 1;
     const key = attack === 'light' ? `light${Math.min(step, 2)}` : attack;
     const moves = ATTACKS[key];
-    const isAttack = (state === 'windup' || state === 'attacking' || state === 'recover') && !!moves;
+    const isAttack = (state === 'windup' || state === 'attacking' || state === 'recover') && (attack === 'jump' || !!moves);
 
     if (isAttack) {
-      const { a, s } = moves;
-      if (state === 'windup') {
-        const coil = easeOutCubic(clamp01(k / 0.85));
-        this.blend(GUARD, a, coil);
-        // Tient l'anticipation en tremblant légèrement (coup lourd surtout).
-        if (k > 0.75) this.target[I.rX] += Math.sin(now * 0.09) * (attack === 'heavy' ? 0.03 : 0.012);
-      } else if (state === 'attacking') {
-        this.blend(a, s, easeOutExpo(k));
-        if (attack === 'counter') spin = -TAU * easeInOut(k);
-      } else {
-        // Suivi : le mouvement continue un peu au-delà de l'impact, se tient,
-        // puis le corps revient en garde avec le poids de l'arme.
-        const carry = 0.12 * Math.sin(Math.PI * clamp01(k / 0.4));
-        for (let i = 0; i < N; i++) {
-          const c = CHANNELS[i];
-          const sv = s[c] ?? GUARD[c] ?? 0;
-          const av = a[c] ?? GUARD[c] ?? 0;
-          const follow = sv + (sv - av) * carry;
-          this.target[i] = follow + ((base[c] ?? 0) - follow) * smooth(0.3, 1, k);
+      if (attack === 'jump') {
+        const j = clamp01(pose.jumpPhase ?? k);
+        const air = smooth(0.08, 0.24, j) * (1 - smooth(0.68, 0.84, j));
+        const slam = easeInCubic(smooth(0.42, 0.58, j)) * (1 - smooth(0.76, 0.92, j));
+        const land = Math.sin(Math.PI * smooth(0.74, 1, j));
+        let from: Pose = GUARD;
+        let to: Pose = JUMP_CROUCH;
+        let amount = 0;
+        if (j < 0.12) {
+          amount = smooth(0, 0.12, j);
+        } else if (j < 0.34) {
+          from = JUMP_CROUCH;
+          to = JUMP_RISE;
+          amount = smooth(0.12, 0.34, j);
+        } else if (j < 0.44) {
+          from = JUMP_RISE;
+          to = JUMP_APEX;
+          amount = smooth(0.34, 0.44, j);
+        } else if (j < 0.6) {
+          from = JUMP_APEX;
+          to = JUMP_SLAM;
+          amount = easeInCubic(smooth(0.44, 0.6, j));
+        } else if (j < 0.78) {
+          from = JUMP_SLAM;
+          to = JUMP_RECOVER;
+          amount = smooth(0.6, 0.78, j);
+        } else {
+          from = JUMP_RECOVER;
+          to = GUARD;
+          amount = smooth(0.78, 1, j);
         }
-        if (attack === 'counter') spin = -TAU;
+        this.blend(from, to, amount);
+        lift = Math.sin(Math.PI * smooth(0.04, 0.82, j)) * 26 + land * 1.8;
+        ground = 1 - air;
+        pitch = -0.3 * air + 0.72 * slam - 0.12 * land;
+        this.target[I.tY] += air * 0.6 + land * 0.4;
+      } else {
+        const { a, s } = moves ?? ATTACKS['heavy'];
+        if (state === 'windup') {
+          const coil = easeOutCubic(clamp01(k / 0.85));
+          this.blend(GUARD, a, coil);
+          // Tient l'anticipation en tremblant légèrement (coup lourd surtout).
+          if (k > 0.75) this.target[I.rX] += Math.sin(now * 0.09) * (attack === 'heavy' ? 0.03 : 0.012);
+        } else if (state === 'attacking') {
+          this.blend(a, s, easeOutExpo(k));
+          if (attack === 'counter') spin = -TAU * easeInOut(k);
+        } else {
+          // Suivi : le mouvement continue un peu au-delà de l'impact, se tient,
+          // puis le corps revient en garde avec le poids de l'arme.
+          const carry = 0.12 * Math.sin(Math.PI * clamp01(k / 0.4));
+          for (let i = 0; i < N; i++) {
+            const c = CHANNELS[i];
+            const sv = s[c] ?? GUARD[c] ?? 0;
+            const av = a[c] ?? GUARD[c] ?? 0;
+            const follow = sv + (sv - av) * carry;
+            this.target[i] = follow + ((base[c] ?? 0) - follow) * smooth(0.3, 1, k);
+          }
+          if (attack === 'counter') spin = -TAU;
+        }
       }
     } else {
       switch (state) {
@@ -529,11 +594,13 @@ export class PlayerAnimator {
     this.apply(pose, spin, pitch, lift, ground, frozen, state, now);
 
     // --- Traînée de la lance.
-    const swing = isAttack && (state === 'attacking' || (state === 'windup' && k > 0.8 && attack !== 'heavy') ||
-      (state === 'recover' && k < 0.18));
+    const jumpProgress = pose.jumpPhase ?? k;
+    const swing = isAttack && (attack === 'jump'
+      ? jumpProgress > 0.34 && jumpProgress < 0.78
+      : state === 'attacking' || (state === 'windup' && k > 0.8 && attack !== 'heavy') || (state === 'recover' && k < 0.18));
     if (!frozen) {
       this.rig.root.updateMatrixWorld(true);
-      this.trail.push(this.spear, swing && this.spear.visible ? 1 : 0, SPEAR_TRAIL_TINT);
+      this.trail.push(this.spear, swing && this.spear.visible ? 1 : 0, pose.dark ? DARK_TRAIL_TINT : SPEAR_TRAIL_TINT);
     }
   }
 
