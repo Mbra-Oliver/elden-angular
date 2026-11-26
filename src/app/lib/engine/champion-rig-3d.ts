@@ -5,6 +5,7 @@ import type { FighterRig } from './boss-rig-3d';
 import { dressHuman } from './human-body';
 import { baduOutfit } from './human-outfits';
 import type { Actor3D } from './world-3d';
+import { buildMusket, WEAPON_MATERIALS } from './equipment-3d';
 
 /**
  * Badu Ofosu, porte-hache de Ntim Gyakari (chapitre 1, 1701).
@@ -455,7 +456,6 @@ export class ChampionGear {
       this.mat(new T.MeshStandardMaterial({ color, roughness: 0.9, flatShading: true, ...extra }));
     const wood = flat('#3b2618');
     const iron = flat('#3f3e3a', { roughness: 0.55, metalness: 0.35 });
-    const brass = flat('#8e6d34', { roughness: 0.55, metalness: 0.2 });
     const leather = flat('#2e1d13');
     const gold = flat('#a88a3e', { roughness: 0.45, metalness: 0.45, emissive: '#2a1a05' });
     this.skin = flat('#4e2e22');
@@ -476,25 +476,53 @@ export class ChampionGear {
       arm.add(hand);
     }
 
-    // Hache de guerre akan : manche sombre cerclé de laiton, large fer courbe à double tranchant.
-    add(this.axe, new T.CylinderGeometry(0.75, 0.9, 46, 6), wood, 0, 15, 0);
-    for (const y of [4, 12, 22, 30]) add(this.axe, new T.CylinderGeometry(0.95, 0.95, 1, 6), brass, 0, y, 0);
-    const blade = new T.Shape();
-    blade.moveTo(0, -4);
-    blade.quadraticCurveTo(10, -9, 12, 0);
-    blade.quadraticCurveTo(10, 9, 0, 4);
-    blade.lineTo(0, -4);
-    const fer = new T.ExtrudeGeometry(blade, { depth: 0.8, bevelEnabled: false });
-    add(this.axe, fer, iron, 0.6, 34, -0.4, 0, 0, Math.PI / 2);
-    add(this.axe, fer, iron, -0.6, 34, 0.4, 0, Math.PI, Math.PI / 2).scale.setScalar(0.7);
+    add(this.axe, new T.CylinderGeometry(0.72, 1.05, 46, 7), WEAPON_MATERIALS.wood, 0, 15, 0);
+    for (const y of [-7, -2, 3, 24]) {
+      add(this.axe, new T.CylinderGeometry(1.05, 1.05, 1.1, 7), WEAPON_MATERIALS.leather, 0, y, 0);
+    }
+    for (const y of [14, 30]) {
+      add(this.axe, new T.CylinderGeometry(1.02, 1.02, 0.9, 7), WEAPON_MATERIALS.brass, 0, y, 0);
+    }
+    const bit = new T.Shape();
+    bit.moveTo(1.4, -5.5);
+    bit.quadraticCurveTo(9, -8.4, 16.5, -3.2);
+    bit.quadraticCurveTo(19, 0, 16.5, 3.2);
+    bit.quadraticCurveTo(9, 8.4, 1.4, 5.5);
+    bit.closePath();
+    const forge = new T.ExtrudeGeometry(bit, {
+      depth: 1.4, bevelEnabled: true, bevelThickness: 0.25, bevelSize: 0.25, bevelSegments: 1,
+    });
+    add(this.axe, forge, WEAPON_MATERIALS.iron, 0, 34, -0.7);
+    add(this.axe, forge, WEAPON_MATERIALS.iron, 0, 34, 0.7, 0, Math.PI, 0);
+    for (const z of [-1.55, 1.55]) {
+      add(this.axe, new T.CylinderGeometry(1.1, 1.1, 0.5, 7), WEAPON_MATERIALS.brass, 0, 34, z, Math.PI / 2, 0, 0);
+    }
+    add(this.axe, new T.ConeGeometry(1.5, 5, 5), WEAPON_MATERIALS.darkIron, 0, 44.5, 0);
+    for (const side of [-1, 1]) {
+      add(this.axe, new T.CylinderGeometry(1.3, 1.3, 2.8, 7), WEAPON_MATERIALS.darkIron, 0, 34, side * 1.7, Math.PI / 2, 0, 0);
+      for (const y of [-3, 3]) {
+        add(this.axe, new T.BoxGeometry(8, 0.22, 0.16), WEAPON_MATERIALS.darkIron,
+          side * 9, 34 + y, side * 0.78, 0, 0, side * 0.04);
+      }
+    }
     this.rightHand.add(this.axe);
 
-    // Mousquet à silex de traite, tenu de la main gauche.
-    const barrel = add(this.musket, new T.CylinderGeometry(0.55, 0.6, 32, 6), iron, 0, 16, 1.2);
-    barrel.userData['muzzle'] = true;
-    add(this.musket, new T.BoxGeometry(1.8, 15, 2.4), wood, 0, 3, 0.4);
-    add(this.musket, new T.BoxGeometry(2.2, 6, 3.4), wood, 0, -6, 0, 0.25, 0, 0);
-    add(this.musket, new T.BoxGeometry(1.2, 2.2, 1.6), brass, 0, 6, 2.4);
+    const musketModel = buildMusket();
+    musketModel.position.z = 1.2;
+    const parts = musketModel.children as T.Mesh[];
+    parts[0].position.y = 3;
+    parts[0].scale.set(1.25, 1.1, 1.35);
+    parts[1].position.y = 15;
+    parts[1].scale.set(1.35, 34 / 18, 1.35);
+    parts[1].userData['muzzle'] = true;
+    parts[2].position.y = 6;
+    parts[2].scale.set(1.4, 1.6, 1.4);
+    parts[3].position.set(0, 6, 1.2);
+    parts[3].scale.set(1.8, 2.2, 1.4);
+    this.musket.add(musketModel);
+    add(this.musket, new T.BoxGeometry(0.5, 2.4, 0.7), WEAPON_MATERIALS.iron, 0.95, 9.5, 2.1, 0, 0, -0.4);
+    add(this.musket, new T.TorusGeometry(1.5, 0.18, 4, 8, Math.PI), WEAPON_MATERIALS.iron, 0, 0.5, 3.1, 0, 0, Math.PI);
+    add(this.musket, new T.CylinderGeometry(0.12, 0.12, 26, 4), WEAPON_MATERIALS.brass, 0, 14, -1.1);
     this.leftHand.add(this.musket);
     // Mousquet brisé, jeté au sol pendant la transition (posé par update).
     add(this.brokenMusket, new T.CylinderGeometry(0.55, 0.6, 30, 6), iron, 0, 0.6, 0, 0, 0, Math.PI / 2);

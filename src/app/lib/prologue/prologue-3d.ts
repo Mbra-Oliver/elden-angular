@@ -5,6 +5,7 @@ import { applyWind } from '../engine/wind';
 import { currentSettings } from '../platform/settings.service';
 import { LYING_ON_BACK, LYING_ON_SIDE, bakeHuman } from '../engine/human-bake';
 import { plainOutfit, soldierOutfit } from '../engine/human-outfits';
+import { buildBow, buildMusket, buildSpear, buildSword, WEAPON_DIMENSIONS } from '../engine/equipment-3d';
 import {
   BLADES, BODIES, BOWS, CAMP_FIRES, CAMP_WARRIORS, CLEARINGS, FALLEN_TRUNK, FOREST, KEGS, LITTER, MUSKETS,
   PROLOGUE_AREA, PROLOGUE_FOYERS, REMAINS, SCORCHES, SMOKES, SPEARS, STREAM, TRAIL, TRAIL_HALF,
@@ -71,6 +72,18 @@ function merge(parts: Part[]) {
 const box = (w: number, h: number, d: number) => new T.BoxGeometry(w, h, d);
 const cyl = (top: number, bottom: number, h: number, sides = 6) => new T.CylinderGeometry(top, bottom, h, sides);
 const ball = (r: number, detail = 0) => new T.IcosahedronGeometry(r, detail);
+
+function builderParts(group: T.Group, transform: T.Matrix4): Part[] {
+  group.updateMatrixWorld(true);
+  const parts: Part[] = [];
+  group.traverse((object) => {
+    if (!(object instanceof T.Mesh)) return;
+    const material = object.material as T.MeshStandardMaterial | T.MeshBasicMaterial;
+    parts.push([object.geometry.clone(), `#${material.color.getHexString()}`,
+      transform.clone().multiply(object.matrixWorld)]);
+  });
+  return parts;
+}
 
 export class Prologue3D {
   readonly root = new T.Group();
@@ -510,10 +523,7 @@ export class Prologue3D {
     const kwasi = REMAINS[0];
     this.scatter(this.body(false, false), material, [{ x: kwasi.x, y: kwasi.y, yaw: 2.6, variant: 0 }], () => undefined);
 
-    const spear = merge([
-      [cyl(0.45, 0.45, 34, 5), C.wood, m4(0, 17, 0)],
-      [new T.ConeGeometry(1.4, 6, 4), C.iron, m4(0, 37, 0, 0, 0, 0, 1, 1, 0.35)],
-    ]);
+    const spear = merge(builderParts(buildSpear(), m4(0, 16, 0, 0, 0, 0, 0.85, 0.85, 0.85)));
     this.scatter(spear, material, SPEARS, (s, o) => {
       if (s.variant < 2) {
         // Plantée, penchée, la pointe vers le ciel.
@@ -526,22 +536,19 @@ export class Prologue3D {
         o.scale.set(1, s.variant === 3 ? 0.55 : 1, 1);
       }
     });
-    const musket = merge([
-      [cyl(0.45, 0.5, 20, 6), C.iron, m4(0, 0, 0, 0, 0, Math.PI / 2)],
-      [box(9, 1.8, 1.3), C.wood, m4(-12, -0.4, 0, 0, 0, -0.12)],
-      [box(2, 1, 1), C.iron, m4(-6.5, 0.6, 0.4)],
-    ]);
+    const musket = merge(builderParts(buildMusket(), m4(0, 0, 0, 0, 0, -Math.PI / 2, 1.1, 1.1, 1.1)));
     this.scatter(musket, material, MUSKETS, (s, o) => {
       o.position.y = 1;
       o.rotation.set(0, s.yaw, s.variant === 3 ? 0.6 : 0);
     });
-    const blade = merge([
-      [cyl(0.5, 0.5, 4, 5), C.leather, m4(-3, 0, 0, 0, 0, Math.PI / 2)],
-      [box(12, 0.3, 2.2), C.iron, m4(5, 0, 0, 0, 0, 0, 1, 1, 1)],
-      [new T.ConeGeometry(1.1, 3, 4), C.iron, m4(12.4, 0, 0, Math.PI / 2, 0, -Math.PI / 2, 1, 1, 0.2)],
-    ]);
+    const blade = merge(builderParts(buildSword(), m4(0, 0, 0, 0, 0, -Math.PI / 2)));
     this.scatter(blade, material, BLADES, (s, o) => { o.position.y = 0.4; o.rotation.set(0, s.yaw, 0.05); });
-    const bow = merge([[new T.TorusGeometry(10, 0.4, 4, 10, 2.1), C.darkWood, m4(0, 0, 0, Math.PI / 2, 0, 0)]]);
+    const bowTransform = new T.Matrix4().makeRotationFromEuler(new T.Euler(Math.PI / 2, Math.PI / 2, 0))
+      .scale(new T.Vector3(1.1, 1.1, 1.1));
+    const bowParts = builderParts(buildBow(), bowTransform);
+    bowParts.push([cyl(0.12, 0.12, 1, 3), C.bone, bowTransform.clone().multiply(
+      m4(0, WEAPON_DIMENSIONS.bow.tipY, 0, Math.PI / 2, 0, 0, 1, WEAPON_DIMENSIONS.bow.tipZ * 2, 1))]);
+    const bow = merge(bowParts);
     this.scatter(bow, material, BOWS, (s, o) => { o.position.y = 0.5; o.rotation.set(0, s.yaw, 0); });
     const keg = merge([
       [cyl(4, 4.4, 7, 8), C.darkWood, m4(0, 3.5, 0)],
@@ -1046,9 +1053,15 @@ export class Prologue3D {
         // Arme tenue droite de la main droite, l'autre bras le long du corps.
         pose: (rig) => { rig.arms[1].rotation.set(-0.42, 0, -0.05); rig.arms[0].rotation.z = -0.08; },
       }),
-      musket
-        ? [cyl(0.45, 0.5, 27, 6), C.iron, m4(3.75, 21, 3.4)]
-        : [cyl(0.45, 0.45, 38, 5), C.wood, m4(3.75, 25, 3.4)],
+      ...(musket
+        ? [
+          [cyl(0.45, 0.5, 27, 6), C.iron, m4(3.75, 21, 3.4)],
+          [box(3, 1, 1.4), C.darkWood, m4(3.75, 8.5, 3.4)],
+        ] as Part[]
+        : [
+          [cyl(0.45, 0.45, 38, 5), C.wood, m4(3.75, 25, 3.4)],
+          [new T.ConeGeometry(1.3, 5, 4), C.iron, m4(3.75, 46.5, 3.4)],
+        ] as Part[]),
     ]);
     for (const musket of [false, true]) {
       this.scatter(warrior(musket), material, CAMP_WARRIORS.filter((w) => (w.variant % 2 === 1) === musket), () => undefined);

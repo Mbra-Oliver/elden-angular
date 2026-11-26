@@ -13,6 +13,7 @@ import { HIP_X, SHOULDER_X, hideProxy, skinHuman } from '../engine/human-body';
 import { soldierOutfit } from '../engine/human-outfits';
 import { groundSector, groundSectorEdge } from '../engine/attack-readability-3d';
 import { PALETTE } from '../constants/landscape';
+import { buildAfena, buildClub, buildMusket, buildSpear, buildSword, WEAPON_MATERIALS } from '../engine/equipment-3d';
 
 /**
  * Vue 3D de la tranche verticale, branchée par World3D.addLayer.
@@ -113,6 +114,8 @@ export class Slice3D {
     group.traverse((object) => {
       if (!(object instanceof T.Mesh)) return;
       const geometry = object.geometry.index ? object.geometry.toNonIndexed() : object.geometry.clone();
+      geometry.deleteAttribute('uv');
+      geometry.deleteAttribute('uv1');
       geometry.applyMatrix4(local.multiplyMatrices(inverse, object.matrixWorld));
       const list = byMaterial.get(object.material) ?? [];
       list.push(geometry);
@@ -270,7 +273,16 @@ export class Slice3D {
       const group = new T.Group();
       const halo = new T.Mesh(this.geo(new T.SphereGeometry(5, 8, 6)), glow);
       halo.position.y = 6;
-      const object = new T.Mesh(this.geo(new T.OctahedronGeometry(2.6)), body);
+      const object = new T.Group();
+      if (item.id === 'afena') {
+        const afena = buildAfena();
+        afena.scale.setScalar(0.4);
+        this.materials.push(afena.userData['blade'] as T.Material, afena.userData['glow'] as T.Material);
+        object.add(afena);
+        object.rotation.z = 0.3;
+      } else {
+        object.add(new T.Mesh(this.geo(new T.OctahedronGeometry(2.6)), body));
+      }
       object.position.y = 6;
       group.add(halo, object);
       group.position.set(item.x, 0, item.y);
@@ -284,8 +296,6 @@ export class Slice3D {
   private buildEnemies() {
     const shared = {
       skin: flat('#5b3626'),
-      leather: this.mat(flat('#3c2a1d')),
-      iron: this.mat(new T.MeshStandardMaterial({ color: '#7d7b74', metalness: 0.4, roughness: 0.5, flatShading: true })),
       wood: this.mat(flat('#5d4027')),
       eye: this.mat(new T.MeshBasicMaterial({ color: '#7ff2de' })),
       red: this.mat(flat('#9a2f26')),
@@ -298,9 +308,6 @@ export class Slice3D {
       leg: this.geo(new T.CylinderGeometry(1.6, 1.1, 12, 6)),
       foot: this.geo(new T.BoxGeometry(2.5, 1.6, 4)),
       wrap: this.geo(new T.CylinderGeometry(3.4, 3.3, 2.4, 8)),
-      blade: this.geo(new T.BoxGeometry(0.6, 2.6, 15)),
-      musket: this.geo(new T.CylinderGeometry(0.55, 0.7, 30, 6)),
-      stock: this.geo(new T.BoxGeometry(1.6, 3, 7)),
       weed: this.geo(new T.ConeGeometry(0.8, 7, 4)),
       bar: this.geo(new T.PlaneGeometry(1, 1)),
     };
@@ -335,9 +342,26 @@ export class Slice3D {
     };
     const eyeWhite = this.mat(flat('#d8c9ae'));
     const eyeDark = this.mat(flat('#161010'));
+    const sheathColors = [WEAPON_MATERIALS.leather, WEAPON_MATERIALS.darkWood, WEAPON_MATERIALS.wood];
+    const lengths = [0.92, 1, 1.08];
+    const addSheath = (group: T.Group, variant: number, height: number, width: number, depth: number,
+      y: number, z: number) => {
+      const sheath = new T.Mesh(this.geo(new T.BoxGeometry(width, height, depth)), sheathColors[variant % sheathColors.length]);
+      sheath.position.set(0, y, z);
+      group.add(sheath);
+      const wear = new T.Mesh(this.geo(new T.BoxGeometry(0.14, height * 0.45, depth + 0.18)), WEAPON_MATERIALS.darkIron);
+      wear.position.set(variant % 2 ? width * 0.32 : -width * 0.32, y, z - 0.08);
+      group.add(wear);
+    };
+    const finishWeapon = (group: T.Group, variant: number) => {
+      group.scale.y = lengths[variant % lengths.length];
+      this.bake(group);
+      return group;
+    };
 
-    for (const enemy of this.enemies.list) {
+    for (const [index, enemy] of this.enemies.list.entries()) {
       const kind = enemy.kind;
+      const variant = index % 3;
       const root = new T.Group();
       const body = new T.Group();
       root.add(body);
@@ -399,39 +423,44 @@ export class Slice3D {
       let weapon: T.Object3D;
       let muzzle: T.Object3D | undefined;
       if (kind === 'pilleur') {
-        weapon = add(arms[1], geos.blade, shared.iron, 0, -8, 6);
-        weapon.rotation.x = Math.PI / 2 - 0.4;
+        const sword = buildSword();
+        addSheath(sword, variant, 5.4, 2.1, 0.9, 3.1, -0.5);
+        finishWeapon(sword, variant);
+        sword.position.set(0, -8, 6);
+        sword.rotation.x = Math.PI / 2 - 0.4;
+        arms[1].add(sword);
+        weapon = sword;
       } else if (kind === 'eclaireur' || kind === 'lancier') {
-        // Lance : long manche, fer en feuille.
-        const spear = new T.Group();
-        const shaft = add(spear, this.geo(new T.CylinderGeometry(0.45, 0.5, 40, 5)), shared.wood, 0, 0, 4);
-        shaft.rotation.x = Math.PI / 2;
-        const tip = add(spear, this.geo(new T.ConeGeometry(1.3, 6, 4)), shared.iron, 0, 0, 26);
-        tip.rotation.x = Math.PI / 2;
+        const spear = buildSpear();
+        addSheath(spear, variant, 3.2, 1.5, 1.2, 6.5, 0);
+        finishWeapon(spear, variant);
         spear.position.set(0, -8, 4);
+        spear.rotation.x = Math.PI / 2;
         arms[1].add(spear);
         weapon = spear;
       } else if (kind === 'garde') {
-        // Massue cloutée.
         const club = new T.Group();
-        const handle = add(club, this.geo(new T.CylinderGeometry(0.8, 1.1, 16, 6)), shared.wood, 0, 0, 6);
-        handle.rotation.x = Math.PI / 2;
-        add(club, this.geo(new T.DodecahedronGeometry(3, 0)), shared.wood, 0, 0, 15);
-        for (let i = 0; i < 5; i++) {
-          const stud = add(club, this.geo(new T.ConeGeometry(0.5, 2, 4)), shared.iron, Math.cos(i * 1.3) * 3, Math.sin(i * 1.3) * 3, 15);
-          stud.rotation.z = i * 1.3 - Math.PI / 2;
-        }
+        const model = buildClub();
+        addSheath(model, variant, 4, 2.3, 1.8, -3.5, 0);
+        model.scale.y = lengths[variant % lengths.length];
+        model.rotation.x = Math.PI / 2;
+        model.position.z = 6;
+        club.add(model);
+        finishWeapon(club, 1);
         club.position.set(0, -8, 3);
         arms[1].add(club);
         weapon = club;
       } else if (kind === 'fusilier' || kind === 'tireur') {
         const gun = new T.Group();
-        const barrel = add(gun, geos.musket, shared.wood, 0, 0, 0);
-        barrel.rotation.x = Math.PI / 2;
-        add(gun, geos.stock, shared.wood, 0, -1, -15);
+        const model = buildMusket();
+        const barrelScale = 1.1 * lengths[variant % lengths.length];
+        model.rotation.x = Math.PI / 2;
+        model.scale.y = barrelScale;
+        gun.add(model);
+        finishWeapon(gun, 1);
         gun.position.set(0, -8, 8);
         muzzle = new T.Object3D();
-        muzzle.position.set(0, 0, 15);
+        muzzle.position.set(0, 0, 16 * barrelScale);
         gun.add(muzzle);
         arms[1].add(gun);
         weapon = gun;
@@ -441,10 +470,27 @@ export class Slice3D {
       }
       if (kind === 'noye') body.scale.setScalar(1.35);
       if (kind === 'garde') {
-        // Grand bouclier rond en peau de buffle (bras gauche), carrure massive.
-        const shield = add(arms[0], this.geo(new T.CylinderGeometry(8.5, 8.5, 1.2, 12)), shared.leather, 0, -6, 4);
-        shield.rotation.x = Math.PI / 2;
-        add(arms[0], this.geo(new T.SphereGeometry(1.6, 6, 4)), shared.iron, 0, -6, 4.9);
+        const shield = new T.Group();
+        const disc = new T.Mesh(this.geo(new T.CylinderGeometry(8.5, 8.5, 1.2, 12)), WEAPON_MATERIALS.leather);
+        disc.rotation.x = Math.PI / 2;
+        shield.add(disc);
+        for (const radius of [8.4, 6.7, 4.5]) {
+          const ring = new T.Mesh(this.geo(new T.TorusGeometry(radius, 0.35, 4, 12)),
+            radius === 8.4 ? WEAPON_MATERIALS.brass : WEAPON_MATERIALS.darkWood);
+          ring.position.z = 0.7;
+          shield.add(ring);
+        }
+        const boss = new T.Mesh(this.geo(new T.SphereGeometry(1.7, 6, 4)), WEAPON_MATERIALS.iron);
+        boss.position.z = 0.95;
+        shield.add(boss);
+        for (const x of [-3.2, 3.2]) {
+          const strap = new T.Mesh(this.geo(new T.BoxGeometry(1.6, 13, 0.5)), WEAPON_MATERIALS.leather);
+          strap.position.set(x, 0, -0.85);
+          shield.add(strap);
+        }
+        this.bake(shield);
+        shield.position.set(0, -6, 4);
+        arms[0].add(shield);
         body.scale.setScalar(1.3);
       }
 

@@ -1603,6 +1603,7 @@ export class GameStateService {
       groundZ: this.terrain.groundAt(this.playerEntity.centerX, this.playerEntity.centerY),
       facingX: player.facingX, facingY: player.facingY,
       state: playerAttack ? attackState : player.state,
+      weapon: this.equipment.getData().weapon,
       phase: player.state === 'dead' ? this.deathProgress()
         : playerAttack ? Math.max(0, Math.min(1, attackPhase))
         : phase(player.stateTimer, player.state === 'rolling' ? this.playerEntity.dodgeDuration
@@ -1622,7 +1623,7 @@ export class GameStateService {
     // Prologue 1701 : Kwadwo torse nu, pagne et bandoulière (tenue du corps skinné, human-outfits.ts).
     const prologue = this.chapter() === 'prologue';
     const look = this.slice.look();
-    view.setEquipment(this.equipment.getData().weapon, this.arrows.all, look);
+    view.setEquipment(this.equipment.getData().weapon, this.arrows.all, look, this.equipment.getData().arrows);
     if (prologue !== this.prologueView) {
       this.prologueView = prologue;
       view.setRegionMood(prologue ? PROLOGUE_MOOD : null);

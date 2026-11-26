@@ -129,32 +129,42 @@ LOWER_MASK[I.rX] = 0.2; // légère inclinaison dans la marche
 const UPPER_BODY_STATES = new Set(['drinking', 'aiming', 'release', 'windup']);
 
 const TRAIL = 11;
+const SPEAR_TRAIL_TIP_Y = 22;
+const SPEAR_TRAIL_INNER_Y = 9;
+const SPEAR_TRAIL_TINT: [number, number, number] = [1, 0.74, 0.34];
+const TRAIL_MATERIAL = new T.MeshBasicMaterial({
+  vertexColors: true, transparent: true, depthWrite: false,
+  side: T.DoubleSide, blending: T.AdditiveBlending,
+});
 
 /** Traînée lumineuse derrière la pointe de la lance pendant les coups. */
-class SpearTrail {
+export class WeaponTrail {
   readonly mesh: T.Mesh<T.BufferGeometry, T.MeshBasicMaterial>;
-  private readonly positions = new Float32Array(TRAIL * 2 * 3);
-  private readonly colors = new Float32Array(TRAIL * 2 * 4);
-  private readonly strength = new Float32Array(TRAIL);
-  private readonly tint = new Float32Array(TRAIL * 3);
+  private readonly positions: Float32Array;
+  private readonly colors: Float32Array;
+  private readonly strength: Float32Array;
+  private readonly tint: Float32Array;
   private readonly tip = new T.Vector3();
   private readonly inner = new T.Vector3();
   private primed = false;
 
-  constructor(scene: T.Scene) {
+  constructor(scene: T.Scene, private readonly samples = TRAIL,
+    private readonly tipLocal = new T.Vector3(0, 18, 0),
+    private readonly innerLocal = new T.Vector3(0, 8, 0)) {
+    this.positions = new Float32Array(samples * 2 * 3);
+    this.colors = new Float32Array(samples * 2 * 4);
+    this.strength = new Float32Array(samples);
+    this.tint = new Float32Array(samples * 3);
     const geometry = new T.BufferGeometry();
     geometry.setAttribute('position', new T.BufferAttribute(this.positions, 3).setUsage(T.DynamicDrawUsage));
     geometry.setAttribute('color', new T.BufferAttribute(this.colors, 4).setUsage(T.DynamicDrawUsage));
     const index: number[] = [];
-    for (let i = 0; i < TRAIL - 1; i++) {
+    for (let i = 0; i < samples - 1; i++) {
       const a = i * 2;
       index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
     geometry.setIndex(index);
-    this.mesh = new T.Mesh(geometry, new T.MeshBasicMaterial({
-      vertexColors: true, transparent: true, depthWrite: false,
-      side: T.DoubleSide, blending: T.AdditiveBlending,
-    }));
+    this.mesh = new T.Mesh(geometry, TRAIL_MATERIAL);
     // Toujours « visible » pour être compilé au préchargement ; vide hors coups.
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 2;
@@ -162,26 +172,26 @@ class SpearTrail {
   }
 
   /** Ajoute un échantillon (pointe et milieu de la lance, en coords monde). */
-  push(spear: T.Object3D, intensity: number, tint: [number, number, number]) {
-    spear.localToWorld(this.tip.set(0, 18, 0));
-    spear.localToWorld(this.inner.set(0, 8, 0));
+  push(weapon: T.Object3D, intensity: number, tint: [number, number, number]) {
+    weapon.localToWorld(this.tip.copy(this.tipLocal));
+    weapon.localToWorld(this.inner.copy(this.innerLocal));
     if (!this.primed) {
-      for (let i = 0; i < TRAIL; i++) this.write(i);
+      for (let i = 0; i < this.samples; i++) this.write(i);
       this.primed = true;
     }
-    this.positions.copyWithin(6, 0, (TRAIL - 1) * 6);
-    this.strength.copyWithin(1, 0, TRAIL - 1);
+    this.positions.copyWithin(6, 0, (this.samples - 1) * 6);
+    this.strength.copyWithin(1, 0, this.samples - 1);
     // Les anciens échantillons s'éteignent aussi avec le temps : la traînée
     // disparaît vite quand la lance s'arrête.
-    for (let i = 1; i < TRAIL; i++) this.strength[i] *= 0.8;
-    this.tint.copyWithin(3, 0, (TRAIL - 1) * 3);
+    for (let i = 1; i < this.samples; i++) this.strength[i] *= 0.8;
+    this.tint.copyWithin(3, 0, (this.samples - 1) * 3);
     this.write(0);
     this.strength[0] = intensity;
     this.tint.set(tint, 0);
 
     let any = false;
-    for (let i = 0; i < TRAIL; i++) {
-      const fade = 1 - i / (TRAIL - 1);
+    for (let i = 0; i < this.samples; i++) {
+      const fade = 1 - i / (this.samples - 1);
       const alpha = this.strength[i] * fade * 0.55;
       if (alpha > 0.01) any = true;
       for (let side = 0; side < 2; side++) {
@@ -195,7 +205,7 @@ class SpearTrail {
     const geometry = this.mesh.geometry;
     geometry.attributes['position'].needsUpdate = true;
     geometry.attributes['color'].needsUpdate = true;
-    geometry.setDrawRange(0, any ? (TRAIL - 1) * 6 : 0);
+    geometry.setDrawRange(0, any ? (this.samples - 1) * 6 : 0);
   }
 
   private write(i: number) {
@@ -208,7 +218,7 @@ export class PlayerAnimator {
   private readonly v = new Float32Array(N);
   private readonly target = new Float32Array(N);
   private readonly wrist = new T.Group();
-  private readonly trail: SpearTrail;
+  private readonly trail: WeaponTrail;
   private readonly flashMaterials: T.MeshStandardMaterial[] = [];
   private heading: number | undefined;
   private speed = 0;
@@ -255,7 +265,8 @@ export class PlayerAnimator {
     arm.add(this.wrist);
     this.wrist.add(spear);
     spear.position.set(0, 0, 9.5);
-    this.trail = new SpearTrail(scene);
+    this.trail = new WeaponTrail(scene, TRAIL,
+      new T.Vector3(0, SPEAR_TRAIL_TIP_Y, 0), new T.Vector3(0, SPEAR_TRAIL_INNER_Y, 0));
     // L'ombre ne doit pas tourner avec le corps pendant la roulade.
     this.shadow = rig.root.children.find((c) => c instanceof T.Mesh && c.geometry instanceof T.CircleGeometry);
     if (this.shadow) scene.add(this.shadow);
@@ -507,7 +518,7 @@ export class PlayerAnimator {
       (state === 'recover' && k < 0.18));
     if (!frozen) {
       this.rig.root.updateMatrixWorld(true);
-      this.trail.push(this.spear, swing && this.spear.visible ? 1 : 0, moves?.tint ?? [1, 0.9, 0.7]);
+      this.trail.push(this.spear, swing && this.spear.visible ? 1 : 0, SPEAR_TRAIL_TINT);
     }
   }
 

@@ -13,20 +13,45 @@
     @let gear = equipment.state();
     <section class="loadout" aria-label="Équipement">
       <div class="slot" [class.active]="gear.weapon === 'spear'">
-        <span class="icon" aria-hidden="true">⟋</span> Lance
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M3 21 16 8" />
+            <path d="M16 8c1.8-3.1 4-3.9 4-3.9S19.1 6.2 16 8Z" />
+            <path d="m13.5 9.5 2 2" />
+          </svg>
+        </span> Lance
       </div>
       @if (gear.owned.includes('afena')) {
         <div class="slot" [class.active]="gear.weapon === 'afena'">
-          <span class="icon" aria-hidden="true">†</span> Afena
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M5 19 11 13" />
+              <path d="M4 17.5 6.5 20" />
+              <path d="M11 13c.6-4.2 3.3-7.2 8-9.5.9 5.6-1.8 9.5-8 9.5Z" />
+            </svg>
+          </span> Afena
         </div>
       }
       <div class="slot" [class.active]="gear.weapon === 'bow'" [class.empty]="gear.arrows === 0">
-        <span class="icon" aria-hidden="true">➶</span> Arc
-        <span class="count" [attr.aria-label]="gear.arrows + ' flèches'">{{ gear.arrows }}/{{ gear.maxArrows }}</span>
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M9 3c6 4.2 6 13.8 0 18" />
+            <path d="M9 3v18" />
+            <path d="M3.5 12h16" />
+            <path d="m17 9 3 3-3 3" />
+          </svg>
+        </span> Arc
+        <span class="count" role="img" [attr.aria-label]="'Flèches restantes : ' + gear.arrows + ' sur ' + gear.maxArrows">{{ gear.arrows }}/{{ gear.maxArrows }}</span>
       </div>
       <div class="slot mixture" [class.empty]="gear.mixture === 0">
-        <span class="icon" aria-hidden="true">🍃</span> Mixture de soin
-        <span class="count" [attr.aria-label]="gear.mixture + ' poignées de feuilles'">{{ gear.mixture }}/{{ gear.maxMixture }}</span>
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M12 21c0-7.5 2.5-12.5 9-16-.3 8.2-3.4 13.2-9 16Z" />
+            <path d="M12 21C9.1 14.7 6.2 10.7 3 9.5c.4 6.8 3.4 10 9 11.5Z" />
+            <path d="M12 21v-7" />
+          </svg>
+        </span> Mixture de soin
+        <span class="count" role="img" [attr.aria-label]="'Poignées de mixture restantes : ' + gear.mixture + ' sur ' + gear.maxMixture">{{ gear.mixture }}/{{ gear.maxMixture }}</span>
       </div>
       <p class="keys"><app-key-hint action="switch" /> changer d’arme · <app-key-hint action="drink" /> avaler la mixture</p>
     </section>

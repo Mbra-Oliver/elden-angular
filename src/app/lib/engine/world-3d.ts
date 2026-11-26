@@ -59,16 +59,10 @@ const CAMERA_PROFILES: Record<CameraMode, CameraProfile> = {
     height: 42, heightDistance: 0.16, vistaHeight: 58, lookHeight: 25,
     lead: 30, leadDistance: 0.2, pitchMin: -18, pitchMax: 32, floorClearance: 12,
   },
-  // Vue par-dessus l'épaule (façon TPS mobile) : caméra proche, juste au-dessus
-  // de la tête, décalée à droite ; le regard part loin devant, presque à
-  // l'horizon, si bien que le héros occupe le bas-centre gauche de l'image.
-  // Calcul (héros ≈ 31 unités, champ vertical 54°) : tête à ~52 % de la
-  // hauteur d'écran, pieds à ~88 %, héros à ~42 % de la largeur.
-  // [SUPPOSITION] à confirmer en jeu.
   shoulder: {
-    boom: 82, boomDistance: 0.05, vistaBoom: 18, shoulder: 10,
-    height: 38, heightDistance: 0.04, vistaHeight: 12, lookHeight: 26,
-    lead: 110, leadDistance: 0, pitchMin: -16, pitchMax: 22, floorClearance: 8,
+    boom: 64, boomDistance: 0.04, vistaBoom: 12, shoulder: 13,
+    height: 30, heightDistance: 0.02, vistaHeight: 8, lookHeight: 29,
+    lead: 52, leadDistance: 0, pitchMin: -20, pitchMax: 20, floorClearance: 8,
   },
 };
 
@@ -77,6 +71,7 @@ export interface Actor3D extends Point {
   facingX: number;
   facingY: number;
   state: string;
+  weapon?: WeaponId;
   phase: number;
   waveRadius?: number;
   /** Boss : anneaux d'eau actifs, attaque en cours, coup du combo, phase du combat. */
@@ -175,6 +170,7 @@ export class World3D {
   private dragging?: Point;
   /** Sensibilité de la caméra (Paramètres), relue à chaque prise. */
   private dragSensitivity = 1;
+  private aimingFactor = 1;
   /** Doigt (ou souris) qui tient la caméra : un seul à la fois, suivi par pointerId. */
   private dragPointer: number | null = null;
   /** Rotation demandée par le geste, appliquée en douceur image par image (amortissement). */
@@ -267,8 +263,8 @@ export class World3D {
         const dx = event.clientX - this.dragging.x;
         // Accélération : un grand balayage tourne plus vite (regarder derrière soi d'un geste).
         const boost = 1 + T.MathUtils.clamp((Math.abs(dx) - 6) / 30, 0, 1) * 0.5;
-        this.pendingYaw -= dx * 0.008 * this.dragSensitivity * boost;
-        this.pendingPitch += (event.clientY - this.dragging.y) * 0.34 * this.dragSensitivity;
+        this.pendingYaw -= dx * 0.008 * this.dragSensitivity * this.aimingFactor * boost;
+        this.pendingPitch += (event.clientY - this.dragging.y) * 0.34 * this.dragSensitivity * this.aimingFactor;
         this.manualLook = 0;
         this.recenter = false;
       }
@@ -529,7 +525,7 @@ export class World3D {
   async warmUp(ground: HTMLCanvasElement) {
     this.setGround(ground);
     const hidden = [this.duelist.root, this.veille, this.mist, this.marker, this.wave, ...this.bossFx.warmables, ...this.fx.warmables, ...this.feel.warmables,
-      ...this.layerWarmables,
+      ...this.gear.warmables, ...this.layerWarmables,
       // Habillage des deux arènes (lueurs et poussières en PointsMaterial) : compilé avec
       // l'état final de la scène (brouillard, lumières), pas seulement au constructeur.
       ...this.arenaDressing.warmObjects].filter((o) => !o.visible);
@@ -868,6 +864,8 @@ export class World3D {
 
   private updateCamera(player: Actor3D, boss: Point | null, dt: number, cineDt: number) {
     if (this.cinematicCamera(player, boss, cineDt)) return;
+    const aiming = player.weapon === 'bow' && (player.state === 'aiming' || player.state === 'release');
+    this.aimingFactor = aiming ? 0.62 : 1;
     this.glideLock(dt);
     // Cible cadrée : le boss du duel, sinon l'ennemi verrouillé.
     const enemy = boss ?? this.lockPoint;
@@ -917,7 +915,7 @@ export class World3D {
     const boom = enemy
       ? profile.boom + Math.min(distance, 200) * profile.boomDistance
       : profile.boom + profile.vistaBoom * this.vista;
-    const shoulder = enemy ? profile.shoulder : profile.shoulder * 0.8;
+    let shoulder = (enemy ? profile.shoulder : profile.shoulder * 0.8) * (aiming ? 0.45 : 1);
     const ground = player.groundZ ?? 0;
     const height = enemy
       ? profile.height + Math.min(distance, 220) * profile.heightDistance
@@ -936,7 +934,7 @@ export class World3D {
       }
       if (this.cameraGoal.y < floor + profile.floorClearance) this.cameraGoal.y = floor + profile.floorClearance;
     }
-    this.cameraArmBase.set(player.x, ground + 33, player.y);
+    this.cameraArmBase.set(player.x, ground + 27, player.y);
     for (let fraction = 0.2; fraction < 0.98; fraction += 0.12) {
       const x = T.MathUtils.lerp(player.x, this.cameraGoal.x, fraction);
       const y = T.MathUtils.lerp(this.cameraArmBase.y, this.cameraGoal.y, fraction);
@@ -950,7 +948,8 @@ export class World3D {
     const lead = enemy
       ? profile.lead + Math.min(distance, 160) * profile.leadDistance
       : profile.lead;
-    this.lookGoal.set(player.x + dx * lead, ground + profile.lookHeight, player.y + dy * lead);
+    const sight = lead * (aiming ? 0.55 : 1);
+    this.lookGoal.set(player.x + dx * sight, ground + profile.lookHeight, player.y + dy * sight);
     if (this.initialized) {
       this.camera.position.lerp(this.cameraGoal, 1 - Math.exp(-10 * dt));
       // Le point visé est lissé lui aussi : les reculs et roulades ne font
@@ -1015,9 +1014,9 @@ export class World3D {
     const lx = dead(pad.axes[2] ?? 0);
     const ly = dead(pad.axes[3] ?? 0);
     if (lx || ly) {
-      this.orbit -= lx * 2.6 * dt;
+      this.orbit -= lx * 2.6 * this.aimingFactor * dt;
       const p = CAMERA_PROFILES[this.cameraMode];
-      this.pitch = T.MathUtils.clamp(this.pitch + ly * 60 * dt, p.pitchMin, p.pitchMax);
+      this.pitch = T.MathUtils.clamp(this.pitch + ly * 60 * this.aimingFactor * dt, p.pitchMin, p.pitchMax);
       this.manualLook = 0;
       this.recenter = false;
     }
@@ -1124,8 +1123,9 @@ export class World3D {
   }
 
   setEquipment(weapon: WeaponId, arrows: readonly { x: number; y: number; dirX: number; dirY: number; grounded: boolean }[],
-    look?: GearLook) {
+    look?: GearLook, ammo = 0) {
     this.gear.setWeapon(weapon);
+    this.gear.setAmmo(ammo);
     if (look) {
       this.gear.setLook(look);
       // Batakari ramassé : il recouvre le haut du pagne (seul le bas dépasse).

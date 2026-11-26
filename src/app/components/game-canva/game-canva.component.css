@@ -141,8 +141,23 @@ button:hover { background: #ffe0ab; }
 .loadout .slot.mixture { opacity: 1; }
 .loadout .slot.active { border-color: #edbb78; background: #edbb7826; }
 .loadout .slot.empty .count { color: #ff8a6b; }
-.loadout .icon { width: 14px; text-align: center; color: #ffdc9a; }
+.loadout .icon { display: inline-flex; width: 14px; height: 14px; color: #ffdc9a; }
+.loadout .icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .loadout .count { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+:host ::ng-deep app-slice-hud .spirit .fill.ready {
+  background: #ffd98a;
+  box-shadow: 0 0 12px 2px #ffb44d99;
+  animation: special-ready 1.6s ease-in-out infinite;
+}
 .loadout .keys { margin: 2px 0 0; font-size: 10px; color: #d8c4a0; }
 
 .gear-notice {
@@ -235,6 +250,10 @@ button:hover { background: #ffe0ab; }
 @keyframes mask-in {
   from { transform: scaleY(0); }
   to { transform: none; }
+}
+
+@keyframes special-ready {
+  50% { filter: brightness(1.35); }
 }
 
 /*

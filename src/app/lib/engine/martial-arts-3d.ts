@@ -6,6 +6,7 @@ import {
   ART_CHANNELS, AFENA_ART, SPEAR_ART,
   type ArtChannel, type ArtPose, type WeaponArt,
 } from '../combat/martial-arts';
+import { buildSpear } from './equipment-3d';
 
 /**
  * Couche « arts martiaux » du joueur, appliquée APRÈS l'animateur de base
@@ -29,6 +30,7 @@ const TAU = Math.PI * 2;
 const LEG = 13.45;
 /** Lance du joueur : la hampe partagée (36) est allongée à 45, proportions d'une lance de guerre. */
 const SPEAR_STRETCH = 1.25;
+const SPEAR_UNSTRETCH = 1 / SPEAR_STRETCH;
 /** États où l'équipement (arc, feuilles de mixture) pose les bras lui-même. */
 const GEAR_STATES = new Set(['aiming', 'release', 'drinking']);
 
@@ -114,18 +116,14 @@ export class MartialArts3D {
 
   /** Fer de lance en feuille (fer forgé) et talon : la lame se lit, le sens de la prise aussi. */
   private addSpearhead(spear: T.Object3D) {
-    const iron = new T.MeshStandardMaterial({ color: '#8d8a80', metalness: 0.55, roughness: 0.45, flatShading: true });
-    const unstretch = 1 / SPEAR_STRETCH;
-    const blade = new T.Mesh(new T.SphereGeometry(1, 6, 4), iron);
-    blade.scale.set(1.15, 2.6 * unstretch, 0.28);
-    blade.position.y = 18 + 2.2 * unstretch;
-    const socket = new T.Mesh(new T.CylinderGeometry(0.5, 0.62, 1.4, 6), iron);
-    socket.scale.y = unstretch;
-    socket.position.y = 18 - 0.2 * unstretch;
-    const ferrule = new T.Mesh(new T.CylinderGeometry(0.82, 0.6, 1.2, 6), iron);
-    ferrule.scale.y = unstretch;
-    ferrule.position.y = -18 + 0.4 * unstretch;
-    spear.add(blade, socket, ferrule);
+    const parts = buildSpear(SPEAR_UNSTRETCH);
+    if (spear instanceof T.Mesh) {
+      spear.geometry = (parts.children[0] as T.Mesh).geometry;
+      const wood = spear.material as T.MeshStandardMaterial;
+      wood.color.set('#5b3a22');
+      wood.roughness = 0.86;
+    }
+    for (const part of parts.children.slice(1)) spear.add(part);
   }
 
   update(pose: Actor3D, dt: number, now: number, engaged: boolean) {
