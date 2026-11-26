@@ -173,6 +173,7 @@
         <label>Sensibilité de la caméra <span>{{ (s.sensitivity * 100).toFixed(0) }} %</span>
           <input type="range" min="40" max="200" step="5" [value]="s.sensitivity * 100" (input)="setSensitivity($event)">
         </label>
+        <app-controls-settings />
         <label class="toggle">
           <input type="checkbox" [checked]="s.autoLock" (change)="settings.update({ autoLock: $any($event.target).checked })">
           Verrouiller la cible au premier coup reçu (désactivé par défaut sur mobile)

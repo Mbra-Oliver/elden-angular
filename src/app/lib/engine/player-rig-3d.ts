@@ -54,29 +54,29 @@ const GUARD: Pose = {
 };
 
 const JUMP_CROUCH: Pose = {
-  rX: 0.5, tY: -2.2, tF: -1.5,
-  aRx: -0.25, aRz: 0.08, wr: 0.55,
-  aLx: -0.8, aLz: -0.5, lLx: -1, lRx: 1.2,
+  rX: 0.62, tY: -3, tF: -2.4,
+  aRx: -0.15, aRz: 0.1, wr: 0.6,
+  aLx: -0.9, aLz: -0.55, lLx: -1.25, lRx: 1.35,
 };
 const JUMP_RISE: Pose = {
-  rX: -0.3, tY: 1.1, tF: -2.2,
-  aRx: -3.05, aRz: -0.12, wr: -0.35,
-  aLx: -2.35, aLz: -0.4, lLx: -1.25, lRx: 1.35,
+  rX: -0.38, tY: 1.3, tF: -2.6,
+  aRx: -3.2, aRy: -0.24, aRz: -0.14, wr: -0.55,
+  aLx: -2.5, aLz: -0.42, lLx: -1.35, lRx: 1.45,
 };
 const JUMP_APEX: Pose = {
-  rX: -0.16, tY: 0.3,
-  aRx: -3.2, aRz: 0.05, wr: -0.5,
-  aLx: -2.5, aLz: -0.2, lLx: -1.4, lRx: 1.5,
+  rX: -0.22, tY: 0.4, tF: -1.4,
+  aRx: -3.35, aRy: -0.3, aRz: 0.06, wr: -0.65,
+  aLx: -2.6, aLz: -0.22, lLx: -1.5, lRx: 1.6,
 };
 const JUMP_SLAM: Pose = {
-  rX: 1, tY: -2, tF: 6,
-  aRx: 0.35, aRz: 0.12, wr: 1.45,
-  aLx: 0.35, aLz: -0.75, lLx: -0.85, lRx: 0.95,
+  rX: 1.15, tY: -2.7, tF: 7,
+  aRx: 0.55, aRy: 0.24, aRz: 0.14, wr: 1.6,
+  aLx: 0.4, aLz: -0.8, lLx: -0.6, lRx: 1.25,
 };
 const JUMP_RECOVER: Pose = {
-  rX: 0.72, tY: -2.6, tF: 4.4,
-  aRx: -0.05, aRz: 0.1, wr: 1.2,
-  aLx: -0.15, aLz: -0.55, lLx: -1.05, lRx: 1.1,
+  rX: 0.8, tY: -3.2, tF: 4.6,
+  aRx: -0.15, aRz: 0.12, wr: 1.1,
+  aLx: -0.2, aLz: -0.6, lLx: -1.25, lRx: 1.4,
 };
 const DARK_TRAIL_TINT: [number, number, number] = [0.58, 0.2, 1];
 
@@ -357,7 +357,7 @@ export class PlayerAnimator {
     // --- Entrées dans un état : impulsions de réaction et de recul.
     if (state !== this.lastState) {
       // Squash & stretch : impulsions sur un ressort mou, qui rebondit tout seul.
-      if (state === 'attacking') this.squashV += attack === 'heavy' ? 16 : 11;
+      if (state === 'attacking') this.squashV += attack === 'jump' ? 22 : attack === 'heavy' ? 16 : 11;
       else if (state === 'hurt') this.squashV -= 14;
       else if (this.lastState === 'rolling') this.squashV -= 9; // réception de la roulade
       if (this.lastState === 'moving' && state === 'idle') {
@@ -381,15 +381,25 @@ export class PlayerAnimator {
         this.flash = 1;
       } else if (state === 'attacking') {
         // Départ de l'impact : petit coup de reins vers l'avant.
-        this.v[I.rX] += attack === 'heavy' ? 2.5 : 1.2;
+        if (attack === 'jump') {
+          this.v[I.rX] += 4.5;
+          this.v[I.aRx] += 9;
+          this.v[I.wr] -= 6;
+        } else {
+          this.v[I.rX] += attack === 'heavy' ? 2.5 : 1.2;
+        }
+      } else if (state === 'recover' && attack === 'jump') {
+        this.v[I.rX] += 4;
+        this.squashV -= 18;
       }
       this.lastState = state;
     }
     if (frozen && !this.wasFrozen && (state === 'attacking' || state === 'recover')) {
       // Le coup porte : l'arme rebondit légèrement contre la cible.
-      this.v[I.aRx] += attack === 'heavy' ? 6 : 4;
-      this.v[I.wr] -= 5;
-      this.squashV -= 8; // le choc tasse le corps
+      const slam = attack === 'jump';
+      this.v[I.aRx] += slam ? 11 : attack === 'heavy' ? 6 : 4;
+      this.v[I.wr] -= slam ? 9 : 5;
+      this.squashV -= slam ? 16 : 8; // le choc tasse le corps
     }
     this.wasFrozen = frozen;
 
@@ -769,18 +779,27 @@ export class PlayerAnimator {
       const db = dark ? 0.32 : 0;
       material.emissive.setRGB(glow * 0.55 + blink + dr, glow * 0.12 + blink * 0.9 + dg, glow * 0.06 + blink * 0.75 + db);
     }
+    const jump = pose.dark && pose.jumpPhase !== undefined ? clamp01(pose.jumpPhase) : -1;
+    const burst = jump >= 0 ? Math.sin(Math.PI * smooth(0.42, 0.62, jump)) : 0;
+    const collapse = jump >= 0 ? smooth(0.6, 0.78, jump) : 0;
     if (this.darkAura) {
       this.darkAura.visible = dark;
       if (dark) {
-        const pulse = 1 + Math.sin(now * 0.012) * 0.08;
-        this.darkAura.position.set(root.position.x, root.position.y + 15, root.position.z);
+        const pulse = jump >= 0
+          ? 1 + Math.sin(Math.PI * smooth(0.1, 0.5, jump)) * 0.18 - collapse * 0.24 + burst * 0.08
+          : 1 + Math.sin(now * 0.012) * 0.08;
+        this.darkAura.position.set(root.position.x, root.position.y + 15 + burst * 3, root.position.z);
         this.darkAura.scale.setScalar(pulse);
-        (this.darkAura.material as T.MeshBasicMaterial).opacity = 0.28 + Math.sin(now * 0.02) * 0.06;
+        (this.darkAura.material as T.MeshBasicMaterial).opacity = jump >= 0
+          ? 0.16 + burst * 0.34 + collapse * 0.05
+          : 0.28 + Math.sin(now * 0.02) * 0.06;
       }
     }
     if (this.darkLight) {
-      this.darkLight.intensity = dark ? 2.8 + Math.sin(now * 0.015) * 0.8 : 0;
-      this.darkLight.position.set(root.position.x, root.position.y + 18, root.position.z);
+      this.darkLight.intensity = dark
+        ? jump >= 0 ? 1.8 + burst * 4.2 : 2.8 + Math.sin(now * 0.015) * 0.8
+        : 0;
+      this.darkLight.position.set(root.position.x, root.position.y + 18 + burst * 3, root.position.z);
     }
   }
 }

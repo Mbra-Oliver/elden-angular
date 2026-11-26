@@ -82,6 +82,19 @@ export class SettingsService {
   update(patch: Partial<GameSettings>) {
     this.settings.update((s) => ({ ...s, ...patch }));
   }
+
+  setTouchSlot(index: number, action: TouchAction) {
+    if (index < 0 || index >= DEFAULT_TOUCH_SLOTS.length || !TOUCH_ACTION_IDS.includes(action)) return;
+    const slots = [...this.settings().touchSlots];
+    const previous = slots.indexOf(action);
+    if (previous >= 0) slots[previous] = slots[index];
+    slots[index] = action;
+    this.update({ touchSlots: slots });
+  }
+
+  resetTouchSlots() {
+    this.update({ touchSlots: [...DEFAULT_TOUCH_SLOTS] });
+  }
 }
 
 /** Lecture directe hors injection (moteur 3D chargé à la demande). */

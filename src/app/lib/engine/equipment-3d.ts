@@ -11,7 +11,7 @@ interface ArrowView {
   grounded: boolean;
 }
 
-interface Pose { state: string; phase: number; dark?: boolean }
+interface Pose { state: string; phase: number; dark?: boolean; jumpPhase?: number }
 
 export interface GearLook { batakari: boolean; tier: 0 | 1 | 2; ready: boolean }
 
@@ -29,6 +29,12 @@ const BOW_DRAW_TRAVEL = 4.6;
 const ARROW_SHAFT_LENGTH = 15;
 const QUIVER_CAPACITY = EQUIPMENT_CONFIG.maxArrows;
 const AFENA_WRAPS = 6;
+const AFENA_BASE_TILT = Math.PI / 2 - 0.18;
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const smooth = (a: number, b: number, value: number) => {
+  const t = clamp01((value - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
 
 export const WEAPON_DIMENSIONS = {
   spear: {
@@ -398,7 +404,7 @@ export class Equipment3D {
     torso.add(this.healAura);
 
     this.afena.position.set(0, -8.6, 1);
-    this.afena.rotation.x = Math.PI / 2 - 0.18;
+    this.afena.rotation.x = AFENA_BASE_TILT;
     this.afena.visible = false;
     arms[1].add(this.afena);
     this.afenaTrail = new WeaponTrail(scene, 8, new T.Vector3(0, 13.6, 0), new T.Vector3(0, 6, 0));
@@ -560,6 +566,15 @@ export class Equipment3D {
       this.mixture.scale.setScalar(1);
       this.mixture.rotation.z = 0;
     }
+
+    const j = pose.dark && pose.jumpPhase !== undefined ? clamp01(pose.jumpPhase) : -1;
+    const raise = j >= 0 ? smooth(0.12, 0.34, j) * (1 - smooth(0.46, 0.62, j)) : 0;
+    const chop = j >= 0 ? smooth(0.44, 0.6, j) * (1 - smooth(0.76, 0.92, j)) : 0;
+    const settle = j >= 0 ? smooth(0.6, 0.92, j) : 0;
+    const weaponPitch = -0.5 * raise + 0.62 * chop - 0.18 * settle;
+    const weaponRoll = -0.14 * raise + 0.18 * chop;
+    if (this.spear) this.spear.rotation.set(weaponPitch, 0, weaponRoll);
+    this.afena.rotation.set(AFENA_BASE_TILT + weaponPitch, 0, weaponRoll);
 
     const [left, right] = this.arms;
     if (pose.state === 'aiming' || pose.state === 'release') {

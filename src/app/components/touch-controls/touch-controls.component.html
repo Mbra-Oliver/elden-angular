@@ -13,7 +13,7 @@
 <div class="arc" [class.combat]="combat()" [style.--touch-scale]="uiScale()" role="group" aria-label="Actions">
   @for (pad of slots(); track pad.index) {
     @if (combat() || !pad.combatOnly) {
-      <button type="button" [class]="'pad slot' + (pad.index + 1)" [class.held]="held().has(pad.index)"
+      <button type="button" [class]="'pad slot' + (pad.index + 1) + ' action-' + pad.action" [class.held]="held().has(pad.index)"
         [attr.aria-label]="pad.label"
         (pointerdown)="padDown(pad.index, $event)" (pointerup)="padUp(pad.index)"
         (pointercancel)="padUp(pad.index)" (lostpointercapture)="padUp(pad.index)"

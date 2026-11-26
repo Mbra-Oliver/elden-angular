@@ -1,6 +1,7 @@
 import {
   AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild, computed, inject, isDevMode, signal,
 } from '@angular/core';
+import { ControlsSettingsComponent } from '../controls-settings/controls-settings.component';
 import { AudioEngineService } from '../../lib/audio/audio-engine.service';
 import { MenuAmbience } from '../../lib/audio/menu-ambience';
 import { MusicDirectorService } from '../../lib/audio/music-director.service';
@@ -22,6 +23,7 @@ const STORY_FIGHTS: readonly EncounterId[] = ['champion', 'ford', 'sluice'];
 
 @Component({
   selector: 'app-main-menu',
+  imports: [ControlsSettingsComponent],
   templateUrl: './main-menu.component.html',
   styleUrls: ['./main-menu.component.css', './main-menu.panels.css'],
 })

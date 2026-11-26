@@ -1,4 +1,4 @@
-import { Component, OnDestroy, computed, inject, input, output, signal } from '@angular/core';
+import { Component, OnDestroy, computed, effect, inject, input, output, signal } from '@angular/core';
 import { InputService } from '../../lib/services/input.service';
 import { GameStateService } from '../../lib/services/game-state.service';
 import { SliceService } from '../../lib/slice/slice.service';
@@ -68,6 +68,19 @@ export class TouchControlsComponent implements OnDestroy {
   private stickPointer: number | null = null;
   private readonly pressedAt = new Map<number, number>();
   private readonly releaseTimers = new Map<number, number>();
+  private readonly activeKeys = new Map<number, string>();
+
+  constructor() {
+    effect(() => {
+      const combat = this.combat();
+      const slots = this.slots();
+      const held = this.held();
+      for (const slot of held) {
+        const pad = slots[slot];
+        if (!pad || (!combat && pad.combatOnly)) this.releaseSlot(slot);
+      }
+    });
+  }
 
   ngOnDestroy() {
     this.releaseTimers.forEach((timer) => clearTimeout(timer));
@@ -136,9 +149,11 @@ export class TouchControlsComponent implements OnDestroy {
     if (!action) return;
     event.preventDefault();
     capture(event);
-    clearTimeout(this.releaseTimers.get(slot));
+    this.releaseSlot(slot);
     this.pressedAt.set(slot, performance.now());
-    this.input.setVirtual(TOUCH_ACTIONS[action].key, true);
+    const key = TOUCH_ACTIONS[action].key;
+    this.activeKeys.set(slot, key);
+    this.input.setVirtual(key, true);
     this.held.update((set) => new Set(set).add(slot));
     navigator.vibrate?.(8);
   }
@@ -171,15 +186,34 @@ export class TouchControlsComponent implements OnDestroy {
   }
 
   padUp(slot: number) {
-    const action = this.actionAt(slot);
-    if (!action || !this.pressedAt.has(slot)) return;
+    if (!this.activeKeys.has(slot) || !this.pressedAt.has(slot)) return;
     const elapsed = performance.now() - (this.pressedAt.get(slot) ?? 0);
     this.pressedAt.delete(slot);
     this.held.update((set) => { const next = new Set(set); next.delete(slot); return next; });
-    const key = TOUCH_ACTIONS[action].key;
-    const release = () => this.input.setVirtual(key, false);
+    const release = () => {
+      clearTimeout(this.releaseTimers.get(slot));
+      this.releaseTimers.delete(slot);
+      const key = this.activeKeys.get(slot);
+      if (key) this.input.setVirtual(key, false);
+      this.activeKeys.delete(slot);
+    };
     if (elapsed >= MIN_HOLD_MS) release();
     else this.releaseTimers.set(slot, window.setTimeout(release, MIN_HOLD_MS - elapsed));
+  }
+
+  private releaseSlot(slot: number) {
+    clearTimeout(this.releaseTimers.get(slot));
+    this.releaseTimers.delete(slot);
+    this.pressedAt.delete(slot);
+    const key = this.activeKeys.get(slot);
+    if (key) this.input.setVirtual(key, false);
+    this.activeKeys.delete(slot);
+    this.held.update((set) => {
+      if (!set.has(slot)) return set;
+      const next = new Set(set);
+      next.delete(slot);
+      return next;
+    });
   }
 }
 
