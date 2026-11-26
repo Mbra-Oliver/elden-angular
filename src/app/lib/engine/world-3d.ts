@@ -230,7 +230,8 @@ export class World3D {
   private heroBodies?: { man: T.SkinnedMesh; woman: T.SkinnedMesh };
 
   constructor(private readonly host: HTMLElement) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // Qualité basse : pas d'antialiasing matériel (MSAA), coûteux sur les GPU de téléphone.
+    this.renderer = new T.WebGLRenderer({ antialias: currentSettings().quality !== 'low', powerPreference: 'high-performance' });
     this.renderer.setSize(VIEWPORT.WIDTH, VIEWPORT.HEIGHT, false);
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     this.renderer.setClearColor('#827b62');
@@ -867,6 +868,7 @@ export class World3D {
 
   private updateCamera(player: Actor3D, boss: Point | null, dt: number, cineDt: number) {
     if (this.cinematicCamera(player, boss, cineDt)) return;
+    this.glideLock(dt);
     // Cible cadrée : le boss du duel, sinon l'ennemi verrouillé.
     const enemy = boss ?? this.lockPoint;
     // Pas de marqueur sur un boss qui tombe.
@@ -898,8 +900,11 @@ export class World3D {
       // joueur→ennemi pivote très vite. On ralentit alors la caméra et on
       // plafonne sa vitesse angulaire pour éviter les coups de fouet.
       const closeness = T.MathUtils.smoothstep(distance, 22, 140);
-      const rate = T.MathUtils.lerp(1.4, 6, closeness);
-      const maxSpeed = T.MathUtils.lerp(1.6, 3.4, closeness);
+      // Un grand écart (nouvelle cible, ennemi dans le dos) se rattrape vite
+      // même au contact : seul le petit pivot continu est freiné.
+      const wide = T.MathUtils.smoothstep(Math.abs(turn), 0.6, 1.6);
+      const rate = T.MathUtils.lerp(T.MathUtils.lerp(1.4, 6, closeness), 5, wide);
+      const maxSpeed = T.MathUtils.lerp(T.MathUtils.lerp(1.6, 3.4, closeness), 4.4, wide);
       const step = turn * (1 - Math.exp(-rate * dt));
       this.viewYaw += T.MathUtils.clamp(step, -maxSpeed * dt, maxSpeed * dt);
     } else {
@@ -1063,8 +1068,29 @@ export class World3D {
 
   /** Ennemi verrouillé hors duel (null : caméra libre). */
   setLockTarget(point: Point | null) {
-    this.lockPoint = point ? { x: point.x, y: point.y } : null;
-    if (!point) this.flickDrag = 0;
+    this.lockGoal = point ? { x: point.x, y: point.y } : null;
+    if (!point) {
+      this.lockPoint = null;
+      this.flickDrag = 0;
+    } else if (!this.lockPoint) {
+      this.lockPoint = { x: point.x, y: point.y };
+    }
+  }
+
+  /** Cible réelle du verrou ; lockPoint la rejoint en glissant (changement de cible sans à-coup). */
+  private lockGoal: Point | null = null;
+
+  /**
+   * [SUPPOSITION] Lissage du point cadré : il suit de près un ennemi qui se
+   * déplace, mais glisse en ~0,3 s vers une nouvelle cible au lieu d'y sauter.
+   */
+  private glideLock(dt: number) {
+    if (!this.lockGoal || !this.lockPoint) return;
+    const gap = Math.hypot(this.lockGoal.x - this.lockPoint.x, this.lockGoal.y - this.lockPoint.y);
+    const rate = gap > 30 ? 9 : 22;
+    const k = 1 - Math.exp(-rate * dt);
+    this.lockPoint.x += (this.lockGoal.x - this.lockPoint.x) * k;
+    this.lockPoint.y += (this.lockGoal.y - this.lockPoint.y) * k;
   }
 
   /** Ambiance d'une carte hors arène (prologue) ; null : ambiance de base. */
@@ -1127,6 +1153,7 @@ export class World3D {
     this.camera.updateProjectionMatrix();
     this.post?.setAspect(aspect);
     this.post?.setSize(internalWidth, VIEWPORT.HEIGHT);
+    this.post?.setQuality(currentSettings().quality);
   }
 
   /** Repère d'objectif, en coordonnées du canvas 2D 16:9 centré sur l'écran de jeu. */

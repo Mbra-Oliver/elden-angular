@@ -11,6 +11,8 @@ import type { SliceService } from './slice.service';
 import { TerrainCollisionService } from '../engine/terrain-collision.service';
 import { HIP_X, SHOULDER_X, hideProxy, skinHuman } from '../engine/human-body';
 import { soldierOutfit } from '../engine/human-outfits';
+import { groundSector, groundSectorEdge } from '../engine/attack-readability-3d';
+import { PALETTE } from '../constants/landscape';
 
 /**
  * Vue 3D de la tranche verticale, branchée par World3D.addLayer.
@@ -25,6 +27,9 @@ const VIEW_DISTANCE = 560;
 /** Portes, levier et objets : masqués au-delà (le brouillard les cache déjà). */
 const PROP_DISTANCE = 620;
 const tmp = new T.Object3D();
+/** Coups au corps à corps : même demi-angle que EnemiesService.tryHitPlayer (cos ≥ 0,25). */
+const ARC_HALF = Math.acos(0.25);
+const MAX_ARCS = 6;
 
 interface EnemyRig {
   enemy: Enemy;
@@ -59,6 +64,9 @@ export class Slice3D {
   private readonly groundLine: T.Mesh<T.BoxGeometry, T.MeshBasicMaterial>[] = [];
   private readonly tracers: T.Mesh<T.BoxGeometry, T.MeshBasicMaterial>[] = [];
   private readonly rings: T.Mesh<T.RingGeometry, T.MeshBasicMaterial>[] = [];
+  private readonly arcs: { fill: T.Mesh<T.BufferGeometry, T.MeshBasicMaterial>; edge: T.Mesh<T.BufferGeometry, T.MeshBasicMaterial> }[] = [];
+  private readonly danger = new T.Color(PALETTE.danger);
+  private readonly dangerFlash = new T.Color(PALETTE.dangerFlash);
   private readonly muzzles: T.Sprite[] = [];
   private readonly muzzlePos = new T.Vector3();
   private muzzleTexture?: T.CanvasTexture;
@@ -481,6 +489,20 @@ export class Slice3D {
       this.tracers.push(flash);
       this.rings.push(telegraph);
     }
+    // Zone de coup au sol (lance, coupe-coupe, massue, griffe) : secteur qui se
+    // remplit pendant l'anticipation et pâlit vers le blanc juste avant l'impact.
+    const arcFill = this.geo(groundSector(ARC_HALF));
+    const arcEdge = this.geo(groundSectorEdge(ARC_HALF));
+    for (let i = 0; i < MAX_ARCS; i++) {
+      const fill = new T.Mesh(arcFill, this.mat(new T.MeshBasicMaterial({
+        color: PALETTE.danger, transparent: true, opacity: 0.2, depthWrite: false, side: T.DoubleSide })));
+      const edge = new T.Mesh(arcEdge, this.mat(new T.MeshBasicMaterial({
+        color: PALETTE.danger, transparent: true, opacity: 0.6, depthWrite: false, side: T.DoubleSide })));
+      fill.renderOrder = edge.renderOrder = 2;
+      fill.visible = edge.visible = false;
+      this.root.add(fill, edge);
+      this.arcs.push({ fill, edge });
+    }
     const groundAim = this.mat(new T.MeshBasicMaterial({ color: '#ff3b2a', transparent: true, opacity: 0.4, depthWrite: false }));
     for (let i = 0; i < 4; i++) {
       const line = new T.Mesh(box, groundAim.clone());
@@ -552,6 +574,7 @@ export class Slice3D {
     let flashes = 0;
     let rings = 0;
     let muzzleFlashes = 0;
+    let arcs = 0;
     for (const rig of this.rigs) {
       const enemy = rig.enemy;
       const near = Math.abs(enemy.x - px) < VIEW_DISTANCE && Math.abs(enemy.y - py) < VIEW_DISTANCE;
@@ -601,6 +624,10 @@ export class Slice3D {
         flash.rotation.set(0, Math.atan2(t.x2 - t.x1, t.y2 - t.y1), 0);
         flash.scale.set(1.3, 1.3, length);
       }
+      if (move?.shape === 'arc' && arcs < this.arcs.length &&
+          (enemy.state === 'windup' || (enemy.state === 'active' && !enemy.hitDone))) {
+        this.showArc(this.arcs[arcs++], enemy, move);
+      }
       if (enemy.state === 'windup' && enemy.move === 'slam' && rings < this.rings.length) {
         const ring = this.rings[rings++];
         const radius = ENEMIES.noye.radius + ENEMY_MOVES.slam.reach;
@@ -616,6 +643,34 @@ export class Slice3D {
     for (let i = flashes; i < this.tracers.length; i++) this.tracers[i].visible = false;
     for (let i = rings; i < this.rings.length; i++) this.rings[i].visible = false;
     for (let i = muzzleFlashes; i < this.muzzles.length; i++) this.muzzles[i].visible = false;
+    for (let i = arcs; i < this.arcs.length; i++) this.arcs[i].fill.visible = this.arcs[i].edge.visible = false;
+  }
+
+  /**
+   * Portée réelle du coup : corps + allonge + élan de la fente pendant la
+   * phase active. Orientée sur le regard courant (l'ennemi pivote encore au
+   * début de l'anticipation, la zone le suit).
+   */
+  private showArc(arc: Slice3D['arcs'][number], enemy: Enemy, move: (typeof ENEMY_MOVES)[keyof typeof ENEMY_MOVES]) {
+    const windup = enemy.state === 'windup';
+    const t = windup ? Math.max(0, Math.min(1, 1 - enemy.timer / move.windup)) : 1;
+    const late = windup ? T.MathUtils.smoothstep(t, 0.7, 1) : 1;
+    const lunge = (move.lunge ?? 0) * (windup ? move.active : Math.max(0, enemy.timer)) / 1000;
+    const radius = ENEMIES[enemy.kind].radius + move.reach + lunge;
+    const ground = this.terrain.groundAt(enemy.x, enemy.y) + 1.2;
+    const yaw = Math.atan2(enemy.facingX, enemy.facingY);
+    for (const mesh of [arc.fill, arc.edge]) {
+      mesh.visible = true;
+      mesh.position.set(enemy.x, ground, enemy.y);
+      mesh.rotation.y = yaw;
+    }
+    arc.edge.scale.set(radius, 1, radius);
+    const grow = Math.max(0.05, t) * radius;
+    arc.fill.scale.set(grow, 1, grow);
+    arc.fill.material.color.copy(this.danger).lerp(this.dangerFlash, late * 0.6);
+    arc.edge.material.color.copy(this.danger).lerp(this.dangerFlash, late);
+    arc.fill.material.opacity = 0.1 + t * 0.16 + late * 0.1;
+    arc.edge.material.opacity = 0.3 + t * 0.4 + late * 0.25;
   }
 
   private shotLength(enemy: Enemy) {

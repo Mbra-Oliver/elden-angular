@@ -36,6 +36,8 @@ import { BATTLE, CLEARING, CROSSING, GATE, VILLAGE_STOPS } from '../constants/vi
 import { AttackEventTracker, attackFrame } from '../combat/attack-timeline';
 import { Dialogue, DialogueChoice, FlagValue, resolveDialogue } from './dialogue-tree';
 import { SliceService } from '../slice/slice.service';
+import type { Enemy } from '../slice/enemies.service';
+import { TargetLock, type LockView } from '../slice/target-lock';
 import { SoulsLoopService, type SoulsPrompt } from './souls-loop.service';
 import { FOYERS, SOULS, type Foyer, type FoyerId } from '../constants/souls-world';
 import { ruinBlocks } from '../constants/landscape';
@@ -377,7 +379,7 @@ export class GameStateService {
         if (event.code === 'KeyQ' && !event.repeat && this._currentScreen() === 'playing') this.toggleLock();
       });
       window.addEventListener('wheel', (event) => {
-        if (this.lockedId !== null && Math.abs(event.deltaY) > 4) this.switchLock(event.deltaY > 0 ? 1 : -1);
+        if (this.lock.id !== null && Math.abs(event.deltaY) > 4) this.switchLock(event.deltaY > 0 ? 1 : -1);
       }, { passive: true });
     }
     this.terrain.setGroundSampler(groundHeight);
@@ -394,6 +396,7 @@ export class GameStateService {
       this.fx.hit({ x: this.playerEntity.centerX, y: this.playerEntity.centerY, height: 20, dirX, dirY,
         material: 'flesh', style: 'thrust', strength: 1.2, target: 'player' });
       this.markHitDir(dirX, dirY, enemy.move === 'shot' || enemy.move === 'longshot' ? 'shot' : 'melee');
+      this.lock.noteHit(enemy.id);
       this.lastHitBy = FIELD_HINTS[enemy.kind] ?? 'Tué par un soldat du Denkyira.';
     };
   }
@@ -1001,6 +1004,7 @@ export class GameStateService {
     const py = this.playerEntity.centerY;
     this.slice.setFieldActive(this.mode() === 'story' &&
       (this.chapter() === 'village' || this.chapter() === 'prologue') && !inCombat);
+    this.tickLock(deltaTime);
     const locked = this.lockedEnemy();
     this.playerEntity.update(deltaTime, inCombat
       ? { x: this.bossEntity.centerX, y: this.bossEntity.centerY }
@@ -1354,68 +1358,69 @@ export class GameStateService {
 
   // ─────────────────────────────────────────── Verrouillage de cible
 
-  /** Ennemi de terrain verrouillé (identifiant dans EnemiesService), null : caméra libre. */
-  private lockedId: number | null = null;
+  /** Verrouillage hors duel : choix de la menace, changements automatiques (voir TargetLock). */
+  private readonly lock = new TargetLock();
+  /** Image où le verrou a été avancé (lockedEnemy() est lu plusieurs fois par image). */
+  private lockStamp = -1;
+  private lockFrame = 0;
+  private lockCached: Enemy | null = null;
 
-  /** Ennemi verrouillé encore valable (vivant, pas trop loin), sinon le verrou saute. */
+  private lockView(): LockView {
+    return { px: this.playerEntity.centerX, py: this.playerEntity.centerY, heading: this.view3d?.heading ?? 0 };
+  }
+
+  /** Ennemi verrouillé encore valable ; le verrou passe seul à la menace suivante ou saute. */
   private lockedEnemy() {
-    if (this.lockedId === null) return null;
-    const enemy = this.slice.enemies.list[this.lockedId];
-    const far = !enemy || Math.hypot(enemy.x - this.playerEntity.centerX, enemy.y - this.playerEntity.centerY) > 460;
-    if (!enemy || enemy.state === 'dead' || far || this.inCombat()) {
-      this.lockedId = null;
+    if (this.lock.id === null) return null;
+    if (this.inCombat()) {
+      this.lock.release();
       return null;
     }
-    return enemy;
+    if (this.lockStamp !== this.lockFrame) {
+      this.lockStamp = this.lockFrame;
+      this.lockCached = this.lock.update(this.lockDt, this.slice.enemies.list, this.lockView());
+    }
+    return this.lock.id === null ? null : this.lockCached;
+  }
+  private lockDt = 0;
+
+  /** Avance le verrou d'une image (appelé une fois par mise à jour). */
+  private tickLock(deltaTime: number) {
+    this.lockFrame++;
+    this.lockDt = deltaTime;
   }
 
-  /** Ennemis visables : vivants, à portée, avec leur angle par rapport à la caméra. */
-  private lockCandidates(range: number) {
-    const heading = this.view3d?.heading ?? 0;
-    const px = this.playerEntity.centerX;
-    const py = this.playerEntity.centerY;
-    return this.slice.enemies.list
-      .filter((e) => e.state !== 'dead' && Math.hypot(e.x - px, e.y - py) < range)
-      .map((e) => {
-        const angle = Math.atan2(e.x - px, e.y - py) - heading;
-        return { e, rel: Math.atan2(Math.sin(angle), Math.cos(angle)), d: Math.hypot(e.x - px, e.y - py) };
-      });
-  }
-
-  /**
-   * Touche de verrouillage (Q, clic du stick droit, bouton tactile) : verrouille
-   * l'ennemi le plus en face de la caméra, déverrouille, ou recentre la caméra
-   * s'il n'y a personne. En duel, le boss est toujours cadré.
-   */
   /** Un ennemi est verrouillé (verrouillage automatique au premier coup reçu, côté interface). */
   get lockActive() {
     return this.lockedEnemy() !== null;
   }
 
+  /**
+   * Touche de verrouillage (Q, clic du stick droit, bouton tactile) : verrouille
+   * la menace la plus pressante (qui attaque, qui vient de frapper, proche et
+   * face caméra), déverrouille, ou recentre la caméra s'il n'y a personne.
+   * En duel, le boss est toujours cadré.
+   */
   toggleLock() {
     if (this.inCombat()) return;
-    if (this.lockedId !== null) {
-      this.lockedId = null;
+    if (this.lock.id !== null) {
+      this.lock.release();
       return;
     }
-    const best = this.lockCandidates(340)
-      .filter((c) => Math.abs(c.rel) < 1.3)
-      .sort((a, b) => Math.abs(a.rel) * 120 + a.d - (Math.abs(b.rel) * 120 + b.d))[0];
-    if (best) this.lockedId = best.e.id;
-    else this.view3d?.requestRecenter();
+    if (!this.lock.acquire(this.slice.enemies.list, this.lockView())) this.view3d?.requestRecenter();
+  }
+
+  /** Verrouillage automatique au coup reçu (option des Paramètres) : cadre l'agresseur. */
+  lockOnAttacker() {
+    if (this.inCombat() || this.lock.id !== null) return;
+    this.lock.acquireAttacker(this.slice.enemies.list, this.lockView());
   }
 
   /** Passe à la cible voisine : direction 1 à droite, -1 à gauche (souris, molette, stick, swipe). */
   switchLock(direction: number) {
-    const current = this.lockedEnemy();
-    if (!current) return;
-    const all = this.lockCandidates(400);
-    const from = all.find((c) => c.e === current)?.rel ?? 0;
-    // À l'écran, la droite correspond à un angle plus petit (voir World3D.heading).
-    const next = all
-      .filter((c) => c.e !== current && (c.rel - from) * -direction > 0)
-      .sort((a, b) => Math.abs(a.rel - from) - Math.abs(b.rel - from))[0];
-    if (next) this.lockedId = next.e.id;
+    if (!this.lockedEnemy()) return;
+    this.lock.cycle(direction, this.slice.enemies.list, this.lockView());
+    this.lockStamp = -1;
   }
 
   /** Temps de chute restant (s, temps réel), 0 hors mort. [SUPPOSITION] 2,6 s. */
@@ -1435,7 +1440,7 @@ export class GameStateService {
     this.gameloop.slowMotion(0.35, 1100);
     this.rendered.shake(12);
     this.fx.quake(this.playerEntity.centerX, this.playerEntity.centerY, 18, 'crack', 0.6);
-    this.lockedId = null;
+    this.lock.release();
   }
 
   readonly trophies = inject(TrophyService);
@@ -1530,6 +1535,7 @@ export class GameStateService {
       x: this.bossEntity.centerX, y: this.bossEntity.centerY, facingX: boss.facingX, facingY: boss.facingY,
       state: boss.state, progress: this.bossEntity.progress(boss), attack: boss.currentAttack as BossAttackType,
       shotAngles: boss.currentAttack === 'shot' ? shotAngles(boss.phase) : undefined,
+      targetX: boss.chargeTargetX, targetY: boss.chargeTargetY, comboStep: boss.comboStep,
     };
   }
 

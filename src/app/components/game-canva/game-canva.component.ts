@@ -39,6 +39,12 @@ import { currentSettings } from '../../lib/platform/settings.service';
 
 /** Un clic de souris tient la touche virtuelle ce temps (une image de jeu au moins). */
 const CLICK_PULSE_MS = 90;
+/**
+ * Écart minimal entre deux images de jeu (ms) : un écran 120/144 Hz ne rend
+ * plus qu'une image sur deux (≈ 60-72 i/s), ce qui divise par deux le travail
+ * du GPU, la chauffe et la batterie ; 60 et 90 Hz ne sont pas touchés.
+ */
+const MIN_FRAME_MS = 10;
 
 @Component({
   selector: 'app-game-canva',
@@ -96,6 +102,9 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
   private world?: World3D;
   private destroyed = false;
   private warming = false;
+  /** Temps accumulé depuis la dernière image de jeu et décision pour l'image en cours. */
+  private frameDebt = 0;
+  private frameDue = true;
 
   constructor() {
     // Phase de capture : on lit l'état avant que les HUD ne ferment leur panneau sur Échap.
@@ -163,7 +172,7 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
     const hit = Number.isFinite(this.lastHp) && hp < this.lastHp && hp > 0;
     this.lastHp = hp;
     if (!hit || this.gameState.lockActive) return;
-    if (currentSettings().autoLock) this.gameState.toggleLock();
+    if (currentSettings().autoLock) this.gameState.lockOnAttacker();
   }
 
   /** Souris : clic gauche = frappe légère, clic droit = frappe lourde. */
@@ -262,7 +271,7 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
           callbacks: {
             preBoot: (game: Game) => {
               game.events.on(Phaser.Core.Events.POST_RENDER, () => {
-                if (!this.destroyed && !this.warming) this.loop.render();
+                if (!this.destroyed && !this.warming && this.frameDue) this.loop.render();
               });
             },
             postBoot: (game: Game) => {
@@ -304,8 +313,13 @@ export class GameCanvaComponent implements AfterViewInit, OnDestroy {
             },
           },
           scene: { update: (_time: number, delta: number) => {
+            this.frameDebt += delta;
+            this.frameDue = this.frameDebt >= MIN_FRAME_MS;
+            if (!this.frameDue) return;
+            const elapsed = this.frameDebt;
+            this.frameDebt = 0;
             if (this.warming || this.paused()) return;
-            this.loop.update(delta);
+            this.loop.update(elapsed);
             this.autoLock();
             if (this.touch) this.watchCombat();
           } },

@@ -54,7 +54,6 @@ export class TouchControlsComponent implements OnDestroy {
     if (this.game.canTalk()) return { label: this.game.interactLabel(), act: pressF };
     const item = this.slice.prompt();
     if (item) return { label: item.label, act: pressF };
-    if (this.world.nearStain()) return { label: 'Toucher la tache de sang', act: pressF };
     if (this.world.nearMessage()) return { label: 'Apprécier le signe', act: pressF };
     const kaolin = this.prologue.kaolin();
     if (this.combat() && kaolin.owned && kaolin.left <= 0) {

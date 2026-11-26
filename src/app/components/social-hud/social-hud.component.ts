@@ -7,8 +7,7 @@ import { MESSAGE_TEMPLATES, MESSAGE_WORDS, messageText } from '../../lib/social/
 import { BOSS_NAMES, ChallengeService, beats, describe, formatTime } from '../../lib/social/challenge.service';
 
 /**
- * Surcouche « monde partagé » en jeu : lecture des messages au sol, rejeu
- * des taches de sang, écriture d'un message (N / bouton Vue), chrono et
+ * Surcouche « monde partagé » en jeu : lecture des messages au sol, écriture d'un message (N / bouton Vue), chrono et
  * carte de défi après un boss.
  */
 @Component({

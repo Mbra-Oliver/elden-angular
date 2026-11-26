@@ -1,11 +1,19 @@
 import * as T from 'three';
 import { POST_FX } from '../constants/immersion.config-constant';
+import type { GraphicsQuality } from '../platform/settings.service';
 
 /** Calque des objets qui brillent (bloom) et calque des occulteurs opaques. */
 export const BLOOM_LAYER = 1;
 const OCCLUDER_LAYER = 2;
 /** Le calque de bloom est recalculé à cette cadence (s) : nouveaux effets, matériaux qui changent. */
 const RESCAN_EVERY = 0.75;
+/**
+ * Images entre deux recalculs du halo selon la qualité (0 : pas de halo).
+ * Le halo redessine toute la scène une seconde fois (occulteurs) : en
+ * qualité moyenne on le recalcule une image sur deux et on réutilise le
+ * tampon flouté entre-temps (invisible à 60 i/s) ; en basse, il est coupé.
+ */
+const BLOOM_INTERVAL: Record<GraphicsQuality, number> = { low: 0, medium: 2, high: 1 };
 
 /**
  * Post-traitement léger, pensé pour le web :
@@ -39,6 +47,18 @@ export class PostFx {
   private rescan = 0;
   private vignette = 0;
   private time = 0;
+  private bloomInterval = 1;
+  private bloomFrame = 0;
+  /** Le tampon de halo contient une image valide (sinon on le recalcule avant de l'afficher). */
+  private bloomReady = false;
+
+  /** Qualité graphique (Paramètres) : fréquence du halo. */
+  setQuality(quality: GraphicsQuality) {
+    const interval = BLOOM_INTERVAL[quality] ?? 1;
+    if (interval === this.bloomInterval) return;
+    this.bloomInterval = interval;
+    this.bloomReady = false;
+  }
 
   /** Rapport largeur/hauteur de l'écran de jeu (vignette ronde sur tout format). */
   setAspect(aspect: number) {
@@ -50,6 +70,7 @@ export class PostFx {
     const w = Math.max(1, Math.ceil(width / 4));
     const h = Math.max(1, Math.ceil(height / 4));
     if (w === this.bloomA.width && h === this.bloomA.height) return;
+    this.bloomReady = false;
     this.bloomA.setSize(w, h);
     this.bloomB.setSize(w, h);
     this.texel.set(1 / w, 1 / h);
@@ -124,10 +145,15 @@ export class PostFx {
     const beat = Math.pow(Math.max(0, Math.sin(this.time * Math.PI * 2 * (1 + low * 0.5))), 6);
     const vignette = this.vignette * (0.82 + beat * 0.3);
 
-    const bloomOn = this.anyGlowVisible();
+    const bloomOn = this.bloomInterval > 0 && this.anyGlowVisible();
+    if (!bloomOn) this.bloomReady = false;
     if (!bloomOn && vignette < 0.01) return;
 
-    if (bloomOn) this.renderBloom(scene, camera);
+    if (bloomOn && (!this.bloomReady || ++this.bloomFrame >= this.bloomInterval)) {
+      this.bloomFrame = 0;
+      this.renderBloom(scene, camera);
+      this.bloomReady = true;
+    }
     this.composite.uniforms['bloomOn'].value = bloomOn ? 1 : 0;
     this.composite.uniforms['vignette'].value = vignette;
     const autoClear = renderer.autoClear;

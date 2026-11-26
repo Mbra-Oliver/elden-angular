@@ -40,29 +40,34 @@ describe('Monde asynchrone local', () => {
     expect(zoneAt(820, 780)).toBe('village');
   });
 
-  it('peuple le premier lancement de voyageurs simulés', async () => {
+  it('peuple le premier lancement de messages simulés', async () => {
     const backend = new LocalAsyncBackend(new MemoryStorage());
     const ford = await backend.fetchZone('ford');
     expect(ford.messages.length).toBeGreaterThan(0);
-    expect(ford.stains.length).toBeGreaterThan(0);
-    expect(ford.ghosts.length).toBeGreaterThan(0);
-    expect(simulatedTravellers().ghosts.every((g) => g.path.length > 10)).toBeTrue();
+    expect(simulatedTravellers().messages.length).toBeGreaterThan(0);
   });
 
-  it('conserve messages, taches et fantômes entre deux sessions', async () => {
+  it('conserve les messages entre deux sessions', async () => {
     const storage = new MemoryStorage();
     const first = new LocalAsyncBackend(storage);
     const message = await first.postMessage({ zone: 'village', x: 10, y: 20, template: 2, word: 0 });
     await first.rateMessage(message.id);
-    await first.postBloodstain({ zone: 'village', x: 10, y: 20, path: [{ x: 1, y: 2, fx: 1, fy: 0, a: 0 }] });
-    await first.postGhost({ zone: 'village', path: Array.from({ length: 300 }, (_, i) => ({ x: i, y: 0, fx: 1, fy: 0, a: 0 as const })) });
 
     const village = await new LocalAsyncBackend(storage).fetchZone('village');
     const saved = village.messages.find((m) => m.id === message.id)!;
     expect(saved.likes).toBe(1);
     expect(saved.mine).toBeTrue();
     expect(messageText(saved)).toBe('Essaie l’esquive');
-    expect(village.stains.some((s) => s.mine)).toBeTrue();
-    expect(village.ghosts.find((g) => g.mine)!.path.length).toBe(240);
+  });
+
+  it('efface les fantômes et taches de sang des anciennes sauvegardes', async () => {
+    const storage = new MemoryStorage();
+    storage.setItem('terre-rouge.async-world.v1', JSON.stringify({
+      messages: [], seeded: 1, ghosts: [{ id: 'g', zone: 'ford', path: [], createdAt: 1 }], stains: [{ id: 's' }],
+    }));
+    await new LocalAsyncBackend(storage).fetchZone('ford');
+    const saved = JSON.parse(storage.getItem('terre-rouge.async-world.v1')!);
+    expect(saved.ghosts).toBeUndefined();
+    expect(saved.stains).toBeUndefined();
   });
 });

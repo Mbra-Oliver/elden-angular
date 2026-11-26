@@ -1,20 +1,16 @@
 import { InjectionToken } from '@angular/core';
 import { FORD_DUEL, SLUICE_DUEL } from '../engine/duel-fog';
-import { sceneryRandom } from '../constants/scenery';
 
 /**
- * Multijoueur asynchrone « léger » : messages au sol, taches de sang et
- * fantômes d'autres voyageurs. Tout passe par AsyncWorldBackend ; seule une
- * implémentation locale (localStorage + voyageurs simulés) existe pour
- * l'instant. Aucune donnée ne quitte le navigateur. Un backend distant
- * (Supabase, Firebase, API maison…) n'aura qu'à implémenter cette interface
- * et à être fourni via ASYNC_WORLD_BACKEND.
+ * Monde partagé « léger » : messages tracés au sol par les voyageurs. Tout
+ * passe par AsyncWorldBackend ; seule une implémentation locale
+ * (localStorage + quelques messages simulés) existe pour l'instant. Aucune
+ * donnée ne quitte le navigateur. Les fantômes et taches de sang des anciens
+ * joueurs ont été retirés (demande joueur, 2026-11-26) : on ne garde ni ne
+ * rejoue plus leurs trajets.
  */
 
 export type ZoneId = 'ford' | 'village' | 'sluice';
-
-/** Échantillon de position, pris toutes les 0,5 s. `a` : 0 marche, 1 frappe, 2 roulade. */
-export interface TracePoint { x: number; y: number; fx: number; fy: number; a: 0 | 1 | 2 }
 
 export interface GroundMessage {
   id: string;
@@ -29,29 +25,8 @@ export interface GroundMessage {
   mine?: boolean;
 }
 
-export interface Bloodstain {
-  id: string;
-  zone: ZoneId;
-  x: number;
-  y: number;
-  /** Les dernières secondes avant la chute, rejouées par le fantôme rouge. */
-  path: TracePoint[];
-  createdAt: number;
-  mine?: boolean;
-}
-
-export interface GhostRun {
-  id: string;
-  zone: ZoneId;
-  path: TracePoint[];
-  createdAt: number;
-  mine?: boolean;
-}
-
 export interface ZoneSnapshot {
   messages: GroundMessage[];
-  stains: Bloodstain[];
-  ghosts: GhostRun[];
 }
 
 export interface AsyncWorldBackend {
@@ -60,8 +35,6 @@ export interface AsyncWorldBackend {
   fetchZone(zone: ZoneId): Promise<ZoneSnapshot>;
   postMessage(message: Pick<GroundMessage, 'zone' | 'x' | 'y' | 'template' | 'word'>): Promise<GroundMessage>;
   rateMessage(id: string): Promise<void>;
-  postBloodstain(stain: Pick<Bloodstain, 'zone' | 'x' | 'y' | 'path'>): Promise<void>;
-  postGhost(ghost: Pick<GhostRun, 'zone' | 'path'>): Promise<void>;
 }
 
 export const MESSAGE_TEMPLATES = [
@@ -88,11 +61,11 @@ export function messageText(message: Pick<GroundMessage, 'template' | 'word'>) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-const LIMITS = { messages: 40, stains: 16, ghosts: 6, path: 240 };
+const LIMITS = { messages: 40 };
 
-interface Store { messages: GroundMessage[]; stains: Bloodstain[]; ghosts: GhostRun[]; seeded?: number }
+interface Store { messages: GroundMessage[]; seeded?: number }
 
-/** Implémentation locale : localStorage, plus quelques voyageurs simulés. */
+/** Implémentation locale : localStorage, plus quelques messages simulés. */
 export class LocalAsyncBackend implements AsyncWorldBackend {
   readonly kind = 'local' as const;
   private readonly key = 'terre-rouge.async-world.v1';
@@ -101,12 +74,7 @@ export class LocalAsyncBackend implements AsyncWorldBackend {
   constructor(private readonly storage: Storage | null = typeof localStorage === 'undefined' ? null : localStorage) {}
 
   async fetchZone(zone: ZoneId): Promise<ZoneSnapshot> {
-    const store = this.load();
-    return {
-      messages: store.messages.filter((m) => m.zone === zone),
-      stains: store.stains.filter((s) => s.zone === zone),
-      ghosts: store.ghosts.filter((g) => g.zone === zone),
-    };
+    return { messages: this.load().messages.filter((m) => m.zone === zone) };
   }
 
   async postMessage(input: Pick<GroundMessage, 'zone' | 'x' | 'y' | 'template' | 'word'>) {
@@ -122,16 +90,6 @@ export class LocalAsyncBackend implements AsyncWorldBackend {
     });
   }
 
-  async postBloodstain(input: Pick<Bloodstain, 'zone' | 'x' | 'y' | 'path'>) {
-    const stain: Bloodstain = { ...input, path: input.path.slice(-LIMITS.path), id: uid(), createdAt: Date.now(), mine: true };
-    this.mutate((store) => { store.stains = keepLatest([...store.stains, stain], LIMITS.stains); });
-  }
-
-  async postGhost(input: Pick<GhostRun, 'zone' | 'path'>) {
-    const ghost: GhostRun = { ...input, path: input.path.slice(-LIMITS.path), id: uid(), createdAt: Date.now(), mine: true };
-    this.mutate((store) => { store.ghosts = keepLatest([...store.ghosts, ghost], LIMITS.ghosts); });
-  }
-
   private load(): Store {
     if (this.cache) return this.cache;
     let store: Store | null = null;
@@ -141,17 +99,16 @@ export class LocalAsyncBackend implements AsyncWorldBackend {
     } catch {
       store = null;
     }
-    if (!store || !Array.isArray(store.messages)) store = { messages: [], stains: [], ghosts: [] };
+    if (!store || !Array.isArray(store.messages)) store = { messages: [] };
     if (!store.seeded) {
-      const seed = simulatedTravellers();
-      store.messages.push(...seed.messages);
-      store.stains.push(...seed.stains);
-      store.ghosts.push(...seed.ghosts);
+      store.messages.push(...simulatedTravellers().messages);
       store.seeded = 1;
     }
-    this.cache = store;
+    // Anciennes sauvegardes : les trajets des fantômes et des taches de sang
+    // (plusieurs centaines de points) sont effacés de l'appareil.
+    this.cache = { messages: store.messages, seeded: store.seeded };
     this.save();
-    return store;
+    return this.cache;
   }
 
   private mutate(change: (store: Store) => void) {
@@ -179,31 +136,9 @@ function uid() {
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/**
- * Voyageurs simulés : quelques traces déterministes pour que le monde ne soit
- * pas vide au premier lancement (avant qu'un vrai backend existe).
- */
+/** Messages simulés : le monde n'est pas vide au premier lancement (avant qu'un vrai backend existe). */
 export function simulatedTravellers(): Store {
-  const random = sceneryRandom(90417);
   const old = Date.now() - 86_400_000;
-  const wander = (cx: number, cy: number, radius: number, steps: number, fighting: boolean): TracePoint[] => {
-    let angle = random() * Math.PI * 2;
-    let distance = radius * (0.4 + random() * 0.4);
-    const path: TracePoint[] = [];
-    for (let i = 0; i < steps; i++) {
-      angle += (random() - 0.4) * 0.5;
-      distance = Math.max(radius * 0.25, Math.min(radius * 0.85, distance + (random() - 0.5) * 24));
-      const x = cx + Math.cos(angle) * distance;
-      const y = cy + Math.sin(angle) * distance;
-      const prev = path.at(-1);
-      const dx = prev ? x - prev.x : 1;
-      const dy = prev ? y - prev.y : 0;
-      const len = Math.hypot(dx, dy) || 1;
-      const roll = random();
-      path.push({ x, y, fx: dx / len, fy: dy / len, a: fighting && roll > 0.82 ? 2 : fighting && roll > 0.62 ? 1 : 0 });
-    }
-    return path;
-  };
   const messages: GroundMessage[] = [
     { zone: 'ford', x: FORD_DUEL.x - 150, y: FORD_DUEL.y + 40, template: 2, word: 0, likes: 31 },
     { zone: 'ford', x: FORD_DUEL.x + 60, y: FORD_DUEL.y + 150, template: 1, word: 6, likes: 18 },
@@ -214,18 +149,7 @@ export function simulatedTravellers(): Store {
     { zone: 'sluice', x: SLUICE_DUEL.x - 200, y: SLUICE_DUEL.y + 60, template: 1, word: 7, likes: 27 },
     { zone: 'sluice', x: SLUICE_DUEL.x - 120, y: SLUICE_DUEL.y - 140, template: 2, word: 1, likes: 15 },
   ].map((m, i) => ({ ...m, zone: m.zone as ZoneId, id: `sim-m${i}`, createdAt: old - i * 1000 }));
-  const stains: Bloodstain[] = [];
-  const ghosts: GhostRun[] = [];
-  for (const [zone, arena] of [['ford', FORD_DUEL], ['sluice', SLUICE_DUEL]] as const) {
-    for (let i = 0; i < 3; i++) {
-      const path = wander(arena.x, arena.y, arena.radius, 16, true);
-      const last = path.at(-1)!;
-      stains.push({ id: `sim-s-${zone}${i}`, zone, x: last.x, y: last.y, path, createdAt: old - i });
-    }
-    ghosts.push({ id: `sim-g-${zone}`, zone, path: wander(arena.x, arena.y, arena.radius, 90, true), createdAt: old });
-  }
-  ghosts.push({ id: 'sim-g-village', zone: 'village', path: wander(1000, 760, 260, 120, false), createdAt: old });
-  return { messages, stains, ghosts };
+  return { messages };
 }
 
 export const ASYNC_WORLD_BACKEND = new InjectionToken<AsyncWorldBackend>('ASYNC_WORLD_BACKEND', {

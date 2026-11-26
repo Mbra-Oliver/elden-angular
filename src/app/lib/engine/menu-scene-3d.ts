@@ -129,6 +129,9 @@ export class MenuScene3D {
     });
     this.disposables.forEach((d) => d.dispose());
     this.renderer.dispose();
+    // Libère le contexte WebGL tout de suite : sinon chaque retour au menu en
+    // garde un de plus en mémoire (Safari iOS en tolère peu et recharge l'onglet).
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
 

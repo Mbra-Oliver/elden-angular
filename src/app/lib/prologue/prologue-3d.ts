@@ -2,6 +2,7 @@ import * as T from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sceneryRandom } from '../constants/scenery';
 import { applyWind } from '../engine/wind';
+import { currentSettings } from '../platform/settings.service';
 import { LYING_ON_BACK, LYING_ON_SIDE, bakeHuman } from '../engine/human-bake';
 import { plainOutfit, soldierOutfit } from '../engine/human-outfits';
 import {
@@ -101,6 +102,12 @@ export class Prologue3D {
   private time = 0;
   private readonly tmp = new T.Object3D();
   private readonly random = sceneryRandom(91701);
+  /**
+   * Bouffées de fumée par colonne : grands sprites transparents qui se
+   * superposent (un appel de dessin chacun, beaucoup de pixels repeints).
+   * Moitié moins hors qualité haute, pour les GPU de téléphone.
+   */
+  private readonly puffs = currentSettings().quality === 'high' ? 1 : 2;
 
   constructor(
     private readonly scene: T.Scene,
@@ -811,7 +818,7 @@ export class Prologue3D {
       this.valleyFires.push(fire);
       this.root.add(fire);
       if (i % 3 === 0) {
-        for (let k = 0; k < 5; k++) {
+        for (let k = 0; k < 5; k += this.puffs) {
           const sprite = new T.Sprite(this.mat(new T.SpriteMaterial({
             map: glow, color: k % 2 ? '#3a2c28' : '#4a3a32', transparent: true, depthWrite: false, opacity: 0,
           })));
@@ -1076,7 +1083,7 @@ export class Prologue3D {
   private buildSmoke() {
     const texture = this.soft();
     SMOKES.forEach((base, i) => {
-      for (let k = 0; k < 6; k++) {
+      for (let k = 0; k < 6; k += this.puffs) {
         const sprite = new T.Sprite(this.mat(new T.SpriteMaterial({
           map: texture, color: k % 2 ? '#5d5850' : '#6e675d', transparent: true, depthWrite: false, opacity: 0,
         })));

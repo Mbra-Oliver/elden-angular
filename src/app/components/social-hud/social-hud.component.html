@@ -24,9 +24,7 @@
       }
     </aside>
   }
-  @if (free() && world.nearStain()) {
-    <p class="prompt"><app-key-hint action="interact" /> Toucher la tache de sang</p>
-  } @else if (canWrite() && !world.nearMessage()) {
+  @if (canWrite() && !world.nearMessage()) {
     <p class="prompt subtle"><app-key-hint action="message" /> Tracer un signe au kaolin</p>
   }
 }
