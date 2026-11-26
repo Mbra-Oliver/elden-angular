@@ -23,7 +23,7 @@ const STORY_FIGHTS: readonly EncounterId[] = ['champion', 'ford', 'sluice'];
 @Component({
   selector: 'app-main-menu',
   templateUrl: './main-menu.component.html',
-  styleUrl: './main-menu.component.css',
+  styleUrls: ['./main-menu.component.css', './main-menu.panels.css'],
 })
 export class MainMenuComponent implements AfterViewInit, OnDestroy {
   @ViewChild('stage') stage!: ElementRef<HTMLElement>;
