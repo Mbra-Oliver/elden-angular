@@ -33,6 +33,18 @@
 .hit-direction[data-kind='shot'] .arc { filter: saturate(1.4) brightness(1.2); }
 @keyframes hitArc { from { opacity: 1; } to { opacity: 0; } }
 
+/* Tireur hors champ qui vise : chevron rouge au bord du cercle, blanc chaud au verrouillage. */
+.aim-warning { position: absolute; inset: 0; pointer-events: none; --aim-angle: 0deg; }
+.aim-warning .mark {
+  position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+  border: 12px solid transparent; border-bottom: 18px solid #ff3b2a;
+  transform: translate(-50%, -50%) rotate(var(--aim-angle)) translateY(-30cqi);
+  filter: drop-shadow(0 0 6px #000) drop-shadow(0 0 8px #ff3b2a88);
+  animation: aimPulse .32s ease-in-out infinite alternate;
+}
+.aim-warning.locked .mark { border-bottom-color: #ffe4b0; animation: none; filter: drop-shadow(0 0 10px #ffe4b0); }
+@keyframes aimPulse { from { opacity: .45; } to { opacity: 1; } }
+
 /* --- Barres à double jauge --- */
 .bar {
   position: relative;

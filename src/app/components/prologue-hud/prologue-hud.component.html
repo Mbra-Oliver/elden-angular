@@ -9,7 +9,9 @@
   <!-- Fondu depuis le noir sur Kwadwo, au sortir du texte d'ouverture. -->
   <div class="fade" aria-hidden="true"></div>
 }
-@if (prologue.hint(); as hint) {
+@if (prologue.hint() === 'ravine') {
+  <p class="hint warning" role="status">{{ ravineLine }}</p>
+} @else if (prologue.hint()) {
   <p class="hint" role="status">
     <app-key-hint action="dodge" /> Esquive · <app-key-hint action="attack" /> Frappe légère ·
     <app-key-hint action="heavy" /> Frappe lourde · <app-key-hint action="lock" /> Verrouiller

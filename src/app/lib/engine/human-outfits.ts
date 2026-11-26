@@ -21,17 +21,19 @@ export function kwadwoOutfit(m: Material): Outfit {
   };
 }
 
-/** Badu Ofosu : pagne de guerre sombre à pan rouge, ceinture, bandoulière, bracelets, scarifications. */
+/** Badu Ofosu, porte-glaive du Denkyira : batakari indigo à talismans, pagne sombre, bracelets d’or. */
 export function baduOutfit(m: Material, loincloth: T.Material): Outfit {
   return {
-    wrap: { material: loincloth, band: m('#6e1f17'), flap: true, hem: 9.6 },
-    belt: m('#2e1d13'),
-    strap: m('#2e1d13'),
-    armbands: m('#2e1d13'),
+    // Batakari kɛseɛ (blouse de guerre) teint à l'indigo, couvert de talismans
+    // de cuir (sebe) : la tenue d'un officier de cour qui part au combat.
+    // Il se distingue au premier coup d'œil du héros, torse nu en pagne d'or.
+    smock: { cloth: m('#273047'), trim: m('#7a2a1c'), charm: m('#2b1b12'), red: m('#93301f') },
+    wrap: { material: loincloth, band: m('#7a2a1c'), hem: 9.8 },
+    // Bracelets d'or terne au-dessus du coude : le rang de porte-glaive du roi.
+    armbands: m('#9c7c38'),
     cuffs: m('#2e1d13'),
     sandals: m('#2e1d13'),
     hair: m('#17100d'),
-    scars: m('#2a1610'),
   };
 }
 

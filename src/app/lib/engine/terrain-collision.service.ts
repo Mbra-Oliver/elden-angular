@@ -4,14 +4,30 @@ import type { DuelArena } from './duel-fog';
 import { WORLD } from '../constants/terrain-constant';
 
 interface Point { x: number; y: number }
-interface Circle extends Point { radius: number }
+interface Circle extends Point { radius: number; surface: WeaponSurface }
+
+/** Ce que l'arme heurte : sert au son et aux éclats du rebond. */
+export type WeaponSurface = 'wood' | 'earth' | 'thatch';
+
+/** Premier obstacle rencontré par une arme le long d'un segment. */
+export interface WeaponContact {
+  /** Distance parcourue depuis le départ du segment. */
+  t: number;
+  x: number;
+  y: number;
+  surface: WeaponSurface;
+}
+
+type Blocker = (x: number, y: number, radius: number) => boolean;
+/** Pas d'échantillonnage du lancer d'arme (unités du monde). */
+const WEAPON_STEP = 2;
 
 const CELL = 96;
 const GROUND_STEP = 2;
 const GROUND_CACHE_LIMIT = 4096;
 const CIRCLES: Circle[] = [
-  ...HUTS.map(([x, y, radius]) => ({ x, y: y + 5, radius: radius * 0.82 })),
-  ...TREES.map(({ x, y, radius }) => ({ x, y: y + 3, radius: radius * 0.68 })),
+  ...HUTS.map(([x, y, radius]) => ({ x, y: y + 5, radius: radius * 0.82, surface: 'thatch' as const })),
+  ...TREES.map(({ x, y, radius }) => ({ x, y: y + 3, radius: radius * 0.68, surface: 'wood' as const })),
 ];
 
 @Injectable({ providedIn: 'root' })
@@ -75,10 +91,56 @@ export class TerrainCollisionService {
   }
 
   /** Obstacles permanents ajoutés par d'autres systèmes (palissade, ruines…). */
-  private readonly blockers: ((x: number, y: number, radius: number) => boolean)[] = [];
+  private readonly blockers: Blocker[] = [];
+  /** Obstacles qui arrêtent aussi les armes (murs, rochers ; pas l'eau ni les bords de carte). */
+  private readonly weaponBlockers: Blocker[] = [];
 
-  addBlocker(blocker: (x: number, y: number, radius: number) => boolean) {
+  /**
+   * @param stopsWeapons false quand le bloqueur décrit aussi de l'eau ou des
+   * bords de falaise : on ne veut pas qu'un coup de lance « rebondisse » sur une rivière.
+   */
+  addBlocker(blocker: Blocker, stopsWeapons = true) {
     if (!this.blockers.includes(blocker)) this.blockers.push(blocker);
+    if (stopsWeapons) this.addWeaponBlocker(blocker);
+  }
+
+  /** Obstacle pour les armes seulement (le déplacement a déjà son propre bloqueur). */
+  addWeaponBlocker(blocker: Blocker) {
+    if (!this.weaponBlockers.includes(blocker)) this.weaponBlockers.push(blocker);
+  }
+
+  /**
+   * Décor fixe et dur au point donné, pour une arme : cases, troncs, murs.
+   * Ni l'eau, ni la brume de l'arène, ni le décor cassable (testé à part).
+   */
+  solidAt(x: number, y: number, radius = 0.5): WeaponSurface | null {
+    const row = Math.floor(y / CELL);
+    const col = Math.floor(x / CELL);
+    if (col >= 0 && col < this.columns) {
+      const obstacles = this.cells.get(row * this.columns + col);
+      if (obstacles) {
+        for (const obstacle of obstacles) {
+          if ((x - obstacle.x) ** 2 + (y - obstacle.y) ** 2 < (radius + obstacle.radius) ** 2) return obstacle.surface;
+        }
+      }
+    }
+    for (const blocker of this.weaponBlockers) if (blocker(x, y, radius)) return 'earth';
+    return null;
+  }
+
+  /** Premier décor fixe sur le segment (sx, sy) → (ex, ey), ou null s'il est dégagé. */
+  castSolid(sx: number, sy: number, ex: number, ey: number): WeaponContact | null {
+    const length = Math.hypot(ex - sx, ey - sy);
+    if (length < 1e-3) return null;
+    const steps = Math.ceil(length / WEAPON_STEP);
+    for (let i = 1; i <= steps; i++) {
+      const t = Math.min(length, i * WEAPON_STEP);
+      const x = sx + (ex - sx) * t / length;
+      const y = sy + (ey - sy) * t / length;
+      const surface = this.solidAt(x, y);
+      if (surface) return { t, x, y, surface };
+    }
+    return null;
   }
 
   /** Cartes hors du monde principal (prologue) : on reste borné à celle où l'on est. */
@@ -108,6 +170,15 @@ export class TerrainCollisionService {
       if (!this.blocked(x, ny, radius)) y = ny;
     }
     return { x, y };
+  }
+
+  /**
+   * Une balle passant en (x, y) touche-t-elle le décor ? Les obstacles durs
+   * (cases, arbres, rochers, troncs, murs) et le décor cassable, mais pas les
+   * bords du sentier ni l'eau : un tireur posté tire par-dessus le talus.
+   */
+  blocksShot(x: number, y: number): boolean {
+    return this.solidAt(x, y, 1) !== null || !!this.dynamicBlocker?.(x, y, 1);
   }
 
   private blocked(x: number, y: number, radius: number) {

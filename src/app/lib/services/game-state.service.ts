@@ -32,16 +32,17 @@ import { TerrainCollisionService } from '../engine/terrain-collision.service';
 import type { Actor3D, World3D } from '../engine/world-3d';
 import { EnvironmentService } from '../engine/environment.service';
 import { DestructiblesService } from '../engine/destructibles.service';
+import { WeaponObstructionService } from '../engine/weapon-obstruction.service';
 import { BATTLE, CLEARING, CROSSING, GATE, VILLAGE_STOPS } from '../constants/village';
 import { AttackEventTracker, attackFrame } from '../combat/attack-timeline';
 import { Dialogue, DialogueChoice, FlagValue, resolveDialogue } from './dialogue-tree';
 import { SliceService } from '../slice/slice.service';
 import type { Enemy } from '../slice/enemies.service';
-import { TargetLock, type LockView } from '../slice/target-lock';
+import { isThreatening, TargetLock, type LockView } from '../slice/target-lock';
 import { SoulsLoopService, type SoulsPrompt } from './souls-loop.service';
 import { FOYERS, SOULS, type Foyer, type FoyerId } from '../constants/souls-world';
 import { ruinBlocks } from '../constants/landscape';
-import { SLICE_DIALOGUES } from '../slice/slice-content';
+import { SHOT_LOCK_MS, SLICE_DIALOGUES } from '../slice/slice-content';
 import { PrologueService } from '../prologue/prologue.service';
 import { CLEARINGS, DRUMMER, groundHeight, PROLOGUE_CENTER, PROLOGUE_DUEL, PROLOGUE_MOOD } from '../prologue/prologue-map';
 import { AttackData } from '../interfaces/AttackData';
@@ -75,14 +76,16 @@ export interface CombatHud {
   defeated: { name: string; label: string } | null;
   /** Danger qui vient de frapper, en degrés depuis le haut de l'écran. */
   hit: { id: number; angle: number; kind: 'shot' | 'melee' } | null;
+  /** Tireurs hors champ qui visent le joueur, en degrés depuis le haut de l'écran. */
+  aims: { id: number; angle: number; locked: boolean }[];
 }
 
 /** Cause de la mort et conseil, par coup de boss. [SUPPOSITION] formulations à relire. */
 const KILL_HINTS: Partial<Record<string, string>> = {
   shot: 'Abattu par le mousquet de Badu. Quand la fumée noire sort du canon, esquive de côté au dernier moment.',
   reap: 'Fauché par la double faucheuse. Esquive vers l’avant, à travers la lame, pour finir dans son flanc.',
-  judgment: 'Écrasé par le jugement retardé. Attends que la hache commence à descendre avant d’esquiver.',
-  feint: 'Pris par la feinte. Quand il lève la hache, ne frappe pas tant que le coup n’est pas parti.',
+  judgment: 'Écrasé par le jugement retardé. Attends que la lame commence à descendre avant d’esquiver.',
+  feint: 'Pris par la feinte. Quand il lève son sabre, ne frappe pas tant que le coup n’est pas parti.',
   backhand: 'Frappé par le revers de crosse. Ne reste pas collé dans son dos.',
   furrow: 'Fauché par le sillon d’étincelles. Esquive en diagonale quand il relève la lame.',
   leap: 'Écrasé par la chute du roi. Roule sous lui pendant qu’il est en l’air.',
@@ -122,6 +125,7 @@ export class GameStateService {
   private readonly equipment = inject(EquipmentStore);
   private readonly arrows = inject(ArrowService);
   private readonly destructibles = inject(DestructiblesService);
+  private readonly obstruction = inject(WeaponObstructionService);
   /** Game feel : sons d'impact, éclats, flashs, secousse 3D. */
   private readonly fx = inject(CombatFxService);
   readonly narrative = inject(NarrativeDirectorService);
@@ -154,6 +158,7 @@ export class GameStateService {
       () => this.prologue.championSpot, () => this.prologue.bridged,
       () => ({ x: this.playerEntity.centerX, y: this.playerEntity.centerY })));
     view.cameraBlocker = (x, z, y) => this.prologue.blocksCamera(x, z, y);
+    view.setWeaponProbe((x, y, height) => this.obstruction.inside(x, y, height));
     view.cameraFloor = (x, z) => this.prologue.cameraFloor(x, z);
   }
 
@@ -210,7 +215,7 @@ export class GameStateService {
   private readonly chapter = signal<'prologue' | 'battle' | 'crossing' | 'village'>('village');
   /** Prologue 1701 : le champ de bataille de Feyiase (lib/prologue). */
   readonly prologue = inject(PrologueService);
-  /** Chapitre 1 : duel contre le porte-hache du Denkyira sur la crête. */
+  /** Chapitre 1 : duel contre le porte-glaive du Denkyira sur la crête. */
   private readonly prologueDuel = signal(false);
   private readonly inCombat = computed(() =>
     this.chapter() === 'battle' || this.decision() !== null || this.prologueDuel());
@@ -275,7 +280,7 @@ export class GameStateService {
   private rushTransition = 0;
   readonly story = computed(() => {
     if (this.prologueDuel()) {
-      return 'Chapitre 1, 1701. Badu Ofosu, le porte-hache du roi du Denkyira, tient encore la crête. Esquive la hache, guette la longue visée du mousquet : la fumée noire marque la ligne du tir. Frappe pendant qu’il recharge.';
+      return 'Chapitre 1, 1701. Badu Ofosu, le porte-glaive du roi du Denkyira, tient encore la crête. Esquive son afena, guette la longue visée du mousquet : la fumée noire marque la ligne du tir. Frappe pendant qu’il recharge.';
     }
     if (this.chapter() === 'prologue') {
       return 'Chapitre 1, 1701. Feyiase, après la bataille. Kwadwo Ofori, isolé de l’arrière-garde, remonte la piste vers la crête à l’est. Des éclaireurs du Denkyira sont embusqués : avance prudemment.';
@@ -399,6 +404,11 @@ export class GameStateService {
       this.lock.noteHit(enemy.id);
       this.lastHitBy = FIELD_HINTS[enemy.kind] ?? 'Tué par un soldat du Denkyira.';
     };
+    // Mousquets : armement audible à la visée, détonation au tir (atténués avec la distance).
+    const earshot = (enemy: Enemy) =>
+      Math.max(0, 1 - Math.hypot(enemy.x - this.playerEntity.centerX, enemy.y - this.playerEntity.centerY) / 900);
+    this.slice.enemies.onAim = (enemy) => this.fx.sfx.musketAim(earshot(enemy));
+    this.slice.enemies.onShot = (enemy) => this.fx.sfx.musketShot(earshot(enemy));
   }
 
   /** Situation lue par la musique : zone, pause, approche de l'arène de la vanne. */
@@ -558,7 +568,7 @@ export class GameStateService {
     this.prologue.equip();
   }
 
-  /** Le héros arrive sur la crête : entrée du porte-hache, arène fermée. */
+  /** Le héros arrive sur la crête : entrée du porte-glaive, arène fermée. */
   private startPrologueDuel() {
     this.prologueDuel.set(true);
     this.prologue.duelTries++;
@@ -581,7 +591,7 @@ export class GameStateService {
   /**
    * Entrée de Badu, sans coupure : de dos au milieu des morts, il entend les
    * pas, tourne la tête (le regard suit déjà le joueur), pivote lentement,
-   * plante sa hache, épaule le mousquet ; le chien claque, le duel commence.
+   * abaisse son afena, épaule le mousquet ; le chien claque, le duel commence.
    */
   private baduIntroPose(pose: Actor3D, k: number) {
     const toPlayer = Math.atan2(this.playerEntity.centerX - pose.x, this.playerEntity.centerY - pose.y);
@@ -726,7 +736,10 @@ export class GameStateService {
       if (!frame.hitbox && !events.includes('active-start')) return;
       const counterContact = player.attackType === 'counter' &&
         Math.hypot(this.playerEntity.centerX - this.bossEntity.centerX, this.playerEntity.centerY - this.bossEntity.centerY) < 67;
-      if (counterContact || this.playerStrikeReaches(player, attackData)) {
+      // Case, tronc ou mur entre la lame et le boss : le coup rebondit au lieu de traverser.
+      if ((counterContact || this.playerStrikeReaches(player, attackData)) &&
+        !this.obstruction.strikeBlocked(this.bossEntity.centerX, this.bossEntity.centerY, BOSS_CONFIG.size * 0.42)) {
+        this.obstruction.noteHit();
         const knockbackX = player.facingX * 150;
         const knockbarY = player.facingY * 150;
 
@@ -822,16 +835,16 @@ export class GameStateService {
     const baduHit = (): boolean | null => {
       switch (attackName) {
         case 'reap': return distance < cfg.range * size + 9 && along > -0.25;
-        case 'judgment': return ahead(38, cfg.range * size / 2 + 6);
+        case 'judgment': return ahead(cfg.range * size * 0.55, cfg.range * size / 2 + 6);
         case 'feint': return distance < cfg.range * size && along > 0.3;
         case 'backhand': return distance < cfg.range * size && along < 0.2;
         case 'thrust': return along > 0 && distance < cfg.range * size + 9 && across < 22;
         case 'leap': return distance < cfg.range * size / 2;
-        case 'furrow': return progress < 0.8 ? distance < size * 0.75 : distance < size * 1.6 && along > 0.2;
+        case 'furrow': return progress < 0.8 ? distance < size * 0.75 : distance < size * 1.2 && along > 0.2;
         case 'mill': {
           const step = boss.comboStep;
           if (step === 2) return distance < size * 1.4;
-          if (step === 3) return ahead(40, 58);
+          if (step === 3) return ahead(40, 50);
           return distance < cfg.range * size + 9 && along > 0.1;
         }
         default: return null;
@@ -1073,6 +1086,9 @@ export class GameStateService {
       const near = this.chapter() !== 'prologue' && !this.slice.objective() && Math.hypot(target.x - this.playerEntity.centerX, target.y - this.playerEntity.centerY) < 75;
       this.near.set(near);
     }
+
+    // Après tous les tests de touche : un coup qui n'a rien atteint rebondit sur le décor.
+    this.obstruction.update();
 
     const x = this.playerEntity.centerX;
     const y = this.playerEntity.centerY;
@@ -1660,7 +1676,8 @@ export class GameStateService {
       enemyPose.phase = (intro - 0.3) / 0.55;
     }
     view.setBossKind(this.bossEntity.id);
-    view.setLockTarget(combat ? null : this.lockedEnemy());
+    const lockTarget = combat ? null : this.lockedEnemy();
+    view.setLockTarget(lockTarget && { x: lockTarget.x, y: lockTarget.y, ground: this.terrain.groundAt(lockTarget.x, lockTarget.y) });
     view.setVista(prologue && !combat && this.prologue.atLookout() ? 1 : 0);
     view.onLockFlick ??= (direction) => this.switchLock(direction);
     view.onLockButton ??= () => this.toggleLock();
@@ -1672,18 +1689,38 @@ export class GameStateService {
 
   /** Sens d'où vient le coup, dans le repère écran (0 = devant le joueur). */
   private markHitDir(dirX: number, dirY: number, kind: 'shot' | 'melee') {
-    const ax = -dirX;
-    const ay = -dirY;
-    if (Math.hypot(ax, ay) < 0.001) return;
-    const heading = this.view3d?.heading ?? 0;
-    const right = -ax * Math.cos(heading) + ay * Math.sin(heading);
-    const down = -ax * Math.sin(heading) - ay * Math.cos(heading);
+    if (Math.hypot(dirX, dirY) < 0.001) return;
     this.hitIndicator = {
       id: ++this.hitId,
-      angle: Math.atan2(right, -down) * 180 / Math.PI,
+      angle: this.screenAngle(-dirX, -dirY),
       kind,
       until: performance.now() + 700,
     };
+  }
+
+  /** Direction du monde (ax, ay) depuis le joueur, en degrés depuis le haut de l'écran. */
+  private screenAngle(ax: number, ay: number) {
+    const heading = this.view3d?.heading ?? 0;
+    const right = -ax * Math.cos(heading) + ay * Math.sin(heading);
+    const down = -ax * Math.sin(heading) - ay * Math.cos(heading);
+    return Math.atan2(right, -down) * 180 / Math.PI;
+  }
+
+  /**
+   * [SUPPOSITION] Tireurs qui visent le joueur hors du champ de la caméra
+   * (au-delà de ~38° de l'axe) : un repère au bord de l'écran les montre.
+   */
+  private offscreenAims(combat: boolean): CombatHud['aims'] {
+    if (combat) return [];
+    const view = { px: this.playerEntity.centerX, py: this.playerEntity.centerY, heading: this.view3d?.heading ?? 0 };
+    const aims: CombatHud['aims'] = [];
+    for (const enemy of this.slice.enemies.list) {
+      if (enemy.state !== 'windup' || (enemy.move !== 'shot' && enemy.move !== 'longshot') || !isThreatening(enemy, view)) continue;
+      const angle = this.screenAngle(enemy.x - view.px, enemy.y - view.py);
+      if (Math.abs(angle) < 38) continue;
+      aims.push({ id: enemy.id, angle: Math.round(angle / 4) * 4, locked: enemy.timer <= SHOT_LOCK_MS });
+    }
+    return aims;
   }
 
   /**
@@ -1703,6 +1740,7 @@ export class GameStateService {
       hit: this.hitIndicator && this.hitIndicator.until > performance.now()
         ? { id: this.hitIndicator.id, angle: this.hitIndicator.angle, kind: this.hitIndicator.kind }
         : null,
+      aims: this.offscreenAims(combat),
       counter: this.counterReady(),
       // Fondu au noir pendant la fin de la chute (pas de 5 % pour ne pas redessiner à chaque image).
       fade: Math.round(Math.max(0, Math.min(1, (this.deathProgress() - 0.55) / 0.45)) * 20) / 20,

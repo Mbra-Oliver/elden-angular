@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, signal, untracked } from '@angular/core';
-import { PrologueService } from '../../lib/prologue/prologue.service';
+import { PrologueService, RAVINE_LINE } from '../../lib/prologue/prologue.service';
 import { TrophyService } from '../../lib/trophies/trophy.service';
 import { NarrativeDirectorService } from '../../lib/narrative/narrative-director.service';
 import { KeyHintComponent, SkipHintComponent } from '../key-hint/key-hint.component';
@@ -17,6 +17,8 @@ import { InputDeviceService } from '../../lib/services/input-device.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PrologueHudComponent {
+  /** Avertissement de Kwadwo à l'entrée de la ravine (tireur posté). */
+  readonly ravineLine = RAVINE_LINE;
   readonly prologue = inject(PrologueService);
   readonly trophies = inject(TrophyService);
   private readonly story = inject(NarrativeDirectorService);

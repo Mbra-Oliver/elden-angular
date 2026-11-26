@@ -230,7 +230,7 @@ export class AttackTelegraph3D {
       case 'thrust':
         return this.zones.push({ kind: 'lane', x, y, yaw, half: 22, length: range + 9 });
       case 'judgment':
-        return sector('disc', range / 2 + 6, ahead(38));
+        return sector('disc', range / 2 + 6, ahead(range * 0.55));
       case 'leap': {
         // Point d'impact : là où Badu retombe, pas là où il s'élance.
         const at = pose.targetX !== undefined && pose.targetY !== undefined ? { x: pose.targetX, y: pose.targetY } : { x, y };
@@ -250,7 +250,7 @@ export class AttackTelegraph3D {
       case 'mill':
         // Pendant l'anticipation on annonce le premier coup ; ensuite, chaque coup.
         if (!windup && step === 2) return sector('disc', size * 1.4);
-        if (!windup && step === 3) return sector('disc', 58, ahead(40));
+        if (!windup && step === 3) return sector('disc', 50, ahead(40));
         return sector('mill', range + 9);
       case 'shot': {
         const length = range;

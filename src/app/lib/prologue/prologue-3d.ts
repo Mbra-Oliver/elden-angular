@@ -107,7 +107,7 @@ export class Prologue3D {
   /** Feux de la crête, visibles de loin. */
   private readonly beacons: T.Sprite[] = [];
 
-  /** Corps du porte-hache, couché sur la crête après le combat. */
+  /** Corps du porte-glaive, couché sur la crête après le combat. */
   private readonly corpse: T.Group;
   /** Tronc du raccourci : debout au bord du ravin, puis couché en pont. */
   private trunkStanding!: T.Object3D;
@@ -467,11 +467,13 @@ export class Prologue3D {
    * indigo sous le batakari à talismans ; Denkyira : pagne rouille,
    * ceinture et bandoulière de poudre.
    */
-  private body(denkyira: boolean, curled: boolean): T.BufferGeometry {
+  private body(denkyira: boolean, curled: boolean, badu = false): T.BufferGeometry {
     const parts = bakeHuman({
       skin: C.skin,
       outfit: (m) => denkyira ? soldierOutfit(m, 'tireur', m(C.denkyira)) : plainOutfit(m, C.indigo),
-      smock: denkyira ? undefined : { cloth: C.asanteSmock, trim: C.indigo, charm: C.talisman, red: C.talismanRed },
+      // Badu garde son batakari indigo de porte-glaive (même tenue qu'en combat).
+      smock: badu ? { cloth: '#273047', trim: '#7a2a1c', charm: '#2b1b12', red: '#93301f' }
+        : denkyira ? undefined : { cloth: C.asanteSmock, trim: C.indigo, charm: C.talisman, red: C.talismanRed },
       pose: curled
         ? (rig) => {
           rig.torso.rotation.x = 0.55;
@@ -582,20 +584,21 @@ export class Prologue3D {
     this.root.add(this.embers);
   }
 
-  /** Badu Ofosu tombé face contre terre, la hache à côté de lui. */
+  /** Badu Ofosu tombé face contre terre, son afena à côté de lui. */
   private buildCorpse(material: T.Material) {
     const group = new T.Group();
-    const body = new T.Mesh(this.body(true, false), material);
-    body.scale.setScalar(1.15);
+    const body = new T.Mesh(this.body(true, false, true), material);
+    body.scale.setScalar(1.12);
     body.rotation.x = Math.PI;
     body.position.y = 4.2;
-    const axe = new T.Mesh(merge([
-      [cyl(0.7, 0.85, 44, 6), C.wood, m4(0, 0.8, 0, 0, 0, Math.PI / 2)],
-      [box(2, 0.8, 16), C.iron, m4(21, 0.8, 4)],
+    // Afena (≈ 1 m) : poignée sombre, lame large et claire, posée à plat.
+    const sword = new T.Mesh(merge([
+      [cyl(0.55, 0.55, 5, 6), C.darkWood, m4(-2.5, 0.6, 0, 0, 0, Math.PI / 2)],
+      [box(14, 0.25, 2.2), C.iron, m4(7, 0.4, 0.3)],
     ]), material);
-    axe.position.set(4, 0, 12);
-    axe.rotation.y = 0.5;
-    group.add(body, axe);
+    sword.position.set(6, 0, 12);
+    sword.rotation.y = 0.5;
+    group.add(body, sword);
     group.visible = false;
     this.root.add(group);
     return group;

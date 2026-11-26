@@ -55,11 +55,11 @@ export const BOSS_PHASE_PROFILE: Record<BossId, Record<1 | 2 | 3, BossPhaseProfi
     2: { timeScale: 1.1, emissive: '#5a1d08', emissiveIntensity: 0.6, attacks: ['slash', 'slam', 'charge', 'combo'] },
     3: { timeScale: 1.2, emissive: '#b8400f', emissiveIntensity: 0.85, attacks: ['slash', 'slam', 'charge', 'combo', 'sweep'] },
   },
-  // Porte-hache du Denkyira : hache, puis mousquet ensorcelé, puis sabre. Lueur de braise sombre (poudre).
+  // Porte-glaive du Denkyira : afena et mousquet, puis afena à deux mains. Un homme : aucune lueur.
   champion: {
     1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['shot', 'reap', 'judgment', 'feint', 'backhand'] },
-    2: { timeScale: 1.12, emissive: '#2a0904', emissiveIntensity: 0.35, attacks: ['furrow', 'leap', 'mill', 'thrust', 'feint', 'backhand'] },
-    3: { timeScale: 1.12, emissive: '#2a0904', emissiveIntensity: 0.35, attacks: ['furrow', 'leap', 'mill', 'thrust', 'feint', 'backhand'] },
+    2: { timeScale: 1.12, emissive: '#000000', emissiveIntensity: 0, attacks: ['furrow', 'leap', 'mill', 'thrust', 'feint', 'backhand'] },
+    3: { timeScale: 1.12, emissive: '#000000', emissiveIntensity: 0, attacks: ['furrow', 'leap', 'mill', 'thrust', 'feint', 'backhand'] },
   },
   guardian: {
     1: { timeScale: 1, emissive: '#27756c', emissiveIntensity: 1, attacks: ['surge', 'slam', 'charge'] },

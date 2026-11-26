@@ -32,6 +32,21 @@ const tmp = new T.Object3D();
 const ARC_HALF = Math.acos(0.25);
 const MAX_ARCS = 6;
 
+/**
+ * [SUPPOSITION] Poses du mousquet (radians). right/left : bras vers l'avant
+ * (négatif = levé), rightZ/leftZ : écart latéral du bras (négatif à droite,
+ * positif à gauche = ramené devant la poitrine), gun :
+ * pente du canon par rapport au corps (0 = horizontal, -π/2 = vertical),
+ * gunZ : position de la poignée le long de la main (crosse calée à l'épaule en visée).
+ */
+interface MusketPose { right: number; rightZ: number; left: number; leftZ: number; gun: number; gunZ: number; torsoX: number; torsoY: number }
+const MUSKET_CARRY: MusketPose = { right: -0.35, rightZ: -0.05, left: -0.6, leftZ: 0.3, gun: -0.6, gunZ: 8, torsoX: 0, torsoY: 0 };
+const MUSKET_AIM: MusketPose = { right: -1.15, rightZ: -0.12, left: -1.4, leftZ: 0.42, gun: 0, gunZ: 1.5, torsoX: 0.05, torsoY: -0.3 };
+const MUSKET_RELOAD: MusketPose = { right: -0.42, rightZ: -0.08, left: -2.05, leftZ: 0.22, gun: -1.42, gunZ: 4, torsoX: 0.16, torsoY: 0.1 };
+function blendPose(pose: MusketPose, to: MusketPose, t: number) {
+  for (const key of Object.keys(pose) as (keyof MusketPose)[]) pose[key] += (to[key] - pose[key]) * t;
+}
+
 interface EnemyRig {
   enemy: Enemy;
   root: T.Group;
@@ -633,22 +648,42 @@ export class Slice3D {
       if (enemy.state === 'windup' && move?.shape === 'shot' && lines < this.aimLine.length) {
         const line = this.aimLine[lines++];
         const locked = enemy.timer <= SHOT_LOCK_MS;
-        const length = this.shotLength(enemy);
+        // Même longueur que la balle : la ligne s'arrête sur le rocher ou l'arbre qui la bloquera.
+        const length = Math.max(4, enemy.shotLength - 14);
         const progress = 1 - enemy.timer / move.windup;
-        line.visible = true;
-        line.position.set(enemy.x + enemy.aimX * (14 + length / 2), 19, enemy.y + enemy.aimY * (14 + length / 2));
-        line.rotation.set(0, Math.atan2(enemy.aimX, enemy.aimY), 0);
-        line.scale.set(locked ? 1.6 : 1, locked ? 1.6 : 1, length);
+        const x1 = enemy.x + enemy.aimX * 14;
+        const y1 = enemy.y + enemy.aimY * 14;
+        const x2 = enemy.x + enemy.aimX * (14 + length);
+        const y2 = enemy.y + enemy.aimY * (14 + length);
+        // Du canon à la poitrine du joueur, prolongée au-delà : la ligne suit la pente (ravine, rocher).
+        const from = this.terrain.groundAt(enemy.x, enemy.y) + 19;
+        const to = from + this.shotSlope(enemy, from, px, py) * (14 + length);
+        this.span(line, x1, from, y1, x2, to, y2, locked ? 1.6 : 1);
         line.material.opacity = locked ? 0.95 : 0.25 + 0.2 * Math.sin(now * 18);
         line.material.color.set(locked ? '#ffe4b0' : '#ff3b2a');
-        if (grounds < this.groundLine.length) {
+        // Bande au sol seulement si le tireur est au niveau du sentier : depuis
+        // son rocher, elle flotterait dans le vide (la ligne de visée suffit).
+        if (grounds < this.groundLine.length && Math.abs(to - from) < 12) {
           const ground = this.groundLine[grounds++];
-          ground.visible = true;
-          ground.position.set(enemy.x + enemy.aimX * (14 + length / 2), 0.6, enemy.y + enemy.aimY * (14 + length / 2));
-          ground.rotation.set(0, Math.atan2(enemy.aimX, enemy.aimY), 0);
-          ground.scale.set(9 + 6 * progress, 0.12, length);
+          this.span(ground, x1, this.terrain.groundAt(x1, y1) + 0.8, y1, x2, this.terrain.groundAt(x2, y2) + 0.8, y2, 1);
+          ground.scale.x = 9 + 6 * progress;
+          ground.scale.y = 0.12;
           ground.material.opacity = locked ? 0.6 : 0.14 + 0.28 * progress;
         }
+      }
+      // Mèche allumée du mousquet pendant la visée : braise qui grossit, vive au verrouillage.
+      if (rig.muzzle && enemy.state === 'windup' && move?.shape === 'shot' && muzzleFlashes < this.muzzles.length) {
+        const sprite = this.muzzles[muzzleFlashes++];
+        const locked = enemy.timer <= SHOT_LOCK_MS;
+        rig.root.updateMatrixWorld(true);
+        rig.weapon.getWorldPosition(this.muzzlePos);
+        sprite.visible = true;
+        sprite.position.copy(this.muzzlePos);
+        sprite.position.y += 2;
+        sprite.material.color.set(locked ? '#fff0b8' : '#ff8a3a');
+        sprite.material.opacity = locked ? 1 : 0.55 + 0.3 * Math.sin(now * 31 + enemy.id);
+        const size = locked ? 7 : 3.5 + 1.2 * Math.sin(now * 17);
+        sprite.scale.set(size, size, 1);
       }
       if (rig.muzzle && enemy.shotFlash > 0 && muzzleFlashes < this.muzzles.length) {
         const sprite = this.muzzles[muzzleFlashes++];
@@ -657,6 +692,7 @@ export class Slice3D {
         rig.muzzle.getWorldPosition(this.muzzlePos);
         sprite.visible = true;
         sprite.position.copy(this.muzzlePos);
+        sprite.material.color.set('#ffe8b0');
         sprite.material.opacity = life;
         const size = 8 + (1 - life) * 12;
         sprite.scale.set(size, size, 1);
@@ -664,11 +700,9 @@ export class Slice3D {
       if (enemy.tracer && flashes < this.tracers.length) {
         const t = enemy.tracer;
         const flash = this.tracers[flashes++];
-        const length = Math.hypot(t.x2 - t.x1, t.y2 - t.y1);
-        flash.visible = true;
-        flash.position.set((t.x1 + t.x2) / 2, 19, (t.y1 + t.y2) / 2);
-        flash.rotation.set(0, Math.atan2(t.x2 - t.x1, t.y2 - t.y1), 0);
-        flash.scale.set(1.3, 1.3, length);
+        const from = this.terrain.groundAt(enemy.x, enemy.y) + 19;
+        const slope = this.shotSlope(enemy, from, px, py);
+        this.span(flash, t.x1, from + slope * 14, t.y1, t.x2, from + slope * Math.hypot(t.x2 - enemy.x, t.y2 - enemy.y), t.y2, 1.3);
       }
       if (move?.shape === 'arc' && arcs < this.arcs.length &&
           (enemy.state === 'windup' || (enemy.state === 'active' && !enemy.hitDone))) {
@@ -679,7 +713,7 @@ export class Slice3D {
         const radius = ENEMIES.noye.radius + ENEMY_MOVES.slam.reach;
         const p = 1 - enemy.timer / ENEMY_MOVES.slam.windup;
         ring.visible = true;
-        ring.position.set(enemy.x, 0.6, enemy.y);
+        ring.position.set(enemy.x, this.terrain.groundAt(enemy.x, enemy.y) + 0.6, enemy.y);
         ring.scale.setScalar(radius * (0.35 + 0.65 * p));
         ring.material.opacity = 0.25 + 0.5 * p;
       }
@@ -719,16 +753,21 @@ export class Slice3D {
     arc.edge.material.opacity = 0.3 + t * 0.4 + late * 0.25;
   }
 
-  private shotLength(enemy: Enemy) {
-    const reach = ENEMY_MOVES[enemy.move === 'longshot' ? 'longshot' : 'shot'].reach;
-    for (let t = 16; t < reach; t += 8) {
-      const x = enemy.x + enemy.aimX * t;
-      const y = enemy.y + enemy.aimY * t;
-      if (DUNGEON_WALLS.some((w) => x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) ||
-          MOUNDS.some((m) => Math.hypot(x - m.x, y - m.y) < m.r)) return t - 14;
-    }
-    return reach - 14;
+  /** Pente verticale du tir : du canon vers la poitrine du joueur (bornée). */
+  private shotSlope(enemy: Enemy, from: number, px: number, py: number) {
+    const distance = Math.max(30, Math.hypot(px - enemy.x, py - enemy.y));
+    return T.MathUtils.clamp((this.terrain.groundAt(px, py) + 19 - from) / distance, -0.6, 0.6);
   }
+
+  /** Pose une barre (boîte unitaire allongée sur z) entre deux points 3D. */
+  private span(mesh: T.Mesh, x1: number, h1: number, z1: number, x2: number, h2: number, z2: number, thickness: number) {
+    mesh.visible = true;
+    mesh.position.set((x1 + x2) / 2, (h1 + h2) / 2, (z1 + z2) / 2);
+    this.spanTarget.set(x2, h2, z2);
+    mesh.lookAt(this.spanTarget);
+    mesh.scale.set(thickness, thickness, Math.hypot(x2 - x1, h2 - h1, z2 - z1));
+  }
+  private readonly spanTarget = new T.Vector3();
 
   private animate(rig: EnemyRig, dt: number, now: number) {
     const enemy = rig.enemy;
@@ -765,19 +804,21 @@ export class Slice3D {
       return;
     }
     rig.body.rotation.x = 0;
-    rig.body.position.y = 0;
+    rig.body.position.set(0, 0, 0);
+    const gunner = enemy.kind === 'tireur' || enemy.kind === 'fusilier';
+    const attacking = enemy.state === 'windup' || enemy.state === 'active' || enemy.state === 'recover';
 
     if (enemy.state === 'hurt') {
       rig.torso.rotation.x = -0.45;
       right.rotation.x = 0.6;
-    } else if (move && (enemy.state === 'windup' || enemy.state === 'active' || enemy.state === 'recover')) {
-      if (move.shape === 'shot') {
-        // Mousquet épaulé : les deux bras vers l'avant.
-        const raise = enemy.state === 'windup' ? Math.min(1, p * 3) : enemy.state === 'active' ? 1 : 1 - p;
-        right.rotation.set(-1.45 * raise, 0, 0.3 * raise);
-        left.rotation.set(-1.35 * raise, 0, -0.35 * raise);
-        if (enemy.state === 'active') rig.torso.rotation.x = -0.18;
-      } else if (move.shape === 'ring') {
+      if (gunner) {
+        rig.weapon.rotation.x = MUSKET_CARRY.gun - right.rotation.x;
+        rig.weapon.position.z = MUSKET_CARRY.gunZ;
+      }
+    } else if (gunner && (!move || move.shape === 'shot' || !attacking)) {
+      this.poseMusket(rig, enemy, attacking ? move : null, now, stride !== 0);
+    } else if (move && attacking) {
+      if (move.shape === 'ring') {
         // Deux bras levés, puis frappe au sol.
         const lift = enemy.state === 'windup' ? p : enemy.state === 'active' ? 1 - p : 0;
         left.rotation.x = right.rotation.x = -2.8 * lift + (enemy.state === 'active' ? 0.6 : 0);
@@ -790,6 +831,12 @@ export class Slice3D {
       }
     }
 
+    // Coup de crosse : le mousquet suit le bras, canon à l'horizontale.
+    if (gunner && move && move.shape !== 'shot' && attacking) {
+      rig.weapon.rotation.x = -right.rotation.x * 0.6;
+      rig.weapon.position.z = MUSKET_CARRY.gunZ;
+    }
+
     const flash = enemy.flash / 140;
     for (const material of rig.flash) {
       material.emissive.setRGB(flash * 0.9, flash * 0.75, flash * 0.6);
@@ -799,6 +846,65 @@ export class Slice3D {
     if (hurt) rig.bar.scale.x = Math.max(0.01, 21 * enemy.hp / enemy.maxHp);
     // Sprites dans le repère du corps : on les garde au-dessus de la tête quelle que soit la rotation.
     void now;
+  }
+
+  /**
+   * Mousquet du Denkyira : port d'arme en marchant, épauler en se plaçant de
+   * trois quarts, visée tenue (léger balancement qui s'arrête au verrouillage),
+   * recul net au départ du coup, puis rechargement crosse au sol : la main
+   * gauche bourre la charge à la baguette avant de remettre l'arme au port.
+   * Le canon garde sa pente propre quel que soit le bras (contre-rotation).
+   */
+  private poseMusket(rig: EnemyRig, enemy: Enemy, move: (typeof ENEMY_MOVES)[keyof typeof ENEMY_MOVES] | null, now: number, walking: boolean) {
+    const [left, right] = rig.arms;
+    const pose = { ...MUSKET_CARRY };
+    let kick = 0;
+    let stance = 0;
+    if (move && enemy.state === 'windup') {
+      const shoulder = T.MathUtils.smoothstep(1 - enemy.timer / move.windup, 0, 0.32);
+      blendPose(pose, MUSKET_AIM, shoulder);
+      stance = shoulder;
+      // Respiration du tireur : elle s'éteint quand la ligne se fige.
+      const steady = T.MathUtils.smoothstep(enemy.timer, SHOT_LOCK_MS, SHOT_LOCK_MS + 300);
+      const sway = Math.sin(now * 4.7 + enemy.id) * 0.035 * steady * shoulder;
+      pose.right += sway;
+      pose.left += sway;
+      pose.gun += sway * 0.5;
+    } else if (move && (enemy.state === 'active' || enemy.state === 'recover')) {
+      // Temps écoulé depuis le coup (ms).
+      const since = enemy.state === 'active' ? move.active - enemy.timer : move.active + move.recover - enemy.timer;
+      const total = move.active + move.recover;
+      kick = Math.exp(-since / 110);
+      const lower = T.MathUtils.smoothstep(since, 260, 700);
+      const ready = T.MathUtils.smoothstep(since, total - 480, total);
+      blendPose(pose, MUSKET_AIM, 1 - ready);
+      blendPose(pose, MUSKET_RELOAD, lower * (1 - ready));
+      stance = (1 - lower) * (1 - ready);
+      // Baguette : la main gauche monte et descend le long du canon.
+      const ram = lower * (1 - ready) * T.MathUtils.smoothstep(since, 700, 900);
+      pose.left += Math.sin(since / 1000 * Math.PI * 2 * 1.4) * 0.38 * ram;
+    } else if (walking) {
+      pose.gun += Math.sin(now * 6 + enemy.id) * 0.04;
+    }
+    // Recul : le canon se relève, les épaules partent en arrière, un demi-pas subi.
+    pose.right -= 0.32 * kick;
+    pose.left -= 0.22 * kick;
+    pose.gun -= 0.3 * kick;
+    pose.torsoX -= 0.24 * kick;
+    rig.body.position.set(-enemy.facingX * 2.4 * kick, 0, -enemy.facingY * 2.4 * kick);
+
+    right.rotation.set(pose.right, 0, pose.rightZ);
+    left.rotation.set(pose.left, 0, pose.leftZ);
+    rig.weapon.rotation.x = pose.gun - pose.right;
+    rig.weapon.position.z = pose.gunZ;
+    rig.torso.rotation.set(pose.torsoX, pose.torsoY, 0);
+    // Hanches de trois quarts, buste et canon face à la cible.
+    rig.body.rotation.y = rig.yaw - pose.torsoY;
+    if (!walking && stance > 0) {
+      // Pied gauche devant, droit en arrière : appui pour encaisser le recul.
+      rig.legs[0].rotation.x = -0.22 * stance;
+      rig.legs[1].rotation.x = 0.26 * stance;
+    }
   }
 
   dispose() {

@@ -31,7 +31,8 @@ const colors = (a: string, b: string, c: string) => [new T.Color(a), new T.Color
 const BOSS_COLORS: Record<BossId, T.Color[]> = {
   duelist: colors('#D4A017', '#E0661C', '#B3261E'),
   guardian: colors('#CFE3DC', '#5FA8C8', '#2F5D8A'),
-  champion: colors('#5A2A18', '#A6381C', '#E45A24'),
+  // Badu est un homme : traînée d'acier clair, pas de couleur surnaturelle.
+  champion: colors('#E6DCC4', '#F0CC94', '#F0CC94'),
   sentinel: colors('#4E8C86', '#52B5A4', '#8FE3D2'),
   hunter: colors('#B9862E', '#D8A23A', '#E45A24'),
   harvester: colors('#8A7624', '#C7A12E', '#F0C64A'),
@@ -42,6 +43,13 @@ const BOSS_COLORS: Record<BossId, T.Color[]> = {
   ironmouth: colors('#4A5157', '#7C8790', '#C2D0D8'),
   nightblade: colors('#2B2050', '#523A8C', '#9A75E0'),
 };
+/**
+ * Combattants sans pouvoir surnaturel : ni aura de braises, ni lueur au sol,
+ * ni anneau akoben ; un liseré clair et discret (lisibilité), qui ne monte
+ * que pendant l'armement (télégraphe).
+ */
+const GROUNDED: ReadonlySet<BossId> = new Set<BossId>(['champion']);
+const PLAIN_RIM = new T.Color('#FFE6BE');
 /** Au-delà de 1 : la passe de bloom existante fait briller l'aura sans second composer. */
 const HDR = 1.8;
 /** Laiton des poids à or : liseré du Gardien (corde et nœuds). */
@@ -181,8 +189,8 @@ class Aura {
   }
 
   update(pose: Actor3D | null, boss: BossId, now: number, dt: number) {
-    this.group.visible = !!pose;
-    if (!pose) return;
+    this.group.visible = !!pose && !GROUNDED.has(boss);
+    if (!pose || !this.group.visible) return;
     const phase = Math.max(1, Math.min(3, pose.bossPhase ?? 1));
     const color = BOSS_COLORS[boss][phase - 1];
     // L'aura baisse pendant l'armement : les effets ne doivent jamais masquer le télégraphe.
@@ -480,8 +488,13 @@ export class BossFx {
     this.rimFlash = Math.max(0, this.rimFlash - dt * 1.2);
     const form = BOSS_FORM[boss];
     const rim = this.rims[form === 'guardian' ? 'guardian' : 'duelist'];
-    rim.uRimColor.value.copy(form === 'guardian' && phase === 1 ? BRASS : color).multiplyScalar(HDR);
-    rim.uRim.value = 0.25 + phase * 0.2 + (pose.state === 'windup' ? pose.phase * 0.5 : 0) + this.rimFlash * 2;
+    if (GROUNDED.has(boss)) {
+      rim.uRimColor.value.copy(PLAIN_RIM);
+      rim.uRim.value = 0.12 + (pose.state === 'windup' ? pose.phase * 0.3 : 0) + this.rimFlash * 0.4;
+    } else {
+      rim.uRimColor.value.copy(form === 'guardian' && phase === 1 ? BRASS : color).multiplyScalar(HDR);
+      rim.uRim.value = 0.25 + phase * 0.2 + (pose.state === 'windup' ? pose.phase * 0.5 : 0) + this.rimFlash * 2;
+    }
 
     // Trainée d'arme pendant la phase active (et le moulinet).
     if (weapon && pose.state === 'attacking' && attack !== 'charge') this.trail.push(weapon.base, weapon.tip, color);
@@ -518,7 +531,10 @@ export class BossFx {
       this.sparks.emit(weapon.tip.x, weapon.tip.y, weapon.tip.z, 8, 70, color, 0.3, 0.8, 0.3);
     }
     // Changement de phase : grande onde, gerbe d'étincelles, soulèvement de poussière.
-    if (started && pose.state === 'shift') {
+    if (started && pose.state === 'shift' && GROUNDED.has(boss)) {
+      // Un homme qui brise son arme : poussière, pas d'onde de choc.
+      this.dust.emit(pose.x, 2, pose.y, 30, 70, '#a08a68', 1, 1.2, 0.3, true);
+    } else if (started && pose.state === 'shift') {
       this.wave(pose.x, pose.y, 150, color, 0.9);
       this.wave(pose.x, pose.y, 95, color, 0.6);
       this.sparks.emit(pose.x, 14, pose.y, 60, 120, color, 0.9, 1.3, 0.9);

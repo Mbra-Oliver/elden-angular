@@ -67,16 +67,18 @@ export const WEAPON_MATERIALS = {
   }),
 } as const;
 
+// Échelle : 1 unité ≈ 5 cm (un homme mesure ~34). Hampe de ~4 cm qui
+// s'affine vers le fer, comme une lance de guerre en bois dur.
 const SPEAR_SHAFT_GEOMETRY = new T.LatheGeometry([
-  new T.Vector2(0.72, -18), new T.Vector2(0.78, -15), new T.Vector2(0.7, -10),
-  new T.Vector2(0.62, -2), new T.Vector2(0.56, 8), new T.Vector2(0.48, 16), new T.Vector2(0.44, 18),
+  new T.Vector2(0.4, -18), new T.Vector2(0.44, -15), new T.Vector2(0.41, -10),
+  new T.Vector2(0.37, -2), new T.Vector2(0.34, 8), new T.Vector2(0.3, 16), new T.Vector2(0.28, 18),
 ], 7);
-const VEIN_GEOMETRY = new T.CylinderGeometry(0.055, 0.055, 34, 3);
-const REAR_WRAP_GEOMETRY = new T.CylinderGeometry(0.84, 0.84, 0.85, 7);
-const MID_WRAP_GEOMETRY = new T.CylinderGeometry(0.68, 0.68, 0.8, 7);
-const SOCKET_GEOMETRY = new T.CylinderGeometry(0.52, 0.78, 2.4, 7);
-const COLLAR_GEOMETRY = new T.CylinderGeometry(0.96, 0.7, 0.5, 7);
-const BACK_FERRULE_GEOMETRY = new T.CylinderGeometry(0.78, 0.92, 1.5, 7);
+const VEIN_GEOMETRY = new T.CylinderGeometry(0.035, 0.035, 34, 3);
+const REAR_WRAP_GEOMETRY = new T.CylinderGeometry(0.49, 0.49, 0.7, 7);
+const MID_WRAP_GEOMETRY = new T.CylinderGeometry(0.4, 0.4, 0.65, 7);
+const SOCKET_GEOMETRY = new T.CylinderGeometry(0.3, 0.42, 2.4, 7);
+const COLLAR_GEOMETRY = new T.CylinderGeometry(0.5, 0.38, 0.4, 7);
+const BACK_FERRULE_GEOMETRY = new T.CylinderGeometry(0.42, 0.5, 1.5, 7);
 
 export function leafBladeGeometry(length: number, halfWidth: number, ridge: number): T.BufferGeometry {
   const mid = length * 0.46;
@@ -146,8 +148,8 @@ export function buildSpear(unstretch = 1): T.Group {
   };
   for (const angle of [0, 2.1, 4.2]) {
     const vein = new T.Mesh(VEIN_GEOMETRY, WEAPON_MATERIALS.darkWood);
-    vein.position.x = Math.cos(angle) * 0.62;
-    vein.position.z = Math.sin(angle) * 0.62;
+    vein.position.x = Math.cos(angle) * 0.36;
+    vein.position.z = Math.sin(angle) * 0.36;
     fitted(vein, 0);
   }
   for (const y of [-16.5, -15.1, -13.7]) fitted(new T.Mesh(REAR_WRAP_GEOMETRY, WEAPON_MATERIALS.leather), y);
@@ -156,10 +158,10 @@ export function buildSpear(unstretch = 1): T.Group {
   fitted(new T.Mesh(SOCKET_GEOMETRY, WEAPON_MATERIALS.iron), half + 0.2);
   fitted(new T.Mesh(COLLAR_GEOMETRY, WEAPON_MATERIALS.darkIron), half + 1.4);
   fitted(new T.Mesh(leafBladeGeometry(WEAPON_DIMENSIONS.spear.stretchedTipY - half * WEAPON_DIMENSIONS.spear.stretch,
-    1.15, 0.32), WEAPON_MATERIALS.iron), half);
-  fitted(new T.Mesh(new T.BoxGeometry(0.14, 3.7, 0.1), WEAPON_MATERIALS.darkIron), half + 1.8).position.z = 0.34;
+    0.72, 0.16), WEAPON_MATERIALS.iron), half);
+  fitted(new T.Mesh(new T.BoxGeometry(0.09, 3.7, 0.05), WEAPON_MATERIALS.darkIron), half + 1.8).position.z = 0.15;
   fitted(new T.Mesh(BACK_FERRULE_GEOMETRY, WEAPON_MATERIALS.iron), -half - 0.1);
-  const heel = new T.Mesh(new T.ConeGeometry(0.62, 3, 5), WEAPON_MATERIALS.iron);
+  const heel = new T.Mesh(new T.ConeGeometry(0.4, 3, 5), WEAPON_MATERIALS.iron);
   heel.rotation.z = Math.PI;
   fitted(heel, WEAPON_DIMENSIONS.spear.heelY);
   return group;
@@ -173,32 +175,32 @@ export function buildAfena(): T.Group {
   group.userData['blade'] = blade;
   group.userData['glow'] = glow;
   group.userData['tipY'] = WEAPON_DIMENSIONS.afena.tipY;
-  const grip = new T.Mesh(new T.CylinderGeometry(0.46, 0.54, 4.6, 7), WEAPON_MATERIALS.leather);
+  const grip = new T.Mesh(new T.CylinderGeometry(0.34, 0.4, 4.6, 7), WEAPON_MATERIALS.leather);
   grip.position.y = -0.85;
-  const pommel = new T.Mesh(new T.IcosahedronGeometry(0.78, 0), WEAPON_MATERIALS.brass);
+  const pommel = new T.Mesh(new T.IcosahedronGeometry(0.56, 0), WEAPON_MATERIALS.brass);
   pommel.position.y = -3.5;
   for (let i = 0; i < AFENA_WRAPS; i++) {
-    const spiral = new T.Mesh(new T.TorusGeometry(0.53, 0.1, 3, 8), WEAPON_MATERIALS.leather);
+    const spiral = new T.Mesh(new T.TorusGeometry(0.39, 0.065, 3, 8), WEAPON_MATERIALS.leather);
     spiral.rotation.set(Math.PI / 2 + 0.14, i * 0.7, 0);
     spiral.position.y = -2.9 + i * 0.66;
     group.add(spiral);
   }
-  const guard = new T.Mesh(new T.BoxGeometry(3.1, 0.38, 0.86), WEAPON_MATERIALS.brass);
+  const guard = new T.Mesh(new T.BoxGeometry(2.6, 0.26, 0.5), WEAPON_MATERIALS.brass);
   guard.position.y = WEAPON_DIMENSIONS.afena.guardY;
   for (const side of [-1, 1]) {
-    const quillon = new T.Mesh(new T.ConeGeometry(0.36, 1.2, 4), WEAPON_MATERIALS.brass);
+    const quillon = new T.Mesh(new T.ConeGeometry(0.22, 1.1, 4), WEAPON_MATERIALS.brass);
     quillon.rotation.z = -side * (Math.PI / 2 - 0.18);
-    quillon.position.set(side * 1.85, 1.7, 0);
+    quillon.position.set(side * 1.6, 1.68, 0);
     group.add(quillon);
   }
-  const neck = new T.Mesh(new T.CylinderGeometry(0.5, 0.62, 1.1, 7), WEAPON_MATERIALS.brass);
+  const neck = new T.Mesh(new T.CylinderGeometry(0.34, 0.44, 1.1, 7), WEAPON_MATERIALS.brass);
   neck.position.y = 2.1;
-  const edge = new T.Mesh(leafBladeGeometry(WEAPON_DIMENSIONS.afena.tipY - 2.4, 1.12, 0.36), blade);
+  const edge = new T.Mesh(leafBladeGeometry(WEAPON_DIMENSIONS.afena.tipY - 2.4, 0.86, 0.16), blade);
   edge.position.y = 2.4;
-  const fuller = new T.Mesh(new T.BoxGeometry(0.18, 9.2, 0.12), WEAPON_MATERIALS.darkIron);
-  fuller.position.set(0, 7.1, 0.38);
-  const shimmer = new T.Mesh(new T.PlaneGeometry(2.6, 10.4), glow);
-  shimmer.position.set(0, 7.8, -0.62);
+  const fuller = new T.Mesh(new T.BoxGeometry(0.11, 9.2, 0.05), WEAPON_MATERIALS.darkIron);
+  fuller.position.set(0, 7.1, 0.15);
+  const shimmer = new T.Mesh(new T.PlaneGeometry(2, 10.4), glow);
+  shimmer.position.set(0, 7.8, -0.3);
   group.add(grip, pommel, guard, neck, edge, fuller, shimmer);
   return group;
 }
@@ -215,21 +217,21 @@ export function buildBow(): T.Group {
       new T.Vector3(0, tipY + 0.75, side * (tipZ - 1.5)),
       new T.Vector3(0, tipY, side * tipZ),
     ]);
-    group.add(new T.Mesh(taperedTubeGeometry(curve, 9, 5, 0.62, 0.22), WEAPON_MATERIALS.wood));
-    const nock = new T.Mesh(new T.IcosahedronGeometry(0.38, 0), WEAPON_MATERIALS.darkIron);
+    group.add(new T.Mesh(taperedTubeGeometry(curve, 9, 5, 0.4, 0.14), WEAPON_MATERIALS.wood));
+    const nock = new T.Mesh(new T.IcosahedronGeometry(0.24, 0), WEAPON_MATERIALS.darkIron);
     nock.position.set(0, tipY, side * tipZ);
     group.add(nock);
   }
-  const grip = new T.Mesh(new T.CylinderGeometry(0.86, 0.86, 2.6, 7), WEAPON_MATERIALS.leather);
+  const grip = new T.Mesh(new T.CylinderGeometry(0.52, 0.52, 2.6, 7), WEAPON_MATERIALS.leather);
   grip.rotation.x = Math.PI / 2;
   group.add(grip);
   for (const z of [-1.1, 1.1]) {
-    const band = new T.Mesh(new T.TorusGeometry(0.88, 0.12, 3, 8), WEAPON_MATERIALS.brass);
+    const band = new T.Mesh(new T.TorusGeometry(0.54, 0.08, 3, 8), WEAPON_MATERIALS.brass);
     band.rotation.x = Math.PI / 2;
     band.position.z = z;
     group.add(band);
   }
-  const sight = new T.Mesh(new T.SphereGeometry(0.3, 6, 4), WEAPON_MATERIALS.bone);
+  const sight = new T.Mesh(new T.SphereGeometry(0.2, 6, 4), WEAPON_MATERIALS.bone);
   sight.position.set(0, tipY * 0.55, tipZ * 0.62);
   group.add(sight);
   return group;
@@ -238,16 +240,16 @@ export function buildBow(): T.Group {
 export function buildSword(): T.Group {
   const group = new T.Group();
   group.name = 'sword';
-  const grip = new T.Mesh(new T.CylinderGeometry(0.42, 0.48, 3.8, 6), WEAPON_MATERIALS.leather);
+  const grip = new T.Mesh(new T.CylinderGeometry(0.32, 0.36, 3.8, 6), WEAPON_MATERIALS.leather);
   grip.position.y = -1.7;
-  const pommel = new T.Mesh(new T.IcosahedronGeometry(0.52, 0), WEAPON_MATERIALS.brass);
+  const pommel = new T.Mesh(new T.IcosahedronGeometry(0.42, 0), WEAPON_MATERIALS.brass);
   pommel.position.y = -3.7;
-  const guard = new T.Mesh(new T.BoxGeometry(3.4, 0.34, 0.7), WEAPON_MATERIALS.brass);
+  const guard = new T.Mesh(new T.BoxGeometry(2.8, 0.24, 0.45), WEAPON_MATERIALS.brass);
   guard.position.y = 0.3;
-  const edge = new T.Mesh(leafBladeGeometry(12, 0.85, 0.26), WEAPON_MATERIALS.iron);
+  const edge = new T.Mesh(leafBladeGeometry(12, 0.62, 0.13), WEAPON_MATERIALS.iron);
   edge.position.y = 0.6;
-  const fuller = new T.Mesh(new T.BoxGeometry(0.14, 9.8, 0.1), WEAPON_MATERIALS.darkIron);
-  fuller.position.set(0, 5.6, 0.28);
+  const fuller = new T.Mesh(new T.BoxGeometry(0.09, 9.8, 0.05), WEAPON_MATERIALS.darkIron);
+  fuller.position.set(0, 5.6, 0.12);
   group.add(grip, pommel, guard, edge, fuller);
   return group;
 }
@@ -255,14 +257,14 @@ export function buildSword(): T.Group {
 export function buildMusket(): T.Group {
   const group = new T.Group();
   group.name = 'musket';
-  const stock = new T.Mesh(new T.BoxGeometry(1.5, 13, 2.2), WEAPON_MATERIALS.darkWood);
+  const stock = new T.Mesh(new T.BoxGeometry(1.1, 13, 1.7), WEAPON_MATERIALS.darkWood);
   stock.position.set(0, -4, -1.1);
-  const barrel = new T.Mesh(new T.CylinderGeometry(0.36, 0.44, 18, 7), WEAPON_MATERIALS.darkIron);
+  const barrel = new T.Mesh(new T.CylinderGeometry(0.26, 0.32, 18, 7), WEAPON_MATERIALS.darkIron);
   barrel.position.y = 7;
-  const band = new T.Mesh(new T.CylinderGeometry(0.56, 0.56, 0.5, 7), WEAPON_MATERIALS.brass);
+  const band = new T.Mesh(new T.CylinderGeometry(0.4, 0.4, 0.5, 7), WEAPON_MATERIALS.brass);
   band.position.y = 5;
-  const lock = new T.Mesh(new T.BoxGeometry(0.7, 1.4, 0.5), WEAPON_MATERIALS.iron);
-  lock.position.set(0, 1, 1.2);
+  const lock = new T.Mesh(new T.BoxGeometry(0.5, 1.3, 0.4), WEAPON_MATERIALS.iron);
+  lock.position.set(0, 1, 0.95);
   group.add(stock, barrel, band, lock);
   return group;
 }
@@ -270,18 +272,18 @@ export function buildMusket(): T.Group {
 export function buildClub(): T.Group {
   const group = new T.Group();
   group.name = 'club';
-  const shaft = new T.Mesh(new T.CylinderGeometry(0.7, 1.1, 12, 6), WEAPON_MATERIALS.darkWood);
-  const head = new T.Mesh(new T.IcosahedronGeometry(1.8, 0), WEAPON_MATERIALS.darkWood);
+  const shaft = new T.Mesh(new T.CylinderGeometry(0.48, 0.78, 12, 6), WEAPON_MATERIALS.darkWood);
+  const head = new T.Mesh(new T.IcosahedronGeometry(1.5, 0), WEAPON_MATERIALS.darkWood);
   head.position.y = 5.6;
   group.add(shaft, head);
   for (const y of [3.8, 5.4, 7]) {
-    const ring = new T.Mesh(new T.CylinderGeometry(1.55, 1.55, 0.4, 6), WEAPON_MATERIALS.iron);
+    const ring = new T.Mesh(new T.CylinderGeometry(1.3, 1.3, 0.35, 6), WEAPON_MATERIALS.iron);
     ring.position.y = y;
     group.add(ring);
   }
   for (const angle of [0, 1.2, 2.4, 3.6, 4.8]) {
     const stud = new T.Mesh(new T.IcosahedronGeometry(0.34, 0), WEAPON_MATERIALS.iron);
-    stud.position.set(Math.cos(angle) * 1.6, 5.6, Math.sin(angle) * 1.6);
+    stud.position.set(Math.cos(angle) * 1.35, 5.6, Math.sin(angle) * 1.35);
     group.add(stud);
   }
   return group;
@@ -328,7 +330,7 @@ export class Equipment3D {
   ) {
     this.bow.add(...buildBow().children);
     const { tipY, tipZ } = WEAPON_DIMENSIONS.bow;
-    const stringGeometry = new T.CylinderGeometry(0.12, 0.12, 1, 3);
+    const stringGeometry = new T.CylinderGeometry(0.07, 0.07, 1, 3);
     for (const side of [1, -1]) {
       const segment = new T.Mesh(stringGeometry, WEAPON_MATERIALS.fibre);
       segment.scale.y = tipZ;
@@ -425,9 +427,9 @@ export class Equipment3D {
     torso.add(this.batakari);
 
     // Réserve de flèches partagée (même géométrie et matériau).
-    const shaftGeometry = new T.CylinderGeometry(0.22, 0.22, ARROW_SHAFT_LENGTH, 4);
-    const tipGeometry = new T.ConeGeometry(0.6, 2.2, 4);
-    const arrowFeatherGeometry = new T.ConeGeometry(0.45, 2.2, 3);
+    const shaftGeometry = new T.CylinderGeometry(0.15, 0.15, ARROW_SHAFT_LENGTH, 4);
+    const tipGeometry = new T.ConeGeometry(0.4, 2.2, 4);
+    const arrowFeatherGeometry = new T.ConeGeometry(0.34, 2.2, 3);
     const streakGeometry = new T.PlaneGeometry(1.1, 13);
     for (let i = 0; i < ARROW_POOL; i++) {
       const arrow = new T.Group();

@@ -79,7 +79,7 @@ export const CLEARINGS: readonly (Circle & { id: string })[] = [
   { id: 'fromager', x: 4990, y: 600, r: 60 },
   // Promontoire au bord de la vallée en flammes (LOOKOUT) : moment de calme, la caméra recule.
   { id: 'promontoire', x: 5112, y: 440, r: 44 },
-  // La crête : le porte-hache du Denkyira y garde l'abri du roi (combat de boss).
+  // La crête : le porte-glaive du Denkyira y garde l'abri du roi (combat de boss).
   { id: 'crete', x: 5640, y: 330, r: 262 },
   { id: 'camp', x: 6080, y: 250, r: 140 },
 ];
@@ -273,7 +273,7 @@ export const REMAINS: readonly Remains[] = [
     id: 'tambourinaire', x: 4948, y: 606, label: 'S’approcher du blessé',
     title: 'Le tambourinaire agonisant',
     speaker: 'Le tambourinaire',
-    text: '« Ofori… tu es vivant. Ils nous attendaient ici : la plupart des leurs étaient embusqués dans la gorge, et ils nous ont taillés en pièces avant de tomber à leur tour. La guerre est presque gagnée. Le Denkyira a fui, et les nôtres ont tous suivi Osei Tutu vers l’est. Moi, je n’irai pas plus loin. Prends ces feuilles : écrase-les entre tes paumes, avale la pâte, la mixture te rendra des forces. Et cette poudre de kaolin pour ta lame. Sur la crête, le porte-hache de Ntim Gyakari refuse de plier… Il frappe comme la foudre. » Il ferme les yeux.',
+    text: '« Ofori… tu es vivant. Ils nous attendaient ici : la plupart des leurs étaient embusqués dans la gorge, et ils nous ont taillés en pièces avant de tomber à leur tour. La guerre est presque gagnée. Le Denkyira a fui, et les nôtres ont tous suivi Osei Tutu vers l’est. Moi, je n’irai pas plus loin. Prends ces feuilles : écrase-les entre tes paumes, avale la pâte, la mixture te rendra des forces. Et cette poudre de kaolin pour ta lame. Sur la crête, le porte-glaive de Ntim Gyakari refuse de plier… Il frappe comme la foudre. » Il ferme les yeux.',
     gives: { kaolin: true, mixtureGift: true },
   },
   {
@@ -465,11 +465,11 @@ export const CAMP_FIRES: readonly Spot[] = [{ x: 6150, y: 220 }, { x: 6210, y: 1
 /** Parasol de chef (kyinie) au camp : repère visible de loin. */
 export const UMBRELLA: Spot = { x: 6180, y: 185 };
 
-/** Arène du porte-hache, sur la crête (rayon un peu sous la clairière). */
+/** Arène du porte-glaive, sur la crête (rayon un peu sous la clairière). */
 export const PROLOGUE_DUEL = { x: 5640, y: 330, radius: 240 };
 /** Le combat se déclenche quand le héros entre de cette distance dans l'arène. */
 export const DUEL_TRIGGER = 215;
-/** Tant que le porte-hache tient la crête, le sentier du camp est barré au-delà. */
+/** Tant que le porte-glaive tient la crête, le sentier du camp est barré au-delà. */
 export const CREST_GATE_X = 5895;
 
 /**

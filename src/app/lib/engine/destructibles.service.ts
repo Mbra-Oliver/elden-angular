@@ -98,8 +98,10 @@ export class DestructiblesService {
   private bossSwing = '';
   private bossStrike = 0;
 
+  private readonly terrain = inject(TerrainCollisionService);
+
   constructor() {
-    inject(TerrainCollisionService).setDynamicBlocker((x, y, radius) => this.blocks(x, y, radius));
+    this.terrain.setDynamicBlocker((x, y, radius) => this.blocks(x, y, radius));
   }
 
   get time() {
@@ -189,6 +191,8 @@ export class DestructiblesService {
       if (distance > reach + prop.radius) continue;
       // Riposte : coup circulaire. Sinon, un cône devant le joueur.
       if (source !== 'counter' && dx * fx + dy * fy < distance * 0.35 - prop.radius) continue;
+      // Derrière une case, un tronc ou un mur encore debout : la lance n'y arrive pas.
+      if (this.occluded(cx, cy, prop, distance)) continue;
       broke = this.damage(prop, source, dx / (distance || 1), dy / (distance || 1), this.playerStrike) || broke;
     }
     if (broke) {
@@ -196,6 +200,23 @@ export class DestructiblesService {
       this.fx.shake('horizontal', source === 'light' ? 0.35 : 0.7);
       this.gameloop.freeze(source === 'light' ? 22 : 40);
     }
+  }
+
+  /** Un obstacle dur se trouve-t-il entre le porteur et l'objet visé ? */
+  private occluded(cx: number, cy: number, target: Destructible, distance: number) {
+    const reach = distance - target.radius;
+    if (reach <= 4) return false;
+    const dx = (target.x - cx) / distance;
+    const dy = (target.y - cy) / distance;
+    if (this.terrain.castSolid(cx + dx * 4, cy + dy * 4, cx + dx * reach, cy + dy * reach)) return true;
+    for (const prop of this.props) {
+      if (prop === target || prop.broken) continue;
+      const kind = DESTRUCTIBLE_KINDS[prop.kind];
+      if (!kind.solid || kind.height < 12) continue;
+      const t = segmentCircle(cx, cy, dx, dy, reach, prop.x, prop.y, prop.radius * 0.85);
+      if (t !== null && t > 4) return true;
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------- flèches

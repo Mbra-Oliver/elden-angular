@@ -6,7 +6,7 @@ import {
   ART_CHANNELS, AFENA_ART, SPEAR_ART,
   type ArtChannel, type ArtPose, type WeaponArt,
 } from '../combat/martial-arts';
-import { buildSpear } from './equipment-3d';
+import { buildSpear, WEAPON_DIMENSIONS } from './equipment-3d';
 
 /**
  * Couche « arts martiaux » du joueur, appliquée APRÈS l'animateur de base
@@ -71,6 +71,20 @@ const _dir = new T.Vector3();
 const _target = new T.Vector3();
 const _shift = new T.Vector3();
 const _pole = new T.Vector3();
+const _wo = new T.Vector3();
+const _wd = new T.Vector3();
+const _wp = new T.Vector3();
+
+/** Pas d'échantillonnage le long de l'arme pour le test d'enfoncement (unités du monde). */
+const PROBE_STEP = 1.5;
+/** Bouts de l'arme le long de son axe (coordonnée du fût), pour ne pas les enfoncer dans le décor. */
+const WEAPON_ENDS = {
+  spear: { tip: WEAPON_DIMENSIONS.spear.stretchedTipY, heel: WEAPON_DIMENSIONS.spear.heelY * SPEAR_STRETCH },
+  afena: { tip: WEAPON_DIMENSIONS.afena.tipY, heel: -3.5 },
+} as const;
+
+/** Le point (x, y du plan de jeu, hauteur au-dessus du sol) est-il dans un obstacle dur ? */
+export type WeaponProbe = (x: number, y: number, height: number) => boolean;
 
 export class MartialArts3D {
   private readonly x = new Float32Array(N);
@@ -90,6 +104,15 @@ export class MartialArts3D {
   private speed = 0;
   private placed = false;
   private art: WeaponArt = SPEAR_ART;
+  /**
+   * Test du décor (cases, troncs, murs) : la lance recule le long de son axe
+   * au lieu de s'y enfoncer. Branché par le jeu ; null = pas de test.
+   */
+  probe: WeaponProbe | null = null;
+  /** Recul actuel le long du fût (positif = vers la pointe, négatif = recul). */
+  private retract = 0;
+  private ground = 0;
+  private stepDt = 0;
   private readonly solM: ArmSolution = { shoulder: new T.Quaternion(), elbow: 0, reached: new T.Vector3() };
   private readonly solO: ArmSolution = { shoulder: new T.Quaternion(), elbow: 0, reached: new T.Vector3() };
 
@@ -128,6 +151,8 @@ export class MartialArts3D {
 
   update(pose: Actor3D, dt: number, now: number, engaged: boolean) {
     const frozen = !!pose.hitstop;
+    this.ground = pose.groundZ ?? 0;
+    this.stepDt = frozen ? 0 : dt;
     const state = pose.state;
     const attack = pose.attack ?? 'none';
     const k = clamp01(pose.phase);
@@ -305,6 +330,9 @@ export class MartialArts3D {
     // Origine du fût (u = 0) dans le repère du buste.
     _o.copy(_target).addScaledVector(_dir, -gm).applyMatrix4(_toTorso);
     _dir.transformDirection(_toTorso);
+    // Pointe ou talon dans un mur : l'arme glisse en arrière (les mains suivent le fût).
+    const pull = this.clearance(gm, gear);
+    if (pull) _o.addScaledVector(_dir, pull);
 
     const mainS = this.main.shoulder.position;
     const offS = this.off.shoulder.position;
@@ -343,6 +371,40 @@ export class MartialArts3D {
     offArm.quaternion.slerpQuaternions(_qFk, this.solO.shoulder, kO);
     const offFk = T.MathUtils.lerp(fkBend, x[I.oE], wF);
     this.off.elbow.rotation.x = T.MathUtils.lerp(offFk, this.solO.elbow, kO);
+  }
+
+  /**
+   * Décalage le long du fût pour que ni la pointe ni le talon n'entrent dans
+   * le décor. On part de la main (toujours libre) vers chaque bout ; le recul
+   * est immédiat quand il grandit, puis se relâche en douceur.
+   */
+  private clearance(grip: number, gear: boolean): number {
+    let target = 0;
+    const ends = this.art === AFENA_ART ? WEAPON_ENDS.afena : WEAPON_ENDS.spear;
+    if (this.probe && !gear && (this.spear.visible || this.afena?.visible)) {
+      const torso = this.rig.torso.matrixWorld;
+      _wo.copy(_o).applyMatrix4(torso);
+      _wd.copy(_dir).transformDirection(torso);
+      let tipPen = 0;
+      for (let u = grip + PROBE_STEP; u <= ends.tip; u += PROBE_STEP) {
+        if (this.inside(u)) { tipPen = ends.tip - u + PROBE_STEP; break; }
+      }
+      let heelPen = 0;
+      for (let u = grip - PROBE_STEP; u >= ends.heel; u -= PROBE_STEP) {
+        if (this.inside(u)) { heelPen = u - ends.heel + PROBE_STEP; break; }
+      }
+      target = heelPen - tipPen;
+    }
+    const grows = Math.abs(target) > Math.abs(this.retract) && Math.sign(target) === Math.sign(this.retract || target);
+    if (grows) this.retract = target;
+    else if (this.stepDt > 0) this.retract += (target - this.retract) * (1 - Math.exp(-14 * this.stepDt));
+    if (Math.abs(this.retract) < 0.01) this.retract = 0;
+    return this.retract;
+  }
+
+  private inside(u: number) {
+    _wp.copy(_wo).addScaledVector(_wd, u);
+    return this.probe!(_wp.x, _wp.z, _wp.y - this.ground);
   }
 
   /** Le coude pointe vers le bas et l'arrière ; vers l'extérieur quand la main passe au-dessus de l'épaule. */

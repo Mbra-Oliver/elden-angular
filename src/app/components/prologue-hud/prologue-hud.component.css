@@ -23,6 +23,7 @@
   background: #0d0907c0; border: 1px solid #b9845466; font-size: 12px; letter-spacing: 0.04em; white-space: nowrap;
 }
 .hint { bottom: 112px; color: #f3dcae; }
+.hint.warning { white-space: normal; max-width: min(560px, 80%); text-align: center; font-style: italic; line-height: 1.4; }
 .kaolin { top: 150px; color: #e8e2d4; }
 .reading p.speech { font-style: italic; color: #f3dcae; }
 .kaolin { pointer-events: auto; cursor: pointer; font: inherit; }

@@ -25,6 +25,14 @@ describe('TerrainCollisionService', () => {
     expect(terrain.move(1270, 792, 1365, 792, 19).x).toBeCloseTo(1365);
   });
 
+  it('stops a weapon on a hut but lets it pass over the river', () => {
+    const [x, y, radius] = HUTS[0];
+    const contact = terrain.castSolid(x - 90, y + 5, x, y + 5);
+    expect(contact?.surface).toBe('thatch');
+    expect(contact!.x).toBeLessThanOrEqual(x - radius * 0.82 + 2);
+    expect(terrain.castSolid(300, 270, 360, 270)).toBeNull();
+  });
+
   it('samples ground height and slows uphill movement', () => {
     terrain.setGroundSampler((x) => x * 0.1);
     expect(terrain.groundAt(100, 0)).toBeCloseTo(10);

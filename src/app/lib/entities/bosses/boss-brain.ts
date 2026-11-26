@@ -23,14 +23,15 @@ export const ATTACK_REACH: Record<Attack, { min: number; max: number }> = {
   charge: { min: S * 1.5, max: S * 6.5 },
   // Il tire de loin, mais pas à bout portant (il recule d'abord, voir mode retreat).
   shot: { min: S * 1.6, max: S * 5.4 },
-  reap: { min: 0, max: S * 1.5 },
-  judgment: { min: 0, max: S * 1.45 },
-  feint: { min: 0, max: S * 1.4 },
-  backhand: { min: 0, max: S * 1.4 },
+  // Badu : portées de l'afena (voir BossAttackData), un peu en dessous du vrai rayon.
+  reap: { min: 0, max: S * 1.2 },
+  judgment: { min: 0, max: S * 1.1 },
+  feint: { min: 0, max: S * 1.2 },
+  backhand: { min: 0, max: S * 1.15 },
   furrow: { min: S * 1.8, max: S * 6.2 },
   leap: { min: S * 1.4, max: S * 4 },
-  mill: { min: 0, max: S * 1.5 },
-  thrust: { min: 0, max: S * 1.9 }, // il faut de l'élan, et rester dans l'arène
+  mill: { min: 0, max: S * 1.2 },
+  thrust: { min: 0, max: S * 1.55 }, // il faut de l'élan, et rester dans l'arène
 };
 
 export function inReach(attack: Attack, distance: number) {

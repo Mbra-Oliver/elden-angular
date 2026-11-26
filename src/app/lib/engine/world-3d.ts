@@ -17,7 +17,7 @@ import { buildHumanoid, type HumanoidRig } from './humanoid-rig';
 import { addBodyShape, dressHuman, showBody, type Outfit } from './human-body';
 import { kwadwoOutfit, plainOutfit } from './human-outfits';
 import { PlayerAnimator } from './player-rig-3d';
-import { MartialArts3D } from './martial-arts-3d';
+import { MartialArts3D, type WeaponProbe } from './martial-arts-3d';
 import { BipedGait, DUELIST_GAIT } from './gait';
 import { plantGrass } from './wind';
 import { KENTE_PLAYER, adinkraTexture, attachBatakari, attachToga, kenteTexture } from './akan-garments';
@@ -133,7 +133,7 @@ export class World3D {
   private readonly remotePlayer = new RemotePlayer();
   private remotePose: DuelPose | null = null;
   private remoteVisible = false;
-  /** Habillage et armes du porte-hache du Denkyira sur le rig du duelliste. */
+  /** Habillage et armes du porte-glaive du Denkyira sur le rig du duelliste. */
   private readonly champion: ChampionGear;
   private bossKind: BossId = 'duelist';
   private readonly guardian = new GuardianRig((color) => this.material(color));
@@ -322,7 +322,7 @@ export class World3D {
     this.champion = new ChampionGear(this.scene, this.duelist, this.duelist.arms[1].children.at(-1));
     this.layerWarmables.push(...this.champion.warmables);
     this.makeVeille();
-    // Badu : sa tenue (torse nu, pagne) prend aussi le liseré du boss.
+    // Badu : sa tenue (batakari, pagne) prend aussi le liseré du boss.
     this.champion.setActive(true);
     this.bossFx.attachRim(this.duelist.root, 'duelist');
     this.champion.setActive(false);
@@ -689,12 +689,17 @@ export class World3D {
     let weapon: { base: T.Vector3; tip: T.Vector3 } | null = null;
     let glint: T.Vector3 | null = null;
     if (enemy && duelist) {
-      // Bâton tenu par le bras droit : axe local (0, 0.18, 0.98) autour de (0, -8.5, 10).
-      this.duelist.root.updateMatrixWorld(true);
-      this.weaponBase.set(0, -10.3, 0.2);
-      this.weaponTip.set(0, -5.3, 27.7);
-      this.duelist.arms[1].localToWorld(this.weaponBase);
-      this.duelist.arms[1].localToWorld(this.weaponTip);
+      if (this.bossKind === 'champion') {
+        // Badu : la lame de l'afena.
+        this.champion.bladeSegment(this.weaponBase, this.weaponTip);
+      } else {
+        // Bâton tenu par le bras droit : axe local (0, 0.18, 0.98) autour de (0, -8.5, 10).
+        this.duelist.root.updateMatrixWorld(true);
+        this.weaponBase.set(0, -10.3, 0.2);
+        this.weaponTip.set(0, -5.3, 27.7);
+        this.duelist.arms[1].localToWorld(this.weaponBase);
+        this.duelist.arms[1].localToWorld(this.weaponTip);
+      }
       weapon = { base: this.weaponBase, tip: this.weaponTip };
       glint = this.weaponTip;
     } else if (enemy) {
@@ -777,7 +782,7 @@ export class World3D {
     this.introDuration = ms;
   }
 
-  /** Boss incarné par le rig humain : Kofi ('duelist') ou le porte-hache ('champion'). */
+  /** Boss incarné par le rig humain : Kofi ('duelist') ou le porte-glaive ('champion'). */
   setBossKind(kind: BossId) {
     this.bossKind = kind;
   }
@@ -875,7 +880,7 @@ export class World3D {
     // Pas de marqueur sur un boss qui tombe.
     this.lockMarker.visible = !!enemy && (boss as Actor3D | null)?.state !== 'dead';
     if (enemy) {
-      this.lockMarker.position.set(enemy.x, boss ? 40 : 30, enemy.y);
+      this.lockMarker.position.set(enemy.x, boss ? 40 : 30 + this.lockGround, enemy.y);
       this.lockMarker.rotation.y += dt * 2;
       this.padFlick();
     }
@@ -1069,8 +1074,9 @@ export class World3D {
   }
 
   /** Ennemi verrouillé hors duel (null : caméra libre). */
-  setLockTarget(point: Point | null) {
+  setLockTarget(point: (Point & { ground?: number }) | null) {
     this.lockGoal = point ? { x: point.x, y: point.y } : null;
+    this.lockGround = point?.ground ?? 0;
     if (!point) {
       this.lockPoint = null;
       this.flickDrag = 0;
@@ -1081,6 +1087,8 @@ export class World3D {
 
   /** Cible réelle du verrou ; lockPoint la rejoint en glissant (changement de cible sans à-coup). */
   private lockGoal: Point | null = null;
+  /** Hauteur du sol sous la cible (relief du prologue) : le marqueur flotte au-dessus d'elle. */
+  private lockGround = 0;
 
   /**
    * [SUPPOSITION] Lissage du point cadré : il suit de près un ennemi qui se
@@ -1123,6 +1131,11 @@ export class World3D {
       showBody(this.heroBodies.man, hero !== 'ama');
       showBody(this.heroBodies.woman, hero === 'ama');
     }
+  }
+
+  /** Décor dur pour l'arme du joueur : la lance recule au lieu de traverser un mur. */
+  setWeaponProbe(probe: WeaponProbe | null) {
+    this.martial.probe = probe;
   }
 
   setEquipment(weapon: WeaponId, arrows: readonly { x: number; y: number; dirX: number; dirY: number; grounded: boolean }[],

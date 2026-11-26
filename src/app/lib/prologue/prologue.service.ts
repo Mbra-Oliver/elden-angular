@@ -23,6 +23,10 @@ export const PROLOGUE_INTRO: readonly string[] = [
 
 /** Indications du premier combat (séquence 1), affichées discrètement (touches selon l'appareil). */
 export const FIRST_FIGHT_HINT = 'combat';
+/** Avertissement de Kwadwo avant la ravine, où le tireur posté couvre le lancier. */
+export const RAVINE_HINT = 'ravine';
+export const RAVINE_LINE = 'Kwadwo : « Un mousquetaire du Denkyira tient le rocher au-dessus de la ravine. ' +
+  'Quand sa mèche rougeoie, je dois mettre un tronc entre lui et moi : il lui faut du temps pour bourrer sa charge. »';
 /** Durée de la poudre de kaolin sur la lame (s). */
 export const KAOLIN_SECONDS = 30;
 /** Rupture de garde multipliée pendant le kaolin. [SUPPOSITION] */
@@ -93,6 +97,7 @@ export class PrologueService {
   private readingUntil = 0;
   private outro = false;
   private hinted = false;
+  private ravineHinted = false;
   private hintUntil = 0;
 
   constructor() {
@@ -102,7 +107,10 @@ export class PrologueService {
       if (!walkable(x, y, radius, this.bridged)) return true;
       if (!this.championDown && x + radius > CREST_GATE_X) return true;
       return SOLIDS.some((s) => (x - s.x) ** 2 + (y - s.y) ** 2 < (s.r + radius) ** 2);
-    });
+    }, false);
+    // Les armes ne butent que sur les rochers et les troncs, pas sur la rivière ni les bords de carte.
+    this.terrain.addWeaponBlocker((x, y, radius) => inPrologue(x, y, 40) &&
+      SOLIDS.some((s) => (x - s.x) ** 2 + (y - s.y) ** 2 < (s.r + radius) ** 2));
     // Les troncs de la ravine arrêtent les balles du tireur.
     this.enemies.cover = COVER_TRUNKS.map((c) => ({ x: c.x - c.r, y: c.y - c.r, w: c.r * 2, h: c.r * 2 }));
     if (typeof window !== 'undefined') {
@@ -134,6 +142,7 @@ export class PrologueService {
     this.healed = false;
     this.duelTries = 0;
     this.hinted = false;
+    this.ravineHinted = false;
     this.hint.set(null);
     this.kaolin.set({ owned: false, left: 0 });
     this.championDown = false;
@@ -219,6 +228,13 @@ export class PrologueService {
       this.hinted = true;
       this.hint.set(FIRST_FIGHT_HINT);
       this.hintUntil = performance.now() + 7000;
+    }
+    // Entrée de la ravine : Kwadwo repère le tireur avant d'être à sa portée.
+    const spearman = PROLOGUE_SPAWNS[1];
+    if (!this.ravineHinted && this.hint() === null && Math.hypot(spearman.x - x, spearman.y - y) < 300) {
+      this.ravineHinted = true;
+      this.hint.set(RAVINE_HINT);
+      this.hintUntil = performance.now() + 9000;
     }
     if (this.hint() && performance.now() > this.hintUntil) this.hint.set(null);
     const nearest = REMAINS.find((r) => Math.hypot(r.x - x, r.y - y) < INSPECT_RADIUS) ?? null;

@@ -2,6 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { PLAYER_CONFIG } from '../constants/player.config-constant';
 import { GroundEffectsService } from '../engine/ground-effects.service';
 import { TerrainCollisionService } from '../engine/terrain-collision.service';
+import { WeaponObstructionService } from '../engine/weapon-obstruction.service';
 import { PlayerEntity } from '../entities/player/player.entity';
 import { PlayerStore } from '../entities/player/player.store';
 import type { ArrowTarget } from '../entities/projectiles/arrow.service';
@@ -40,6 +41,8 @@ export interface Enemy {
   tracer: { x1: number; y1: number; x2: number; y2: number; life: number } | null;
   /** Lueur de bouche après le départ du coup. */
   shotFlash: number;
+  /** Longueur de tir libre devant le canon (px), tenue à jour pendant la visée. */
+  shotLength: number;
 }
 
 const PLAYER_RADIUS = PLAYER_CONFIG.size / 2;
@@ -54,6 +57,7 @@ const SLEEP_DISTANCE = 950;
 @Injectable({ providedIn: 'root' })
 export class EnemiesService {
   private readonly terrain = inject(TerrainCollisionService);
+  private readonly obstruction = inject(WeaponObstructionService);
   private readonly player = inject(PlayerEntity);
   private readonly playerStore = inject(PlayerStore);
   private readonly progression = inject(ProgressionStore);
@@ -74,6 +78,10 @@ export class EnemiesService {
   onPlayerHit: (enemy: Enemy, dirX: number, dirY: number) => void = () => {};
   /** Rappel quand le joueur touche un ennemi (étincelles, son, gel d'image). */
   onEnemyHit: (enemy: Enemy, dirX: number, dirY: number, heavy: boolean) => void = () => {};
+  /** Rappel quand un tireur commence à viser (mèche, chien armé). */
+  onAim: (enemy: Enemy) => void = () => {};
+  /** Rappel au départ du coup de mousquet (détonation). */
+  onShot: (enemy: Enemy) => void = () => {};
   /** Rappel quand un ennemi meurt (cauris, message). */
   onKill: (enemy: Enemy) => void = () => {};
 
@@ -87,7 +95,7 @@ export class EnemiesService {
       id, kind, homeX: x, homeY: y, x, y, hp: config.hp, maxHp: config.hp,
       facingX: 0, facingY: 1, state: 'idle', timer: 0, move: null, hitDone: false,
       aimX: 0, aimY: 1, cooldown: 600, strafe: id % 2 ? 1 : -1, engaged: false,
-      flash: 0, deadTime: 0, tracer: null, shotFlash: 0,
+      flash: 0, deadTime: 0, tracer: null, shotFlash: 0, shotLength: 0,
     };
   }
 
@@ -173,7 +181,11 @@ export class EnemiesService {
         // Le fusilier suit la cible jusqu'au verrouillage ; les autres pivotent lentement.
         const tracking = move.shape === 'shot' ? enemy.timer > SHOT_LOCK_MS : enemy.timer > move.windup * 0.35;
         if (tracking) this.turnToward(enemy, toX, toY, move.shape === 'shot' ? 12 : 5, dt);
-        if (move.shape === 'shot') { enemy.aimX = enemy.facingX; enemy.aimY = enemy.facingY; }
+        if (move.shape === 'shot') {
+          enemy.aimX = enemy.facingX;
+          enemy.aimY = enemy.facingY;
+          enemy.shotLength = this.shotPath(enemy.x, enemy.y, enemy.aimX, enemy.aimY, move.reach);
+        }
         if (enemy.timer <= 0) {
           enemy.state = 'active';
           enemy.timer = move.active;
@@ -219,9 +231,12 @@ export class EnemiesService {
     if (enemy.kind === 'fusilier' || enemy.kind === 'tireur') {
       const gun = enemy.kind === 'tireur' ? 'longshot' : 'shot';
       if (gap < 30 && enemy.cooldown <= 0) return this.startMove(enemy, 'butt');
-      const sight = !segmentBlocked(enemy.x, enemy.y, this.player.centerX, this.player.centerY, this.allWalls()) &&
-        !this.moundBetween(enemy.x, enemy.y, this.player.centerX, this.player.centerY);
-      if (sight && enemy.cooldown <= 0 && gap < ENEMY_MOVES[gun].reach - 20) return this.startMove(enemy, gun);
+      // Ligne de tir dégagée jusqu'au joueur : un tireur ne vise pas un rocher ou un arbre.
+      const reachToPlayer = gap + config.radius + PLAYER_RADIUS;
+      if (enemy.cooldown <= 0 && gap < ENEMY_MOVES[gun].reach - 20 &&
+          this.shotPath(enemy.x, enemy.y, toX, toY, reachToPlayer) >= reachToPlayer - PLAYER_RADIUS) {
+        return this.startMove(enemy, gun);
+      }
       // Le tireur posté ne quitte pas son rocher.
       if (enemy.kind === 'tireur') return;
       // Garde ses distances : recule si on s'approche, contourne sinon.
@@ -252,7 +267,35 @@ export class EnemiesService {
     enemy.move = move;
     enemy.timer = ENEMY_MOVES[move].windup;
     enemy.hitDone = false;
+    if (ENEMY_MOVES[move].shape === 'shot') {
+      enemy.shotLength = this.shotPath(enemy.x, enemy.y, enemy.facingX, enemy.facingY, ENEMY_MOVES[move].reach);
+      this.onAim(enemy);
+    }
     if (this.rand() < 0.35) enemy.strafe *= -1;
+  }
+
+  /**
+   * Distance qu'une balle parcourt avant de heurter le décor : murs, portes,
+   * termitières, troncs de couvert et tout obstacle du terrain (rochers,
+   * arbres, parois, décor cassable). L'obstacle où se tient le tireur
+   * (son rocher) est ignoré jusqu'à ce que la balle en sorte.
+   */
+  shotPath(x: number, y: number, dirX: number, dirY: number, reach: number): number {
+    const walls = this.allWalls();
+    // Tant que la balle n'a pas quitté le rocher du tireur (30 px au plus), on ne compte pas l'obstacle.
+    let clear = false;
+    for (let t = 4; t < reach; t += 4) {
+      const sx = x + dirX * t;
+      const sy = y + dirY * t;
+      const hit = this.terrain.blocksShot(sx, sy) || MOUNDS.some((m) => Math.hypot(sx - m.x, sy - m.y) < m.r) ||
+        walls.some((w) => sx >= w.x && sx <= w.x + w.w && sy >= w.y && sy <= w.y + w.h);
+      if (!clear) {
+        if (hit && t <= 30) continue;
+        clear = true;
+      }
+      if (hit) return t;
+    }
+    return reach;
   }
 
   private turnToward(enemy: Enemy, x: number, y: number, rate: number, dt: number) {
@@ -278,31 +321,17 @@ export class EnemiesService {
     if (face && enemy.state === 'return') this.turnToward(enemy, dx, dy, 6, dt);
   }
 
-  private moundBetween(ax: number, ay: number, bx: number, by: number) {
-    const dx = bx - ax;
-    const dy = by - ay;
-    const lengthSq = dx * dx + dy * dy || 1;
-    return MOUNDS.some((m) => {
-      const t = Math.max(0, Math.min(1, ((m.x - ax) * dx + (m.y - ay) * dy) / lengthSq));
-      return Math.hypot(ax + dx * t - m.x, ay + dy * t - m.y) < m.r + 2 && t > 0.05 && t < 0.95;
-    });
-  }
-
   /** Coup de mousquet : ligne figée pendant le verrouillage, une roulade passe dessous. */
   private fire(enemy: Enemy) {
     const reach = ENEMY_MOVES[enemy.move === 'longshot' ? 'longshot' : 'shot'].reach;
-    let endX = enemy.x + enemy.aimX * reach;
-    let endY = enemy.y + enemy.aimY * reach;
-    // Le tir s'arrête sur le premier mur ou la première termitière.
-    for (let t = 12; t < reach; t += 8) {
-      const x = enemy.x + enemy.aimX * t;
-      const y = enemy.y + enemy.aimY * t;
-      const wall = segmentBlocked(enemy.x, enemy.y, x, y, this.allWalls());
-      const mound = MOUNDS.some((m) => Math.hypot(x - m.x, y - m.y) < m.r);
-      if (wall || mound) { endX = x; endY = y; break; }
-    }
+    // Le tir s'arrête sur le premier obstacle (mur, termitière, rocher, arbre, tronc…).
+    const length = this.shotPath(enemy.x, enemy.y, enemy.aimX, enemy.aimY, reach);
+    const endX = enemy.x + enemy.aimX * length;
+    const endY = enemy.y + enemy.aimY * length;
     enemy.tracer = { x1: enemy.x + enemy.aimX * 14, y1: enemy.y + enemy.aimY * 14, x2: endX, y2: endY, life: 160 };
     enemy.shotFlash = 90;
+    enemy.shotLength = length;
+    this.onShot(enemy);
     this.renderer.shake(3);
     const px = this.player.centerX - enemy.x;
     const py = this.player.centerY - enemy.y;
@@ -369,6 +398,9 @@ export class EnemiesService {
       const inArc = spin || distance < radius + PLAYER_RADIUS + 4 ||
         (dx * player.facingX + dy * player.facingY) / (distance * facing) > Math.cos(70 * Math.PI / 180);
       if (!inArc) continue;
+      // Derrière un mur, une case ou un tronc : la lame bute sur le décor.
+      if (this.obstruction.swingStopped || this.obstruction.occluded(enemy.x, enemy.y, radius)) continue;
+      this.obstruction.noteHit();
       this.swingHits.add(enemy.id);
       const heavy = player.attackType !== 'light';
       const damage = attack.damage * multiplier * (special ? this.progression.specialMultiplier() : 1);

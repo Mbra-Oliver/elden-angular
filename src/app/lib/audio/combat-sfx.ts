@@ -47,6 +47,19 @@ export class CombatSfx {
     this.sub(out, s * (heavy ? 1 : 0.6), p);
   }
 
+  /**
+   * L'arme bute sur le décor : « tok » sec du fer dans le bois ou la terre,
+   * court tintement du fer, sans le souffle d'un coup qui porte.
+   */
+  glance(surface: 'wood' | 'earth' | 'thatch', strength = 1) {
+    const out = this.ready();
+    if (!out) return;
+    const p = this.pitch();
+    const s = Math.min(1.4, Math.max(0.3, strength));
+    this.thud(out, s * (surface === 'thatch' ? 0.45 : 0.75), p * (surface === 'wood' ? 1.35 : 0.9));
+    this.metal(out, s * (surface === 'earth' ? 0.32 : 0.22), p * 1.2, 0.18);
+  }
+
   /** Coup donné dans le vide : le souffle seul, plus grave pour un coup lourd. */
   swing(heavy: boolean, strength = 1) {
     const out = this.ready();
@@ -103,6 +116,37 @@ export class CombatSfx {
     const t = out.context.currentTime;
     const p = this.pitch(0.1);
     this.noiseBurst(out, t, 0.24, 'lowpass', 900 * p, 0.6, 0.16, 0.02);
+  }
+
+  /**
+   * Un tireur commence à viser : claquement sec du chien qu'on arme, puis
+   * grésillement de la mèche. `level` : 0 (loin) à 1 (tout près).
+   */
+  musketAim(level = 1) {
+    const out = this.ready();
+    if (!out || level <= 0.02) return;
+    const t = out.context.currentTime;
+    const p = this.pitch(0.05);
+    this.noiseBurst(out, t, 0.025, 'highpass', 2600 * p, 1.2, 0.5 * level, 0.001);
+    this.noiseBurst(out, t + 0.07, 0.03, 'bandpass', 1800 * p, 2, 0.4 * level, 0.001);
+    this.noiseBurst(out, t + 0.12, 0.55, 'highpass', 5200 * p, 0.6, 0.07 * level, 0.04);
+  }
+
+  /**
+   * Détonation du mousquet : claquement de poudre, souffle grave et écho qui
+   * roule dans la forêt. `level` : 0 (loin) à 1 (tout près) ; de loin, le
+   * claquement s'adoucit et l'écho domine.
+   */
+  musketShot(level = 1) {
+    const out = this.ready();
+    if (!out || level <= 0.02) return;
+    const t = out.context.currentTime;
+    const p = this.pitch(0.06);
+    const near = Math.min(1, level);
+    this.noiseBurst(out, t, 0.05, 'highpass', 1400 * p, 0.7, 1.1 * near * near, 0.001);
+    this.noiseBurst(out, t, 0.3, 'lowpass', 900 * p, 0.8, 1.0 * near, 0.002);
+    this.sub(out, 1.2 * near, p * 0.7, 0.4);
+    this.noiseBurst(out, t + 0.08, 1.1, 'lowpass', 520 * p, 0.6, 0.35 * Math.max(0.3, near), 0.06);
   }
 
   // ─── Couches ───────────────────────────────────────────────────────────

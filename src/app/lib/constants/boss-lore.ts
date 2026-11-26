@@ -39,12 +39,12 @@ export const BOSS_LORE: Record<BossId, BossLore> = {
   // Chapitre 1 (prologue, 1701) : personnage inventé ; le roi Ntim Gyakari reste hors champ.
   champion: {
     name: 'Badu Ofosu',
-    epithet: 'Porte-hache de Ntim Gyakari',
+    epithet: 'Porte-glaive de Ntim Gyakari',
     chapter: 'Chapitre 1 · 1701 · La crête de Feyiase',
     lore: [
-      'Badu Ofosu est le porte-insigne et le bourreau du roi du Denkyira. Quand l’armée s’effondre à Feyiase et que Ntim Gyakari est sur le point d’être pris, il refuse de fuir : il tient seul la crête pour couvrir la retraite des derniers fidèles.',
-      'Ce n’est pas un furieux. C’est un vétéran froid, qui jauge son adversaire, économise ses gestes et cherche à briser son rythme. Dans la main droite, une hache de guerre au large fer courbe, manche cerclé de laiton ; dans la gauche, un long mousquet de traite.',
-      'À mi-combat, quand il comprend que le duel est à mort, il brise la crosse de son mousquet contre la roche et prend sa hache à deux mains.',
+      'Badu Ofosu est l’afenasoafo, le porte-glaive du roi du Denkyira : il porte l’afena royal aux audiences et il exécute ses sentences. Quand l’armée s’effondre à Feyiase et que Ntim Gyakari est sur le point d’être pris, il refuse de fuir : il tient seul la crête pour couvrir la retraite des derniers fidèles.',
+      'Ce n’est pas un furieux. C’est un vétéran froid, qui jauge son adversaire, économise ses gestes et cherche à briser son rythme. Il porte le batakari de guerre teint à l’indigo, couvert de talismans cousus, et la calotte de cuir à disque d’or de sa charge. Dans la main droite, l’afena du roi, sabre à lame large et poignée dorée ; dans la gauche, un long mousquet de traite.',
+      'À mi-combat, quand il comprend que le duel est à mort, il brise la crosse de son mousquet contre la roche et prend l’afena à deux mains.',
     ],
     phases: {
       1: {
@@ -54,7 +54,7 @@ export const BOSS_LORE: Record<BossId, BossLore> = {
       },
       2: {
         title: 'La fureur du dernier bastion',
-        line: 'Il fracasse la crosse de son mousquet contre la roche et prend sa hache à deux mains.',
+        line: 'Il fracasse la crosse de son mousquet contre la roche et prend l’afena à deux mains.',
         design: 'Il traque sans relâche : sillon d’étincelles, chute du roi, moulinet de quatre coups (puis 1,5 s d’essoufflement), estocade brise-garde, feinte du bond.',
       },
       // Pas de troisième phase : seuil négatif, jamais atteint.

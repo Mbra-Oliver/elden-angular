@@ -30,6 +30,12 @@
         </div>
       }
 
+      @for (aim of h.aims; track aim.id) {
+        <div class="aim-warning" [class.locked]="aim.locked" [style.--aim-angle.deg]="aim.angle" aria-hidden="true">
+          <span class="mark"></span>
+        </div>
+      }
+
       @if (h.counter) {
         <p class="counter" role="status">Esquive parfaite · <app-key-hint action="attack" /> pour riposter</p>
       }

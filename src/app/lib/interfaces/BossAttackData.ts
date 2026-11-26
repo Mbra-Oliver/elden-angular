@@ -1,5 +1,5 @@
 export type BossAttackType = 'slash' | 'slam' | 'charge' | 'combo' | 'surge' | 'sweep' | 'tide' | 'shot'
-  // Badu Ofosu (chapitre 1) : hache et mousquet.
+  // Badu Ofosu (chapitre 1) : afena (sabre akan) et mousquet de traite.
   | 'reap' | 'judgment' | 'feint' | 'backhand' | 'furrow' | 'leap' | 'mill' | 'thrust'
   | 'none';
 
@@ -101,22 +101,24 @@ export const BOSS_ATTACKS: Record<
   },
 
   // ── Badu Ofosu. [SUPPOSITION] durées et dégâts tirés de la fiche, à régler en jeu.
+  // Portées calées sur l'afena visible (≈ 1 m, fente comprise) plus le corps du
+  // joueur : la lame touche là où on la voit passer, pas 1 m plus loin.
   // Double faucheuse : épaule armée (0,6 s), deux balayages larges.
-  reap: { damage: 24, windupDuration: 600, attackDuration: 1000, recoverDuration: 950, hitBoxType: 'directional', range: 1.9 },
-  // Jugement retardé : hache levée, figée 0,8 s, puis abattue (attrape les roulades paniquées).
-  judgment: { damage: 48, windupDuration: 1300, attackDuration: 260, recoverDuration: 1500, hitBoxType: 'aoe', range: 1.7 },
+  reap: { damage: 24, windupDuration: 600, attackDuration: 1000, recoverDuration: 950, hitBoxType: 'directional', range: 1.27 },
+  // Jugement retardé : afena levé, figé 0,8 s, puis abattu (attrape les roulades paniquées).
+  judgment: { damage: 48, windupDuration: 1300, attackDuration: 260, recoverDuration: 1500, hitBoxType: 'aoe', range: 1.2 },
   // Feinte : même départ que le jugement, annulée à 0,4 s, pas de côté et coup de crosse (P1) ou estoc (P2).
-  feint: { damage: 20, windupDuration: 420, attackDuration: 380, recoverDuration: 750, hitBoxType: 'directional', range: 1.8 },
+  feint: { damage: 20, windupDuration: 420, attackDuration: 380, recoverDuration: 750, hitBoxType: 'directional', range: 1.38 },
   // Revers de crosse : frappe vers l'arrière quand le joueur reste dans son dos.
-  backhand: { damage: 18, windupDuration: 400, attackDuration: 260, recoverDuration: 650, hitBoxType: 'aoe', range: 1.6 },
-  // Sillon d'étincelles : hache traînée au sol, course, uppercut.
+  backhand: { damage: 18, windupDuration: 400, attackDuration: 260, recoverDuration: 650, hitBoxType: 'aoe', range: 1.3 },
+  // Sillon d'étincelles : pointe de l'afena traînée au sol, course, remontée.
   furrow: { damage: 32, windupDuration: 800, attackDuration: 1100, recoverDuration: 1250, hitBoxType: 'directional', range: 8 },
   // Chute du roi : bond, écrasement, onde courte autour de l'impact.
   leap: { damage: 36, windupDuration: 900, attackDuration: 760, recoverDuration: 1300, hitBoxType: 'aoe', range: 2.4 },
   // Moulinet de Feyiase : 2 diagonales, 1 circulaire, 1 écrasement, puis 1,5 s d'essoufflement.
-  mill: { damage: 21, windupDuration: 700, attackDuration: 1900, recoverDuration: 1500, hitBoxType: 'directional', range: 1.9 },
+  mill: { damage: 21, windupDuration: 700, attackDuration: 1900, recoverDuration: 1500, hitBoxType: 'directional', range: 1.25 },
   // Estocade brise-garde : ultra-rapide, vide l'endurance.
-  thrust: { damage: 26, windupDuration: 500, attackDuration: 220, recoverDuration: 850, hitBoxType: 'directional', range: 2.3 },
+  thrust: { damage: 26, windupDuration: 500, attackDuration: 220, recoverDuration: 850, hitBoxType: 'directional', range: 1.67 },
 
   // Double vague : deux anneaux décalés, deux esquives à rythmer.
   tide: {
@@ -160,7 +162,7 @@ export function isBossHitActive(attack: BossAttackType, progress: number) {
     const local = (progress * strikes) % 1;
     return local >= 0.28 && local <= 0.58;
   }
-  // Jugement : seulement quand la hache touche le sol (k ≈ 0,25), pas pendant qu'elle y reste.
+  // Jugement : seulement quand la lame touche le sol (k ≈ 0,25), pas pendant qu'elle y reste.
   if (attack === 'judgment') return progress >= 0.2 && progress <= 0.42;
   if (attack === 'feint') return progress >= 0.5 && progress <= 0.75;
   if (attack === 'backhand' || attack === 'thrust') return progress >= 0.2 && progress <= 0.75;

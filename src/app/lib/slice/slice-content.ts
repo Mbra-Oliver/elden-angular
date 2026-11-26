@@ -59,7 +59,7 @@ export const ENEMY_MOVES: Record<'slash' | 'slash2' | 'shot' | 'butt' | 'claw' |
   // Lance du Denkyira : estoc avec élan (deux coups tuent le héros).
   spear: { windup: 620, active: 110, recover: 620, damage: 55, reach: 40, shape: 'arc', lunge: 230 },
   // Tireur posté : 4 s pour recharger, c'est le moment de le déloger.
-  longshot: { windup: 1100, active: 40, recover: 4000, damage: 44, reach: 430, shape: 'shot' },
+  longshot: { windup: 1400, active: 40, recover: 4000, damage: 36, reach: 430, shape: 'shot' },
   // Garde d'élite : massue cloutée lente et coup de bouclier rapide.
   club: { windup: 950, active: 150, recover: 950, damage: 40, reach: 36, shape: 'arc', lunge: 90 },
   bash: { windup: 360, active: 120, recover: 620, damage: 16, reach: 26, shape: 'arc', lunge: 280 },

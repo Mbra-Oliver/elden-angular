@@ -57,6 +57,18 @@ export class CombatFxService {
     this.sfx.parry();
   }
 
+  /**
+   * L'arme du joueur bute sur une case, un tronc ou un mur : petite gerbe
+   * (poussière, éclats), étincelle brève sur la terre et la pierre, secousse
+   * légère et son du fer qui rebondit.
+   */
+  glance(x: number, y: number, dirX: number, dirY: number, surface: 'wood' | 'earth' | 'thatch', strength = 1) {
+    this.push({ type: 'dust', x, y, dirX: -dirX, dirY: -dirY, amount: 0.35 * strength });
+    if (surface === 'earth') this.push({ type: 'flash', x, y, height: 14, color: '#ffd59a', intensity: 1.6, duration: 0.06 });
+    this.push({ type: 'shake', axis: 'horizontal', strength: 0.35 * strength });
+    this.sfx.glance(surface, strength);
+  }
+
   /** Attaque lourde au sol : trace qui s'efface, secousse verticale, grondement. */
   quake(x: number, y: number, radius: number, kind: 'crack' | 'scorch' | 'wet', strength = 1) {
     this.push({ type: 'decal', x, y, radius, kind });

@@ -5,24 +5,26 @@ import type { FighterRig } from './boss-rig-3d';
 import { dressHuman } from './human-body';
 import { baduOutfit } from './human-outfits';
 import type { Actor3D } from './world-3d';
-import { buildMusket, WEAPON_MATERIALS } from './equipment-3d';
+import { WEAPON_MATERIALS } from './equipment-3d';
+import { type ArmSolution, type Limb, solveArm, splitArm, UPPER } from './arm-ik';
 
 /**
- * Badu Ofosu, porte-hache de Ntim Gyakari (chapitre 1, 1701).
+ * Badu Ofosu, porte-glaive (afenasoafo) de Ntim Gyakari (chapitre 1, 1701).
  *
- * Il réutilise le squelette humain du duelliste, mais pas ses poses : ce
- * module l'habille (torse nu scarifié, pagne de guerre sombre, coiffe de
- * cuir à l'insigne d'or terne, poire à poudre en corne), lui met la hache
- * dans la main droite et le mousquet dans la gauche, et anime son corps
- * (animateBadu) comme un vétéran lourd : genoux fléchis, bassin bas, souffle
- * visible, poids qui passe d'un appui à l'autre, épaules engagées dans
- * chaque coup, déséquilibre et effort après les frappes lourdes, regard
- * verrouillé sur le joueur.
+ * Un homme, pas un monstre : un officier de cour du Denkyira, grand et lourd,
+ * en batakari de guerre indigo couvert de talismans, calotte de cuir à
+ * disque d'or. Il porte l'afena du roi (sabre akan à lame large, poignée à
+ * deux pommeaux dorés) dans la main droite et un long mousquet de traite dans
+ * la gauche. À mi-vie, il brise le mousquet et prend l'afena à deux mains.
  *
- * Mousquet : un filet de fumée noire et une lueur rouge à la platine
- * pendant la visée, éclair et nuage au départ, braise sur la ligne de tir.
- * À mi-vie, il le brise contre la roche (transition de phase).
- * [SUPPOSITION] Formes, couleurs et angles à valider en jeu.
+ * Proportions (1 unité ≈ 6 cm, héros ≈ 29 unités) : afena ≈ 1 m, mousquet
+ * ≈ 1,65 m, Badu ≈ 1,95 m (×1,12).
+ *
+ * Animation (animateBadu) : poses clés par attaque, et entre deux états un
+ * fondu court (plus de saut de pose). Les appuis suivent le corps : la jambe
+ * avant s'avance quand il fend, le poids recule quand il arme. En phase 2,
+ * la main gauche rejoint la poignée par IK, quel que soit le geste.
+ * [SUPPOSITION] Angles et durées réglés à l'œil sur captures, à valider en jeu.
  */
 
 const TAU = Math.PI * 2;
@@ -33,16 +35,91 @@ const easeInCubic = (t: number) => t * t * t;
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const easeOutBack = (t: number) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
-/** Armement : rapide puis tenu, avec un tremblement de muscles à la fin. */
-const coil = (t: number, now: number) => easeOutCubic(clamp01(t / 0.75)) + (t > 0.75 ? Math.sin(now * 0.09) * 0.025 : 0);
+/** Armement : rapide puis tenu (lisible), avec un léger tremblement de muscles à la fin. */
+const coil = (t: number, now: number) => easeOutCubic(clamp01(t / 0.7)) + (t > 0.7 ? Math.sin(now * 0.07) * 0.015 : 0);
 
-/** Taille de Badu par rapport au héros (fiche : environ 1,25×). */
-export const BADU_SCALE = 1.25;
+/** Taille de Badu par rapport au héros : grand et lourd, mais humain (≈ 1,95 m). */
+export const BADU_SCALE = 1.12;
+
+/** Inclinaison de la main gauche sur l'avant-bras (même prise que le bâton de Kofi). */
+const HAND_PITCH = Math.PI / 2 - 0.18;
+/**
+ * Prise du sabre : la lame part à ~65° de l'avant-bras (poignet neutre).
+ * Angle absolu de la lame dans le plan du bras : 0 = vers le haut,
+ * π/2 = devant, π = vers le bas ; φ = bras.x + coude + SWORD_PITCH + poignet.
+ */
+const SWORD_PITCH = 2.0;
+/** Afena : pommeau arrière, poignée, pommeau avant, lame (axe +y de la main). */
+const AFENA = { pommel: -3.1, guard: 1.9, base: 2.6, tip: 16.8 };
+/** Mousquet : la main gauche tient le poignet de la crosse (y = 0). */
+const MUSKET = { butt: -8.6, muzzle: 19.4 };
 
 type Vec3 = [number, number, number];
 interface Joints {
   torsoX: number; torsoY: number; torsoZ: number; lift: number; lunge: number; side: number; hop: number;
-  armL: Vec3; armR: Vec3; legL?: number; legR?: number; crouch: number; pitch: number;
+  armL: Vec3; armR: Vec3; elbowL: number; elbowR: number; wristR: number;
+  legL: number; legR: number; crouch: number; pitch: number;
+  /** 0 : mousquet porté canon en l'air ; 1 : épaulé, canon à l'horizontale. */
+  aim: number;
+}
+const NUMS = ['torsoX', 'torsoY', 'torsoZ', 'lift', 'lunge', 'side', 'hop', 'elbowL', 'elbowR', 'wristR',
+  'legL', 'legR', 'crouch', 'pitch', 'aim'] as const;
+
+/** Fondu entre deux états : on part de la dernière pose réellement affichée. */
+interface Memo {
+  key: string; start: number; from: Joints; last: Joints; walking: boolean;
+  /** Fente du coup précédent, gardée pendant la récupération puis reprise d'un pas en arrière. */
+  carry: number;
+}
+const memos = new WeakMap<FighterRig, Memo>();
+
+function copyJoints(j: Joints): Joints {
+  return { ...j, armL: [...j.armL], armR: [...j.armR] };
+}
+
+function blendJoints(from: Joints, to: Joints, t: number) {
+  for (const key of NUMS) to[key] = lerp(from[key], to[key], t);
+  for (let i = 0; i < 3; i++) {
+    to.armL[i] = lerp(from.armL[i], to.armL[i], t);
+    to.armR[i] = lerp(from.armR[i], to.armR[i], t);
+  }
+}
+
+/** Durée du fondu (ms) selon l'état qui commence : le coup reste sec, le reste coule. */
+function blendTime(state: string) {
+  switch (state) {
+    case 'attacking': return 70;
+    case 'hurt': case 'stunned': return 60;
+    case 'windup': return 140;
+    case 'recover': return 160;
+    case 'dead': return 120;
+    default: return 220;
+  }
+}
+
+/** Garde de repos : sabre bas devant (droite), mousquet canon en l'air (gauche) ; à deux mains en phase 2. */
+function guard(two: boolean, breath: number, now: number): Joints {
+  return {
+    torsoX: (two ? 0.16 : 0.1) + breath * 0.02, torsoY: two ? -0.25 : 0, torsoZ: Math.sin(now * 0.0013) * 0.025,
+    lift: (two ? -2.4 : -1.6) + breath * 0.4,
+    lunge: 0, side: 0, hop: 0, crouch: two ? 0.12 : 0.08, pitch: 0,
+    armR: two ? [-0.8, 0.15, -0.05] : [-0.45, 0, -0.2],
+    elbowR: two ? -0.9 : -0.75,
+    armL: two ? [-0.6, 0, 0.3] : [-0.2, 0, 0.16],
+    elbowL: two ? -1 : -1.2,
+    wristR: two ? 0.35 : 0,
+    legL: -0.22, legR: 0.2, aim: 0,
+  };
+}
+
+/** Angle de lame d'une pose de garde. */
+function guardBlade(g: Joints) {
+  return g.armR[0] + g.elbowR + SWORD_PITCH + g.wristR;
+}
+
+/** Oriente la lame (angle absolu φ, voir SWORD_PITCH) par le poignet, dans sa limite. */
+function blade(j: Joints, phi: number) {
+  j.wristR = Math.max(-1.1, Math.min(1.1, phi - (j.armR[0] + j.elbowR + SWORD_PITCH)));
 }
 
 /**
@@ -53,69 +130,99 @@ export function animateBadu(f: FighterRig, pose: Actor3D, now: number) {
   const k = clamp01(pose.phase);
   const attack = pose.attack ?? 'none';
   const two = (pose.bossPhase ?? 1) >= 2;
-  // Souffle : lent et maîtrisé en phase 1, court et bruyant en phase 2.
-  const breath = Math.sin(now * (two ? 0.0075 : 0.0034));
-  const j: Joints = {
-    torsoX: 0.14 + breath * 0.025, torsoY: 0, torsoZ: Math.sin(now * 0.0013) * 0.035, lift: -2.4 + breath * 0.5,
-    lunge: 0, side: 0, hop: 0, crouch: 0.12, pitch: 0,
-    // Garde : hache basse devant (droite), mousquet tenu contre la hanche (gauche) ;
-    // en phase 2, les deux mains sur la hache.
-    armR: [-0.75, 0, -0.22], armL: two ? [-0.95, 0, -0.42] : [-0.35, 0, 0.22],
-  };
+  // Souffle : lent et maîtrisé en phase 1, court et lourd en phase 2.
+  const breath = Math.sin(now * (two ? 0.0068 : 0.0034));
+  const j = guard(two, breath, now);
   f.root.rotation.order = 'YXZ';
   f.root.rotation.x = 0;
+  let walking = false;
 
   switch (pose.state) {
-    case 'chase': {
-      // Marche lourde : buste penché, bassin bas ; en phase 2, posture animale.
-      j.torsoX = two ? 0.42 : 0.2;
-      j.lift = two ? -4.2 : -2.6;
-      j.crouch = two ? 0.24 : 0.14;
-      applyJoints(f, j, pose, true);
-      return;
-    }
+    case 'chase':
+      // Marche de vétéran : buste droit, légèrement penché, garde tenue.
+      walking = true;
+      j.torsoX = two ? 0.24 : 0.16;
+      j.lift = two ? -2.8 : -2;
+      j.crouch = two ? 0.14 : 0.1;
+      break;
     case 'windup':
-      windup(j, attack, coil(k, now), k, now, two);
+      windup(j, attack, coil(k, now), k, two);
       break;
     case 'attacking':
       strike(j, attack, k, pose.step ?? 0, now, two);
       break;
     case 'recover':
-      recover(j, attack, k, now);
+      recover(j, attack, k, now, two);
       break;
     case 'hurt':
     case 'stunned': {
-      const b = 1 - k;
-      j.torsoX = -0.5 * b;
-      j.torsoZ = 0.3 * b * Math.sin(now * 0.05);
-      j.lunge = -6 * b;
-      j.armR = [0.3 * b - 0.75 * (1 - b), 0, -0.5 * b];
-      j.armL = [0.2 * b - 0.35 * (1 - b), 0, 0.5 * b];
+      // Recul : buste rejeté, un pas en arrière, la garde s'ouvre puis se referme.
+      const b = Math.sin(clamp01(k / 0.9) * Math.PI) * (1 - k * 0.3);
+      j.torsoX -= 0.45 * b;
+      j.torsoZ = 0.12 * b;
+      j.lunge = -5 * b;
+      j.armR = [lerp(j.armR[0], 0.1, b), 0, lerp(j.armR[2], -0.5, b)];
+      if (!two) j.armL = [lerp(j.armL[0], 0.1, b), 0, lerp(j.armL[2], 0.5, b)];
+      j.legL = lerp(j.legL, 0.15, b);
+      j.legR = lerp(j.legR, 0.45, b);
       break;
     }
     case 'shift':
       breakMusket(j, k, now);
       break;
     case 'dead':
-      fall(f, j, k, now);
+      fall(j, k, now);
       break;
-    default: // idle : garde active
+    default: // idle : garde, petit balancement de poids
+      j.side = Math.sin(now * 0.0011) * 0.6;
       break;
   }
-  applyJoints(f, j, pose, false);
+
+  // Fondu entre états : la nouvelle pose part de la dernière affichée.
+  const key = `${pose.state}:${attack}:${two ? 2 : 1}`;
+  let memo = memos.get(f);
+  if (!memo) {
+    memo = { key, start: now, from: copyJoints(j), last: copyJoints(j), walking, carry: 0 };
+    memos.set(f, memo);
+  } else if (memo.key !== key) {
+    memo.carry = pose.state === 'recover' ? Math.max(0, memo.last.lunge) : 0;
+    memo.from = copyJoints(memo.last);
+    memo.key = key;
+    memo.start = now;
+  }
+  // Après une fente, il reste en avant puis revient en garde d'un pas.
+  if (memo.carry) j.lunge += memo.carry * (1 - easeInOut(clamp01((k - 0.3) / 0.6)));
+  const t = clamp01((now - memo.start) / blendTime(pose.state));
+  if (t < 1) blendJoints(memo.from, j, easeInOut(t));
+  memo.last = copyJoints(j);
+  memo.walking = walking;
+  applyJoints(f, j, pose, walking);
 }
 
-/** En marche (walking), on garde le balancier des jambes de la démarche de base. */
+/** Dernière visée du mousquet (lue par ChampionGear.update, après animateBadu). */
+export function baduAim(f: FighterRig) {
+  return memos.get(f)?.last.aim ?? 0;
+}
+
 function applyJoints(f: FighterRig, j: Joints, pose: Actor3D, walking: boolean) {
   f.torso.position.y = 16 + j.lift;
   f.torso.rotation.set(j.torsoX, j.torsoY, walking ? f.torso.rotation.z : j.torsoZ);
   f.arms[0].rotation.set(...j.armL);
   f.arms[1].rotation.set(...j.armR);
+  const parts = partsOf(f);
+  if (parts) {
+    parts.elbows[0].rotation.set(j.elbowL, 0, 0);
+    parts.elbows[1].rotation.set(j.elbowR, 0, 0);
+    parts.sword.rotation.x = SWORD_PITCH + j.wristR;
+  }
   // Genoux fléchis : la jambe se raccourcit, le corps descend d'autant.
   f.legs[0].scale.y = Math.min(f.legs[0].scale.y, 1 - j.crouch);
   f.legs[1].scale.y = Math.min(f.legs[1].scale.y, 1 - j.crouch);
-  if (j.legL !== undefined) f.legs[0].rotation.x = j.legL;
-  if (j.legR !== undefined) f.legs[1].rotation.x = j.legR;
+  // En marche, les jambes gardent la démarche de base (pieds posés).
+  if (!walking) {
+    f.legs[0].rotation.x = j.legL;
+    f.legs[1].rotation.x = j.legR;
+  }
   const fx = pose.facingX;
   const fy = pose.facingY;
   f.root.position.x += fx * j.lunge - fy * j.side;
@@ -124,78 +231,122 @@ function applyJoints(f: FighterRig, j: Joints, pose: Actor3D, walking: boolean) 
   f.root.rotation.x += j.pitch;
 }
 
-/** Anticipation : le corps s'arme à l'opposé du coup, l'appui passe sur la jambe arrière. */
-function windup(j: Joints, attack: string, e: number, k: number, now: number, two: boolean) {
+/** Coudes (splitArm) et main d'épée créés par ChampionGear : absents sur un rig sans équipement. */
+const partsMap = new WeakMap<FighterRig, { elbows: [T.Group, T.Group]; sword: T.Group }>();
+function partsOf(f: FighterRig) {
+  return partsMap.get(f);
+}
+
+/**
+ * Anticipation : le corps s'arme à l'opposé du coup, le poids passe sur la
+ * jambe arrière, puis la pose est tenue (c'est elle que le joueur lit).
+ */
+function windup(j: Joints, attack: string, e: number, k: number, two: boolean) {
   switch (attack) {
-    case 'shot': // il plante la hache et épaule le mousquet, buste de profil
-      j.armR = [lerp(-0.75, 0.3, e), 0, lerp(-0.22, -0.45, e)];
-      j.armL = [lerp(-0.35, -1.5, e), 0, lerp(0.22, 0.18, e)];
-      j.torsoY = 0.45 * e;
-      j.torsoX = 0.05;
-      j.lift = -3;
-      j.lunge = -4 * easeOutCubic(clamp01(k / 0.3));
+    case 'shot': // il épaule : buste de profil, joue sur la crosse, sabre abaissé
+      j.aim = easeInOut(clamp01(k / 0.55));
+      j.armL = [lerp(j.armL[0], -1.45, j.aim), lerp(0, 0.35, j.aim), lerp(j.armL[2], 0.05, j.aim)];
+      j.elbowL = lerp(j.elbowL, -0.35, j.aim);
+      j.armR = [lerp(j.armR[0], -0.15, e), 0, lerp(j.armR[2], -0.3, e)];
+      j.elbowR = lerp(j.elbowR, -0.2, e);
+      blade(j, lerp(0.8, 2.3, e)); // sabre abaissé le long de la jambe
+      j.torsoY = 0.5 * j.aim;
+      j.torsoX = 0.04;
+      j.lift = -2;
+      j.lunge = -3 * easeOutCubic(clamp01(k / 0.3));
+      j.legL = -0.35;
+      j.legR = 0.3;
       break;
     case 'reap': // épaule droite ramenée loin en arrière, poids sur l'appui arrière
-      j.torsoY = -1.15 * e;
-      j.torsoX = 0.18;
-      j.armR = [-1.15, 0, -0.25 - 0.95 * e];
-      j.armL = two ? [-1.0, 0, -0.6] : [-0.45, 0, 0.35];
-      j.lift = -2.4 - 1.6 * e;
+      j.torsoY = -1.0 * e;
+      j.torsoX = 0.16;
+      j.armR = [-1.0, 0, -0.35 - 0.75 * e];
+      j.elbowR = -0.6 - 0.3 * e;
+      blade(j, 1.0 + 0.2 * e);
+      if (!two) j.armL = [-0.3, 0, 0.3];
+      j.lift = -2 - 1.4 * e;
       j.lunge = -3 * e;
-      j.crouch = 0.2;
+      j.crouch = 0.16;
+      j.legL = -0.2 - 0.15 * e;
+      j.legR = 0.25 + 0.15 * e;
       break;
     case 'judgment':
-    case 'feint': // même armement : hache levée haut à deux mains (la feinte s'annule à 0,4 s)
+    case 'feint': // même armement : sabre levé haut (la feinte s'annule)
       if (attack === 'feint' && two) { // feinte du bond : il fléchit comme pour sauter
-        j.lift = -2.4 - 4.5 * e;
-        j.torsoX = 0.2 + 0.45 * e;
-        j.armR = [-0.75 - 0.6 * e, 0, -0.3];
-        j.armL = [-0.95 - 0.6 * e, 0, -0.5];
-        j.crouch = 0.12 + 0.22 * e;
+        j.lift = -2.4 - 3.5 * e;
+        j.torsoX = 0.2 + 0.35 * e;
+        j.armR = [-0.8 - 0.4 * e, 0, -0.2];
+        j.elbowR = -0.9;
+        blade(j, 0.6);
+        j.crouch = 0.12 + 0.18 * e;
+        j.legL = -0.4 * e;
+        j.legR = 0.35 * e;
         break;
       }
-      j.armR = [lerp(-0.75, -2.75, e), 0, -0.12];
-      j.armL = [lerp(two ? -0.95 : -0.35, -2.55, e), 0, 0.05];
-      j.torsoX = lerp(0.14, -0.38, e);
-      j.lift = lerp(-2.4, 0.8, e);
-      j.crouch = 0.05;
+      j.armR = [lerp(j.armR[0], -2.7, e), 0, lerp(j.armR[2], -0.1, e)];
+      j.elbowR = lerp(j.elbowR, -0.35, e);
+      blade(j, lerp(0.8, -0.7, e)); // lame dressée au-dessus de la tête, pointe en arrière
+      if (!two) j.armL = [lerp(j.armL[0], -0.55, e), 0, 0.25];
+      j.torsoX = lerp(j.torsoX, -0.22, e);
+      j.lift = lerp(j.lift, 0.2, e);
+      j.crouch = 0.04;
+      j.legL = -0.3;
+      j.legR = 0.3;
       break;
-    case 'backhand': // le buste s'enroule, la crosse part vers l'arrière
-      j.torsoY = 0.75 * e;
-      j.armL = [-0.6, 0, 0.22 - 0.6 * e];
-      j.lift = -2.8;
+    case 'backhand': // le buste s'enroule, l'arme part vers l'arrière
+      j.torsoY = 0.8 * e;
+      if (two) {
+        j.armR = [-0.9, 0, -0.2 + 0.5 * e];
+        blade(j, 1.1);
+      } else j.armL = [-0.45, 0, 0.2 - 0.6 * e];
+      j.lift = -2.4;
+      j.legL = -0.1;
+      j.legR = 0.1;
       break;
-    case 'furrow': // accroupi, hache traînée derrière lui, fer contre la roche
-      j.lift = -2.4 - 3.4 * e;
-      j.torsoX = 0.14 + 0.5 * e;
-      j.armR = [0.55 * e - 0.75 * (1 - e), 0, -0.35];
-      j.armL = [0.4 * e - 0.95 * (1 - e), 0, -0.2];
-      j.crouch = 0.12 + 0.15 * e;
+    case 'furrow': // accroupi, sabre bas derrière lui, pointe contre la roche
+      j.lift = -2.4 - 2.4 * e;
+      j.torsoX = 0.16 + 0.4 * e;
+      j.torsoY = -0.35 * e;
+      j.armR = [lerp(-0.85, 0.5, e), 0, -0.3];
+      j.elbowR = lerp(-0.7, -0.15, e);
+      blade(j, lerp(0.8, 3.4, e)); // pointe en bas, derrière lui
+      j.crouch = 0.12 + 0.12 * e;
       j.lunge = -3 * e;
+      j.legL = -0.45 * e;
+      j.legR = 0.45 * e;
       break;
-    case 'leap': // flexion profonde, cri : les bras partent en arrière
-      j.lift = -2.4 - 6 * e;
-      j.torsoX = 0.14 + 0.55 * e;
-      j.armR = [-0.75 + 0.9 * e, 0, -0.3];
-      j.armL = [-0.95 + 1.0 * e, 0, -0.3];
-      j.crouch = 0.12 + 0.28 * e;
+    case 'leap': // flexion profonde, les bras partent en arrière, puis haut
+      j.lift = -2.4 - 4.5 * e;
+      j.torsoX = 0.16 + 0.45 * e;
+      j.armR = [-0.85 + 1.0 * e, 0, -0.25];
+      j.elbowR = -0.4;
+      blade(j, 1.6);
+      j.crouch = 0.12 + 0.22 * e;
+      j.legL = -0.35 * e;
+      j.legR = 0.3 * e;
       break;
-    case 'mill': { // la hache tournoie une fois au-dessus de la tête
-      const spin = k * TAU;
-      j.armR = [-2.7, 0, -0.2 + Math.sin(spin) * 0.6];
-      j.armL = [-2.5, 0, 0.1 + Math.sin(spin) * 0.6];
-      j.torsoY = Math.sin(spin) * 0.35;
-      j.torsoX = -0.2;
-      j.lift = -1.5;
+    case 'mill': { // le sabre décrit un cercle au-dessus de la tête, une fois
+      const spin = easeInOut(k) * TAU;
+      j.armR = [-2.55, 0, -0.15 + Math.sin(spin) * 0.45];
+      j.elbowR = -0.5 + Math.cos(spin) * 0.2;
+      blade(j, -1.2 + Math.sin(spin) * 0.4);
+      j.torsoY = Math.sin(spin) * 0.3 - 0.2;
+      j.torsoX = -0.1;
+      j.lift = -1.6;
+      j.legL = -0.3;
+      j.legR = 0.3;
       break;
     }
-    case 'thrust': // hache ramenée contre la hanche, pointe en avant
-      j.armR = [-0.9, 0, -0.05];
-      j.armL = [-1.05, 0, -0.55];
+    case 'thrust': // sabre ramené contre la hanche, pointe vers le joueur
+      j.armR = [lerp(-0.45, 0.25, e), 0.2, -0.05];
+      j.elbowR = lerp(-0.75, -1.5, e);
+      blade(j, lerp(0.8, Math.PI / 2, e)); // pointe vers le joueur, à hauteur de hanche
       j.torsoY = -0.55 * e;
-      j.lift = -3.6 * e - 2.4;
+      j.lift = -2.4 - 1.8 * e;
       j.lunge = -3.5 * e;
-      j.crouch = 0.2;
+      j.crouch = 0.18;
+      j.legL = -0.35;
+      j.legR = 0.35 + 0.1 * e;
       break;
   }
 }
@@ -205,177 +356,249 @@ function strike(j: Joints, attack: string, k: number, step: number, now: number,
   const snap = easeOutExpo(clamp01(k / 0.3));
   const settle = easeInOut(clamp01((k - 0.3) / 0.7));
   switch (attack) {
-    case 'shot': { // recul du coup : épaule et buste repoussés
-      const kick = Math.sin(clamp01(k / 0.4) * Math.PI);
-      j.armR = [0.3, 0, -0.45];
-      j.armL = [-1.5 + 0.6 * kick, 0, 0.18];
-      j.torsoY = 0.45;
-      j.torsoX = 0.05 - 0.28 * kick;
-      j.lift = -3;
-      j.lunge = -4 - 3 * kick;
+    case 'shot': { // départ du coup : l'épaule encaisse le recul
+      const kick = Math.sin(clamp01(k / 0.35) * Math.PI);
+      j.aim = 1;
+      j.armL = [-1.45 + 0.35 * kick, 0.35, 0.05];
+      j.elbowL = -0.35 - 0.3 * kick;
+      j.armR = [-0.15, 0, -0.3];
+      j.elbowR = -0.2;
+      blade(j, 2.3);
+      j.torsoY = 0.5;
+      j.torsoX = 0.04 - 0.22 * kick;
+      j.lift = -2;
+      j.lunge = -3 - 2.5 * kick;
+      j.legL = -0.35;
+      j.legR = 0.3;
       break;
     }
-    case 'reap': { // deux balayages : droite-gauche puis gauche-droite
+    case 'reap': { // deux balayages : droite→gauche puis gauche→droite, un pas à chacun
       const local = (k * 2) % 1;
       const s = easeOutExpo(clamp01((local - 0.15) / 0.35));
       const dir = step === 0 ? 1 : -1;
-      j.torsoY = lerp(-1.15 * dir, 1.1 * dir, s);
-      j.armR = [-1.2, 0, -0.2 + 0.9 * dir * (2 * s - 1)];
-      j.armL = two ? [-1.0, 0, -0.6] : [-0.45, 0, 0.35];
-      j.lift = -3.6 + 0.8 * s;
-      j.lunge = 7 * s;
-      j.crouch = 0.22;
+      j.torsoY = lerp(-1.0 * dir, 1.0 * dir, s);
+      j.armR = [-1.25, 0, -0.2 + 0.85 * dir * (2 * s - 1)];
+      j.elbowR = -0.25;
+      blade(j, 1.3);
+      if (!two) j.armL = [-0.3, 0, 0.3];
+      j.lift = -3.4 + 0.8 * s;
+      j.lunge = 14 * s;
+      j.crouch = 0.18;
+      j.legL = -0.2 - 0.35 * s;
+      j.legR = 0.4;
       break;
     }
-    case 'judgment': { // la hache tombe : tout le poids du corps suit
+    case 'judgment': { // le sabre tombe, le corps plie derrière lui
       const hit = easeInCubic(clamp01(k / 0.25));
-      j.armR = [lerp(-2.75, -0.1, hit), 0, -0.12];
-      j.armL = [lerp(-2.55, 0, hit), 0, 0];
-      j.torsoX = lerp(-0.38, 0.85, hit);
-      j.lift = lerp(0.8, -6, hit);
-      j.lunge = 7 * hit;
-      j.crouch = 0.25 * hit;
+      j.armR = [lerp(-2.7, -0.55, hit), 0, -0.1];
+      j.elbowR = lerp(-0.35, -0.1, hit);
+      blade(j, lerp(-0.7, 2.0, hit));
+      if (!two) j.armL = [-0.55 + 0.4 * hit, 0, 0.25];
+      j.torsoX = lerp(-0.22, 0.6, hit);
+      j.lift = lerp(0.2, -4.2, hit);
+      j.lunge = 12 * hit;
+      j.crouch = 0.2 * hit;
+      j.legL = lerp(-0.3, -0.65, hit);
+      j.legR = 0.4;
       break;
     }
     case 'feint': {
-      // Il annule l'abattage : pas de côté, puis coup de crosse horizontal (P1)
-      // ou estoc à la hache (P2).
+      // Il retient l'abattage : pas de côté, puis coup de crosse horizontal (P1)
+      // ou estoc à deux mains (P2).
       const drop = easeOutCubic(clamp01(k / 0.4));
       const s = easeOutExpo(clamp01((k - 0.4) / 0.3));
       if (two) {
-        j.armR = [lerp(-1.35, -1.6, s), 0, -0.05];
-        j.armL = [lerp(-1.55, -1.6, s), 0, -0.5];
-        j.torsoY = lerp(-0.5, 0.25, s);
-        j.lunge = 12 * s;
-        j.lift = -4;
+        j.armR = [lerp(-1.2, -1.45, s), 0.1, -0.05];
+        j.elbowR = lerp(-1.4, -0.1, s);
+        blade(j, Math.PI / 2);
+        j.torsoY = lerp(-0.5, 0.2, s);
+        j.lunge = 16 * s;
+        j.lift = -3.4;
+        j.legL = -0.55 * s;
+        j.legR = 0.45;
       } else {
-        j.armR = [lerp(-2.75, -0.6, drop), 0, -0.3];
-        j.armL = [-1.3, 0, lerp(0.9, -0.7, s)];
-        j.torsoY = lerp(0.7, -0.9, s);
-        j.lift = lerp(0.8, -3, drop);
+        j.armR = [lerp(-2.7, -0.6, drop), 0, -0.3];
+        j.elbowR = lerp(-0.35, -0.6, drop);
+        blade(j, lerp(-0.7, 1.2, drop));
+        j.armL = [-1.25, 0, lerp(0.85, -0.6, s)];
+        j.elbowL = -0.3;
+        j.torsoY = lerp(0.6, -0.8, s);
+        j.lift = lerp(0.2, -2.6, drop);
         j.lunge = 5 * s;
+        j.legL = -0.4 * s;
+        j.legR = 0.35;
       }
-      j.torsoZ = -0.15 * drop * (1 - s);
+      j.torsoZ = -0.12 * drop * (1 - s);
+      j.side = 5 * drop * (1 - s);
       break;
     }
-    case 'backhand': { // rotation rapide du buste, la crosse frappe dans le dos
-      j.torsoY = lerp(0.75, -2.3, snap) + 0.4 * settle;
-      j.armL = [-0.6, 0, -0.4 + 1.6 * snap];
-      j.lift = -3;
+    case 'backhand': { // rotation du buste : la crosse (ou le pommeau) frappe dans le dos
+      j.torsoY = lerp(0.8, -2.2, snap) + 0.35 * settle;
+      if (two) {
+        j.armR = [-1.1, 0, lerp(0.3, -1.0, snap)];
+        j.elbowR = -0.4;
+        blade(j, 1.2);
+      } else {
+        j.armL = [-0.65, 0, -0.4 + 1.5 * snap];
+        j.elbowL = -0.3;
+      }
+      j.lift = -2.6;
+      j.legL = 0.15 * snap;
+      j.legR = -0.15 * snap;
       break;
     }
     case 'furrow': {
-      if (k < 0.8) { // course, fer qui racle la roche
-        const run = Math.sin(now * 0.034);
-        j.torsoX = 0.6;
-        j.lift = -4 + Math.abs(run) * 1;
-        j.armR = [0.55, 0, -0.35];
-        j.armL = [0.4, 0, -0.2];
-        j.legL = run * 1.0;
-        j.legR = -run * 1.0;
-      } else { // uppercut : la hache remonte d'un coup
+      if (k < 0.8) { // course, pointe qui racle la roche
+        const run = Math.sin(now * 0.032);
+        j.torsoX = 0.5;
+        j.torsoY = -0.3;
+        j.lift = -3.4 + Math.abs(run) * 0.8;
+        j.armR = [0.5, 0, -0.3];
+        j.elbowR = -0.15;
+        blade(j, 3.4);
+        j.legL = run * 0.9;
+        j.legR = -run * 0.9;
+      } else { // remontée : la lame jaillit du sol
         const up = easeOutExpo(clamp01((k - 0.8) / 0.15));
-        j.armR = [lerp(0.55, -2.6, up), 0, -0.2];
-        j.armL = [lerp(0.4, -2.3, up), 0, -0.1];
-        j.torsoX = lerp(0.6, -0.35, up);
-        j.lift = lerp(-4, 1, up);
+        j.armR = [lerp(0.5, -2.5, up), 0, -0.2];
+        j.elbowR = lerp(-0.15, -0.5, up);
+        blade(j, lerp(3.4, -0.3, up));
+        j.torsoX = lerp(0.5, -0.25, up);
+        j.torsoY = lerp(-0.3, 0.2, up);
+        j.lift = lerp(-3.4, 0.4, up);
+        j.legL = -0.5;
+        j.legR = 0.35;
       }
       break;
     }
-    case 'leap': { // vol, hache au-dessus de la tête, puis écrasement
+    case 'leap': { // bond, sabre levé, puis abattage à la réception
       const air = clamp01(k / 0.72);
       if (k < 0.72) {
-        j.hop = Math.sin(air * Math.PI) * 30;
-        j.armR = [-2.8, 0, -0.1];
-        j.armL = [-2.6, 0, 0];
-        j.torsoX = -0.3;
-        j.lift = 0;
-        j.legL = -0.6;
-        j.legR = 0.3;
+        j.hop = Math.sin(air * Math.PI) * 24;
+        j.armR = [lerp(0.15, -2.7, easeOutCubic(clamp01(air / 0.4))), 0, -0.1];
+        j.elbowR = -0.4;
+        blade(j, lerp(1.6, -0.7, easeOutCubic(clamp01(air / 0.4))));
+        j.torsoX = -0.25;
+        j.lift = -0.5;
+        j.legL = -0.7;
+        j.legR = 0.35;
+        j.crouch = 0.15;
       } else {
         const hit = easeOutExpo(clamp01((k - 0.72) / 0.12));
-        j.armR = [lerp(-2.8, -0.1, hit), 0, -0.1];
-        j.armL = [lerp(-2.6, 0, hit), 0, 0];
-        j.torsoX = lerp(-0.3, 0.8, hit);
-        j.lift = lerp(0, -6.5, hit);
-        j.crouch = 0.3 * hit;
+        j.armR = [lerp(-2.7, -0.55, hit), 0, -0.1];
+        j.elbowR = lerp(-0.4, -0.1, hit);
+        blade(j, lerp(-0.7, 2.0, hit));
+        j.torsoX = lerp(-0.25, 0.6, hit);
+        j.lift = lerp(-0.5, -4.6, hit);
+        j.crouch = 0.25 * hit;
+        j.legL = -0.6;
+        j.legR = 0.45;
       }
       break;
     }
-    case 'mill': { // 2 diagonales, 1 circulaire, 1 écrasement
+    case 'mill': { // deux diagonales, un tour complet, un abattage
       const local = (k * 4) % 1;
       const s = easeOutExpo(clamp01((local - 0.15) / 0.35));
       if (step < 2) {
         const dir = step === 0 ? 1 : -1;
-        j.torsoY = lerp(-0.9 * dir, 0.9 * dir, s);
-        j.armR = [lerp(-2.4, -0.4, s), 0, 0.6 * dir * (1 - s)];
-        j.armL = [lerp(-2.2, -0.5, s), 0, -0.3];
-        j.lunge = 5 * s;
+        j.torsoY = lerp(-0.85 * dir, 0.85 * dir, s);
+        j.armR = [lerp(-2.3, -0.7, s), 0, 0.55 * dir * (1 - s) - 0.15];
+        j.elbowR = lerp(-0.6, -0.2, s);
+        blade(j, lerp(-0.6, 1.9, s));
+        j.lunge = 10 * s;
+        j.legL = -0.2 - 0.3 * s;
+        j.legR = 0.35;
       } else if (step === 2) {
         j.torsoY = -0.8 + easeInOut(local) * (TAU + 0.8);
-        j.armR = [-1.3, 0, -1.2];
-        j.armL = [-1.2, 0, -0.9];
+        j.armR = [-1.35, 0, -1.05];
+        j.elbowR = -0.2;
+        blade(j, 1.4);
+        j.legL = -0.3;
+        j.legR = 0.3;
       } else {
         const hit = easeInCubic(clamp01(local / 0.3));
-        j.armR = [lerp(-2.7, -0.1, hit), 0, -0.1];
-        j.armL = [lerp(-2.5, 0, hit), 0, 0];
-        j.torsoX = lerp(-0.3, 0.8, hit);
-        j.lift = lerp(0.5, -6, hit);
-        j.lunge = 6 * hit;
+        j.armR = [lerp(-2.7, -0.55, hit), 0, -0.1];
+        j.elbowR = lerp(-0.5, -0.1, hit);
+        blade(j, lerp(-0.7, 2.0, hit));
+        j.torsoX = lerp(-0.2, 0.6, hit);
+        j.lift = lerp(0, -4.2, hit);
+        j.lunge = 10 * hit;
+        j.legL = -0.6 * hit;
+        j.legR = 0.4;
       }
-      j.crouch = 0.2;
+      j.crouch = 0.16;
       break;
     }
-    case 'thrust': { // estoc direct, tout le corps derrière le fer
-      j.armR = [lerp(-0.9, -1.6, snap), 0, -0.05];
-      j.armL = [lerp(-1.05, -1.6, snap), 0, -0.5];
-      j.torsoY = lerp(-0.55, 0.3, snap);
-      j.torsoX = 0.3 * snap;
-      j.lunge = 14 * snap - 4 * settle;
-      j.lift = -4;
-      j.crouch = 0.25;
+    case 'thrust': { // estoc direct, tout le corps derrière la pointe
+      j.armR = [lerp(0.25, -1.4, snap), lerp(0.2, 0.05, snap), -0.05];
+      j.elbowR = lerp(-1.5, -0.05, snap);
+      blade(j, Math.PI / 2);
+      j.torsoY = lerp(-0.55, 0.25, snap);
+      j.torsoX = 0.25 * snap;
+      j.lunge = 20 * snap - 5 * settle;
+      j.lift = -3.4;
+      j.crouch = 0.22;
+      j.legL = -0.7 * snap + 0.2 * settle;
+      j.legR = 0.5;
       break;
     }
   }
 }
 
 /** Récupération : effort visible après les coups lourds, rechargement après le tir. */
-function recover(j: Joints, attack: string, k: number, now: number) {
-  const b = 1 - easeOutCubic(k);
+function recover(j: Joints, attack: string, k: number, now: number, two: boolean) {
+  const back = easeInOut(clamp01((k - 0.35) / 0.65)); // 0 → 1 : retour en garde
   switch (attack) {
-    case 'shot': { // il verse la poudre et tasse la balle à la baguette
-      const ram = Math.sin(now * 0.014);
-      j.armL = [-0.2, 0, 0.12];
-      j.armR = [-1.25 + 0.35 * ram, 0, 0.55];
-      j.torsoX = 0.3;
-      j.torsoY = 0.3;
-      j.lift = -3;
+    case 'shot': { // il abaisse l'arme, verse la poudre et bourre à la baguette
+      const ram = Math.sin(now * 0.014) * clamp01((k - 0.25) / 0.1) * (1 - clamp01((k - 0.85) / 0.1));
+      j.aim = 1 - easeInOut(clamp01(k / 0.25));
+      j.armL = [-0.55, 0, 0.1];
+      j.elbowL = -1.1;
+      j.armR = [-1.1 + 0.3 * ram, 0, 0.45];
+      j.elbowR = -0.9;
+      blade(j, 2.6);
+      j.torsoX = 0.22;
+      j.torsoY = 0.25;
+      j.lift = -2.2;
       break;
     }
-    case 'judgment': // la hache s'est enfoncée : déséquilibre, il l'arrache du sol
+    case 'judgment': // la lame a mordu la terre : il se redresse en la ramenant
     case 'leap': {
-      const pull = easeInOut(clamp01((k - 0.45) / 0.55));
-      j.torsoX = lerp(0.85, 0.2, pull);
-      j.lift = lerp(-6, -2.4, pull);
-      j.armR = [lerp(-0.1, -0.75, pull), 0, -0.12];
-      j.armL = [lerp(0, -0.95, pull), 0, 0];
-      j.torsoZ = 0.12 * Math.sin(k * Math.PI);
-      j.crouch = 0.25 * (1 - pull);
+      const pull = easeInOut(clamp01((k - 0.4) / 0.6));
+      const g = guard(two, 0, now);
+      j.torsoX = lerp(0.6, g.torsoX, pull);
+      j.lift = lerp(-4.4, g.lift, pull);
+      j.armR = [lerp(-0.55, g.armR[0], pull), 0, lerp(-0.1, g.armR[2], pull)];
+      j.elbowR = lerp(-0.1, g.elbowR, pull);
+      blade(j, lerp(2.0, guardBlade(g), pull));
+      j.torsoZ = 0.08 * Math.sin(k * Math.PI);
+      j.crouch = lerp(0.22, g.crouch, pull);
+      j.legL = lerp(-0.6, g.legL, pull);
+      j.legR = lerp(0.4, g.legR, pull);
       break;
     }
-    case 'mill': { // essoufflé : courbé sur le manche, le souffle soulève les épaules
-      const gasp = Math.sin(now * 0.018);
-      j.torsoX = 0.95 * (1 - easeInCubic(clamp01((k - 0.8) / 0.2))) + 0.1;
-      j.lift = -5.5 + gasp * 1.3;
-      j.armR = [0.15, 0, -0.35];
-      j.armL = [0.1, 0, 0.35];
-      j.crouch = 0.3;
+    case 'mill': { // essoufflé : appuyé sur ses genoux, le souffle soulève les épaules
+      const gasp = Math.sin(now * 0.016);
+      const up = easeInOut(clamp01((k - 0.78) / 0.22));
+      j.torsoX = lerp(0.65, 0.16, up);
+      j.lift = lerp(-4.4 + gasp * 0.9, -2.4, up);
+      j.armR = [lerp(-0.2, -0.8, up), 0, -0.3];
+      j.elbowR = lerp(-0.5, -0.9, up);
+      blade(j, lerp(2.9, 0.65, up)); // appuyé sur la lame, pointe au sol
+      j.crouch = lerp(0.24, 0.12, up);
+      j.legL = -0.3;
+      j.legR = 0.3;
       break;
     }
-    default:
-      j.torsoX = 0.14 + 0.45 * b;
-      j.lift = -2.4 - 2 * b + Math.sin(now * 0.012) * 0.6 * b;
+    default: { // reprise d'appui : la garde revient, le souffle se voit
+      const b = 1 - back;
+      j.torsoX += 0.2 * b;
+      j.lift += -1.2 * b + Math.sin(now * 0.012) * 0.4 * b;
+      const target = guardBlade(j);
+      j.armR = [lerp(-0.9, j.armR[0], back), 0, lerp(-0.1, j.armR[2], back)];
+      blade(j, lerp(1.7, target, back));
       break;
+    }
   }
 }
 
@@ -384,53 +607,65 @@ function breakMusket(j: Joints, k: number, now: number) {
   if (k < 0.42) {
     const raise = easeOutCubic(clamp01(k / 0.25));
     const smash = easeInCubic(clamp01((k - 0.25) / 0.17));
-    j.armL = [lerp(-0.35, -2.6, raise) + 2.5 * smash, 0, 0.3];
-    j.armR = [-0.5, 0, -0.3];
-    j.torsoX = -0.3 * raise + 0.8 * smash;
-    j.torsoZ = -0.2 * raise;
-    j.lift = -2.4 - 4 * smash;
+    j.armL = [lerp(-0.2, -2.6, raise) + 2.3 * smash, 0, 0.3];
+    j.elbowL = -0.6 * raise + 0.4 * smash;
+    j.armR = [-0.4, 0, -0.3];
+    j.torsoX = -0.25 * raise + 0.65 * smash;
+    j.torsoZ = -0.15 * raise;
+    j.lift = -1.6 - 3.2 * smash;
+    j.legL = -0.4 * smash;
+    j.legR = 0.3;
   } else {
+    // Il se redresse, empoigne l'afena à deux mains et crie (pas de pose de bête).
     const roar = easeOutBack(clamp01((k - 0.5) / 0.4));
-    const tremble = Math.sin(now * 0.09) * 0.04;
-    j.armR = [-0.8 * roar, 0, -0.2 - 1.3 * roar];
-    j.armL = [-0.6 * roar, 0, 0.2 + 1.4 * roar];
-    j.torsoX = 0.6 * (1 - roar) - 0.35 * roar + tremble;
-    j.lift = -6 * (1 - roar) + 0.5 * roar;
+    const tremble = Math.sin(now * 0.08) * 0.03;
+    j.armR = [lerp(-0.4, -0.85, roar), 0.15 * roar, lerp(-0.3, -0.05, roar)];
+    j.elbowR = -0.9 * roar;
+    blade(j, lerp(1.4, 0.65, roar));
+    j.torsoX = 0.5 * (1 - roar) - 0.2 * roar + tremble;
+    j.lift = -4.8 * (1 - roar) - 1.2 * roar;
+    j.legL = -0.3;
+    j.legR = 0.3;
   }
 }
 
-/** Mort : il lâche la hache, pose un genou à terre face à l'ouest, puis s'effondre. */
-function fall(f: FighterRig, j: Joints, k: number, now: number) {
+/** Mort : le sabre glisse de sa main, il pose un genou à terre, puis s'effondre. */
+function fall(j: Joints, k: number, now: number) {
   const stagger = easeOutCubic(clamp01(k / 0.15));
   const kneel = easeInOut(clamp01((k - 0.12) / 0.25));
   const fallDown = easeInCubic(clamp01((k - 0.62) / 0.2));
-  const tremble = k < 0.62 ? Math.sin(now * 0.06) * 0.03 : 0;
+  const tremble = k < 0.62 ? Math.sin(now * 0.06) * 0.025 : 0;
   j.lunge = -5 * stagger;
-  j.torsoX = lerp(-0.35 * stagger, 0.45, kneel) + tremble;
+  j.torsoX = lerp(-0.3 * stagger, 0.4, kneel) + tremble;
+  j.torsoY = 0;
   j.lift = -7.5 * kneel;
   j.legL = -1.3 * kneel;
   j.legR = 0.5 * kneel;
   j.crouch = 0;
-  j.armR = [lerp(-0.75, 0.2, stagger), 0, -0.25];
-  j.armL = [lerp(-0.35, 0.15, stagger), 0, 0.25];
+  j.armR = [lerp(-0.55, 0.15, stagger), 0, -0.2];
+  j.armL = [lerp(-0.2, 0.1, stagger), 0, 0.2];
+  j.elbowR = -0.2;
+  j.elbowL = -0.2;
   j.pitch = 1.38 * fallDown;
   j.hop = -3 * fallDown;
 }
 
-type Weapon = 'axe' | 'musket';
+type Weapon = 'afena' | 'musket';
 const SMOKE = 28;
 
 /** Habillage, armes et effets du mousquet. */
 export class ChampionGear {
   private readonly rightHand = new T.Group();
   private readonly leftHand = new T.Group();
-  private readonly axe = new T.Group();
+  private readonly afena = new T.Group();
   private readonly musket = new T.Group();
   private readonly brokenMusket = new T.Group();
   private readonly outfit = new T.Group();
   private readonly crest = new T.Group();
   /** Tenue skinnée de Badu (null sur un rig sans corps skinné). */
   private dress: T.Group | null = null;
+  private readonly limbs: [Limb, Limb];
+  private readonly solution: ArmSolution = { shoulder: new T.Quaternion(), elbow: 0, reached: new T.Vector3() };
   private readonly fx = new T.Group();
   private readonly smoke: { sprite: T.Sprite; life: number; vx: number; vy: number; vz: number }[] = [];
   private readonly trails: T.Mesh<T.PlaneGeometry, T.MeshBasicMaterial>[] = [];
@@ -438,13 +673,15 @@ export class ChampionGear {
   private readonly fuse: T.Sprite;
   private readonly muzzle = new T.Vector3();
   private readonly lock = new T.Vector3();
+  private readonly grip = new T.Vector3();
+  private readonly pole = new T.Vector3();
   private readonly materials: T.Material[] = [];
   private readonly skin: T.MeshStandardMaterial;
   private readonly loincloth: T.MeshStandardMaterial;
   private readonly swapped: { mesh: T.Mesh; original: T.Material | T.Material[]; replacement: T.Material }[] = [];
   private active = false;
-  /** Hache lâchée à la mort : elle tombe de la main et reste au sol. */
-  private droppedAxe?: T.Group;
+  /** Afena lâché à la mort : il tombe de la main et reste au sol. */
+  private droppedAfena?: T.Group;
   private readonly dropFrom = new T.Vector3();
   private trailLife = 0;
   private lastShot = false;
@@ -457,9 +694,12 @@ export class ChampionGear {
     const wood = flat('#3b2618');
     const iron = flat('#3f3e3a', { roughness: 0.55, metalness: 0.35 });
     const leather = flat('#2e1d13');
-    const gold = flat('#a88a3e', { roughness: 0.45, metalness: 0.45, emissive: '#2a1a05' });
+    // Or terne (feuille d'or sur bois) : poignée de l'afena royal, disque de la calotte.
+    const gold = flat('#b8963f', { roughness: 0.4, metalness: 0.55, emissive: '#2a1a05' });
+    // Lame de fer forgé claire : elle se lit contre le sol sombre de la crête.
+    const steel = flat('#b9b6ab', { roughness: 0.35, metalness: 0.6 });
     this.skin = flat('#4e2e22');
-    this.loincloth = flat('#4a2418');
+    this.loincloth = flat('#2f2420');
     const add = (parent: T.Object3D, geometry: T.BufferGeometry, material: T.Material,
       x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
       const mesh = new T.Mesh(geometry, material);
@@ -469,88 +709,51 @@ export class ChampionGear {
       return mesh;
     };
 
+    // Bras en deux os (épaule, coude) : le coude plie, la main gauche peut
+    // rejoindre la poignée par IK. Le bâton de Kofi reste sur l'épaule.
+    const keep = staff ? [staff] : [];
+    this.limbs = [splitArm(rig.arms[0], -1, keep), splitArm(rig.arms[1], 1, keep)];
+    partsMap.set(rig, { elbows: [this.limbs[0].elbow, this.limbs[1].elbow], sword: this.rightHand });
+
     // Les armes partent des mains et pointent vers l'avant (axe +y local).
-    for (const [hand, arm] of [[this.rightHand, rig.arms[1]], [this.leftHand, rig.arms[0]]] as const) {
-      hand.position.set(0, -8.5, 0.5);
-      hand.rotation.x = Math.PI / 2 - 0.18;
-      arm.add(hand);
+    for (const [hand, limb] of [[this.rightHand, this.limbs[1]], [this.leftHand, this.limbs[0]]] as const) {
+      hand.position.set(0, -8.5 + UPPER, 0.5);
+      hand.rotation.x = hand === this.rightHand ? SWORD_PITCH : HAND_PITCH;
+      limb.elbow.add(hand);
     }
 
-    add(this.axe, new T.CylinderGeometry(0.72, 1.05, 46, 7), WEAPON_MATERIALS.wood, 0, 15, 0);
-    for (const y of [-7, -2, 3, 24]) {
-      add(this.axe, new T.CylinderGeometry(1.05, 1.05, 1.1, 7), WEAPON_MATERIALS.leather, 0, y, 0);
-    }
-    for (const y of [14, 30]) {
-      add(this.axe, new T.CylinderGeometry(1.02, 1.02, 0.9, 7), WEAPON_MATERIALS.brass, 0, y, 0);
-    }
-    const bit = new T.Shape();
-    bit.moveTo(1.4, -5.5);
-    bit.quadraticCurveTo(9, -8.4, 16.5, -3.2);
-    bit.quadraticCurveTo(19, 0, 16.5, 3.2);
-    bit.quadraticCurveTo(9, 8.4, 1.4, 5.5);
-    bit.closePath();
-    const forge = new T.ExtrudeGeometry(bit, {
-      depth: 1.4, bevelEnabled: true, bevelThickness: 0.25, bevelSize: 0.25, bevelSegments: 1,
-    });
-    add(this.axe, forge, WEAPON_MATERIALS.iron, 0, 34, -0.7);
-    add(this.axe, forge, WEAPON_MATERIALS.iron, 0, 34, 0.7, 0, Math.PI, 0);
-    for (const z of [-1.55, 1.55]) {
-      add(this.axe, new T.CylinderGeometry(1.1, 1.1, 0.5, 7), WEAPON_MATERIALS.brass, 0, 34, z, Math.PI / 2, 0, 0);
-    }
-    add(this.axe, new T.ConeGeometry(1.5, 5, 5), WEAPON_MATERIALS.darkIron, 0, 44.5, 0);
-    for (const side of [-1, 1]) {
-      add(this.axe, new T.CylinderGeometry(1.3, 1.3, 2.8, 7), WEAPON_MATERIALS.darkIron, 0, 34, side * 1.7, Math.PI / 2, 0, 0);
-      for (const y of [-3, 3]) {
-        add(this.axe, new T.BoxGeometry(8, 0.22, 0.16), WEAPON_MATERIALS.darkIron,
-          side * 9, 34 + y, side * 0.78, 0, 0, side * 0.04);
-      }
-    }
-    this.rightHand.add(this.axe);
-
-    const musketModel = buildMusket();
-    musketModel.position.z = 1.2;
-    const parts = musketModel.children as T.Mesh[];
-    parts[0].position.y = 3;
-    parts[0].scale.set(1.25, 1.1, 1.35);
-    parts[1].position.y = 15;
-    parts[1].scale.set(1.35, 34 / 18, 1.35);
-    parts[1].userData['muzzle'] = true;
-    parts[2].position.y = 6;
-    parts[2].scale.set(1.4, 1.6, 1.4);
-    parts[3].position.set(0, 6, 1.2);
-    parts[3].scale.set(1.8, 2.2, 1.4);
-    this.musket.add(musketModel);
-    add(this.musket, new T.BoxGeometry(0.5, 2.4, 0.7), WEAPON_MATERIALS.iron, 0.95, 9.5, 2.1, 0, 0, -0.4);
-    add(this.musket, new T.TorusGeometry(1.5, 0.18, 4, 8, Math.PI), WEAPON_MATERIALS.iron, 0, 0.5, 3.1, 0, 0, Math.PI);
-    add(this.musket, new T.CylinderGeometry(0.12, 0.12, 26, 4), WEAPON_MATERIALS.brass, 0, 14, -1.1);
+    this.buildAfena(add, gold, steel, wood);
+    this.rightHand.add(this.afena);
+    this.buildMusket(add, wood, iron);
     this.leftHand.add(this.musket);
+
     // Mousquet brisé, jeté au sol pendant la transition (posé par update).
-    add(this.brokenMusket, new T.CylinderGeometry(0.55, 0.6, 30, 6), iron, 0, 0.6, 0, 0, 0, Math.PI / 2);
-    add(this.brokenMusket, new T.BoxGeometry(2, 1.6, 6), wood, -4, 0.8, 4, 0, 0.8, 0);
-    add(this.brokenMusket, new T.BoxGeometry(2.2, 1.6, 4), wood, 8, 0.8, -5, 0, -0.4, 0);
+    add(this.brokenMusket, new T.CylinderGeometry(0.3, 0.34, 19, 6), iron, 0, 0.4, 0, 0, 0, Math.PI / 2);
+    add(this.brokenMusket, new T.BoxGeometry(1, 2.2, 6.5), wood, -3, 0.9, 4, 0, 0.8, 0);
+    add(this.brokenMusket, new T.BoxGeometry(0.9, 0.9, 4), wood, 6, 0.5, -3.5, 0, -0.4, 0);
     this.brokenMusket.visible = false;
     scene.add(this.brokenMusket);
 
-    // Tenue (même corps humain que tous, human-body.ts) : torse nu scarifié,
-    // pagne de guerre sombre à pan rouge, ceinture et bandoulière de cuir.
-    // Kofi garde la sienne sur le même rig : on bascule l'une ou l'autre (setActive).
+    // Tenue (même corps humain que tous, human-body.ts) : batakari de guerre
+    // indigo à talismans, pagne sombre. Kofi garde la sienne sur le même rig :
+    // on bascule l'une ou l'autre (setActive).
     if (rig.body) {
       this.dress = dressHuman(rig.body, baduOutfit((color) => flat(color), this.loincloth), true);
     }
-    // Poire à poudre en corne et bourse à balles, à la ceinture.
-    add(this.outfit, new T.ConeGeometry(0.75, 4.2, 6), flat('#c9b38a'), 3.05, -0.9, 0.9, 0.3, 0, 1.2);
-    add(this.outfit, new T.SphereGeometry(1.0, 6, 5), leather, -2.95, -0.5, 1.0);
-    // Coiffe de peau sombre à l'insigne d'or terne (pivote avec le regard, comme la tête).
+    // Poire à poudre en corne et bourse à balles, à la ceinture, par-dessus la blouse.
+    add(this.outfit, new T.ConeGeometry(0.6, 3.4, 6), flat('#c9b38a'), 3.9, -1.6, 1.6, 0.3, 0, 1.2);
+    add(this.outfit, new T.SphereGeometry(0.85, 6, 5), leather, -3.9, -1.4, 1.4);
+    // Calotte de cuir sombre, disque d'or sur le front (pivote avec le regard).
     this.crest.position.set(0, 11, 0.5);
-    add(this.crest, new T.CylinderGeometry(1.62, 1.72, 1.7, 9), leather, 0, 1.75, -0.35).scale.z = 1.22;
-    add(this.crest, new T.BoxGeometry(1.3, 1.4, 0.3), gold, 0, 1.85, 1.75);
+    add(this.crest, new T.CylinderGeometry(1.55, 1.7, 1.3, 10), leather, 0, 1.6, -0.3).scale.z = 1.18;
+    add(this.crest, new T.CylinderGeometry(0.62, 0.62, 0.22, 12), gold, 0, 1.55, 1.75, Math.PI / 2 - 0.15, 0, 0);
     rig.torso.add(this.outfit, this.crest);
 
-    // Effets : fumée noire, éclair de bouche, lueur de la platine, braise sur la ligne de tir.
+    // Effets : fumée de poudre noire, éclair de bouche, lueur de la platine, braise sur la ligne de tir.
     const puff = this.softTexture();
     for (let i = 0; i < SMOKE; i++) {
       const sprite = new T.Sprite(this.mat(new T.SpriteMaterial({
-        map: puff, color: i % 3 ? '#16110e' : '#2e1810', transparent: true, depthWrite: false, opacity: 0,
+        map: puff, color: i % 3 ? '#3a342e' : '#4a3f35', transparent: true, depthWrite: false, opacity: 0,
       })));
       sprite.visible = false;
       this.fx.add(sprite);
@@ -564,11 +767,11 @@ export class ChampionGear {
       this.fx.add(sprite);
       return sprite;
     };
-    this.flash = glow('#ff7a2e');
-    this.fuse = glow('#ff2a12');
+    this.flash = glow('#ff9a3e');
+    this.fuse = glow('#ff6a1a');
     for (let i = 0; i < 3; i++) {
       const trail = new T.Mesh(new T.PlaneGeometry(1, 1), this.mat(new T.MeshBasicMaterial({
-        color: '#ff5a1e', transparent: true, depthWrite: false, opacity: 0, side: T.DoubleSide, blending: T.AdditiveBlending,
+        color: '#ff8a3e', transparent: true, depthWrite: false, opacity: 0, side: T.DoubleSide, blending: T.AdditiveBlending,
       })));
       trail.userData['bloom'] = true;
       trail.visible = false;
@@ -579,9 +782,85 @@ export class ChampionGear {
     this.setActive(false);
   }
 
+  /**
+   * Afena de guerre (≈ 1 m) : lame de fer large qui s'évase vers la pointe et
+   * se courbe côté tranchant, poignée de bois à deux pommeaux couverts d'or.
+   * Plan de la lame : largeur selon z (tranchant vers le bas quand le bras pend),
+   * épaisseur selon x.
+   */
+  private buildAfena(add: (p: T.Object3D, g: T.BufferGeometry, m: T.Material, x: number, y: number, z: number,
+    rx?: number, ry?: number, rz?: number) => T.Mesh, gold: T.Material, steel: T.Material, wood: T.Material) {
+    const { pommel, guard, base, tip } = AFENA;
+    add(this.afena, new T.SphereGeometry(1.05, 8, 6), gold, 0, pommel, 0).scale.y = 0.78;
+    add(this.afena, new T.CylinderGeometry(0.5, 0.56, guard - pommel - 1.2, 7), wood, 0, (pommel + guard) / 2, 0);
+    for (const y of [pommel + 1.3, guard - 1.3]) add(this.afena, new T.CylinderGeometry(0.6, 0.6, 0.3, 7), gold, 0, y, 0);
+    add(this.afena, new T.SphereGeometry(0.85, 8, 6), gold, 0, guard, 0).scale.y = 0.72;
+    const shape = new T.Shape();
+    const len = tip - base;
+    // (x de la forme = largeur de lame, y = longueur)
+    shape.moveTo(-0.42, 0);
+    shape.lineTo(-0.6, len * 0.45);
+    shape.quadraticCurveTo(-1.05, len * 0.82, -1.55, len * 0.9); // ventre côté tranchant
+    shape.quadraticCurveTo(-1.2, len * 0.99, -0.1, len); // pointe arrondie, inclinée
+    shape.quadraticCurveTo(0.75, len * 0.88, 0.62, len * 0.7); // dos qui s'élargit
+    shape.lineTo(0.42, 0);
+    shape.closePath();
+    const depth = 0.22;
+    const blade = new T.ExtrudeGeometry(shape, {
+      depth, bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.12, bevelSegments: 1, curveSegments: 6,
+    });
+    blade.translate(0, base, -depth / 2);
+    blade.rotateY(Math.PI / 2);
+    add(this.afena, blade, steel, 0, 0, 0);
+    // Deux petits jours décoratifs près du talon (lames d'apparat akan), en sombre.
+    for (const y of [base + 2.2, base + 4]) {
+      add(this.afena, new T.CylinderGeometry(0.22, 0.22, 0.5, 6), WEAPON_MATERIALS.darkIron, 0, y, 0, 0, 0, Math.PI / 2);
+    }
+  }
+
+  /**
+   * Mousquet de traite « long Dane » (≈ 1,65 m) : crosse de bois sombre,
+   * canon de fer long et fin, platine à silex sur le flanc, capucines de laiton.
+   * La main gauche tient le poignet de la crosse (y = 0).
+   */
+  private buildMusket(add: (p: T.Object3D, g: T.BufferGeometry, m: T.Material, x: number, y: number, z: number,
+    rx?: number, ry?: number, rz?: number) => T.Mesh, wood: T.Material, iron: T.Material) {
+    const { butt, muzzle } = MUSKET;
+    // Crosse : profil plat (x de la forme = hauteur selon z), épaisseur selon x.
+    const stock = new T.Shape();
+    stock.moveTo(-0.45, 0.6);
+    stock.lineTo(-0.5, -1.2);
+    stock.lineTo(-1.9, butt); // talon qui plonge
+    stock.lineTo(0.55, butt);
+    stock.lineTo(0.5, -1.2);
+    stock.lineTo(0.45, 0.6);
+    stock.closePath();
+    const thick = 1;
+    const stockGeometry = new T.ExtrudeGeometry(stock, { depth: thick, bevelEnabled: false });
+    stockGeometry.translate(0, 0, -thick / 2);
+    stockGeometry.rotateY(Math.PI / 2);
+    add(this.musket, stockGeometry, wood, 0, 0, 0);
+    // Fût sous le canon, canon, baguette.
+    add(this.musket, new T.BoxGeometry(0.8, 13.5, 0.75), wood, 0, 6.6, -0.15);
+    add(this.musket, new T.CylinderGeometry(0.27, 0.32, muzzle + 0.5, 7), WEAPON_MATERIALS.darkIron, 0, (muzzle - 0.5) / 2, 0.45);
+    add(this.musket, new T.CylinderGeometry(0.09, 0.09, 13, 4), wood, 0, 7, -0.65);
+    for (const y of [4.5, 9, 13]) add(this.musket, new T.CylinderGeometry(0.5, 0.5, 0.35, 7), WEAPON_MATERIALS.brass, 0, y, 0.15);
+    // Platine à silex (flanc droit), chien, sous-garde.
+    add(this.musket, new T.BoxGeometry(0.2, 2.2, 0.8), iron, 0.5, 0.1, 0.2);
+    add(this.musket, new T.BoxGeometry(0.22, 0.9, 0.3), iron, 0.6, -0.6, 0.85, 0.5, 0, 0);
+    add(this.musket, new T.TorusGeometry(0.7, 0.1, 4, 8, Math.PI), iron, 0, -0.8, -0.65, 0, Math.PI / 2, Math.PI);
+  }
+
   /** Objets à rendre visibles le temps de compiler leurs shaders. */
   get warmables(): T.Object3D[] {
     return [this.rightHand, this.leftHand, this.outfit, this.crest, this.fx, this.brokenMusket, ...(this.dress ? [this.dress] : [])];
+  }
+
+  /** Lame de l'afena en monde (traînée d'arme, éclat du télégraphe). */
+  bladeSegment(base: T.Vector3, tip: T.Vector3) {
+    this.rig.root.updateMatrixWorld(true);
+    this.afena.localToWorld(base.set(0, AFENA.base + 3, 0));
+    this.afena.localToWorld(tip.set(0, AFENA.tip, 0));
   }
 
   /** true : le rig du duelliste devient Badu (sinon Kofi retrouve son bâton et sa tenue). */
@@ -591,17 +870,20 @@ export class ChampionGear {
     for (const part of [this.rightHand, this.leftHand, this.outfit, this.crest, this.fx]) part.visible = on;
     if (this.dress) this.dress.visible = on;
     if (this.rig.body) this.rig.body.outfit.visible = !on;
-    if (!on) this.brokenMusket.visible = false;
+    if (!on) {
+      this.brokenMusket.visible = false;
+      // Kofi n'utilise pas les coudes : bras droits.
+      for (const limb of this.limbs) limb.elbow.rotation.set(0, 0, 0);
+    }
     if (this.staff) this.staff.visible = !on;
     this.rig.root.scale.setScalar(on ? BADU_SCALE : 1);
-    // Torse nu, pagne sombre ; le batakari de Kofi disparaît.
     if (!this.swapped.length) {
       const [chest, hips] = this.rig.torso.children as T.Mesh[];
       this.swapped.push({ mesh: chest, original: chest.material, replacement: this.skin });
       this.swapped.push({ mesh: hips, original: hips.material, replacement: this.loincloth });
     }
     for (const s of this.swapped) s.mesh.material = on ? s.replacement : s.original;
-    // Le batakari est ajouté au rig après ce module : on le cherche à chaque bascule.
+    // Le batakari de Kofi est ajouté au rig après ce module : on le cherche à chaque bascule.
     for (const h of this.rig.torso.children) if (h.name === 'akan-batakari') h.visible = !on;
   }
 
@@ -620,20 +902,24 @@ export class ChampionGear {
     // Le mousquet disparaît quand il le brise (transition), et ne revient plus.
     const broken = two && !(pose.state === 'shift' && k < 0.42);
     this.musket.visible = !broken && !(pose.state === 'dead' && k > 0.2);
-    this.axe.visible = !(pose.state === 'dead' && k > 0.15);
-    this.dropAxe(pose, k);
+    this.afena.visible = !(pose.state === 'dead' && k > 0.15);
+    this.dropAfena(pose, k);
     if (pose.state === 'shift' && k >= 0.42 && !this.brokenMusket.visible) {
       this.brokenMusket.visible = true;
       this.brokenMusket.position.set(pose.x + pose.facingY * 18 + pose.facingX * 10, 0, pose.y - pose.facingX * 18 + pose.facingY * 10);
       this.brokenMusket.rotation.y = Math.atan2(pose.facingX, pose.facingY) + 0.9;
     }
-    // Mains sur la hache (phase 2) : la main gauche rejoint le manche.
-    this.leftHand.visible = !broken || pose.state === 'shift';
 
     this.rig.root.updateMatrixWorld(true);
-    // Le mousquet reste à peu près horizontal (épaulé ou tenu au repos).
-    this.musket.rotation.x = -(this.rig.arms[0].rotation.x + 0.55 + this.rig.torso.rotation.x);
-    // Regard verrouillé sur le joueur (tête et coiffe pivotent, dans la limite du cou).
+    // Mousquet : canon en l'air au repos, à l'horizontale une fois épaulé.
+    const arm = this.rig.arms[0].rotation.x + this.limbs[0].elbow.rotation.x + this.rig.torso.rotation.x;
+    this.musket.rotation.x = lerp(0.35, Math.PI / 2, baduAim(this.rig)) - (arm + HAND_PITCH);
+
+    // Phase 2 : la main gauche saisit la poignée de l'afena, sous la main droite.
+    const twoHands = broken && pose.state !== 'dead';
+    if (twoHands) this.gripWithLeftHand(pose);
+
+    // Regard verrouillé sur le joueur (tête et calotte pivotent, dans la limite du cou).
     if (target) {
       const yaw = Math.atan2(target.x - pose.x, target.y - pose.y);
       const body = this.rig.root.rotation.y + this.rig.torso.rotation.y;
@@ -642,26 +928,27 @@ export class ChampionGear {
       this.rig.torso.children[3].rotation.y = this.crest.rotation.y;
     }
 
-    this.muzzle.set(0, 32, 1.2);
+    this.rig.root.updateMatrixWorld(true);
+    this.muzzle.set(0, MUSKET.muzzle, 0.45);
     this.musket.localToWorld(this.muzzle);
-    this.lock.set(0, 6, 2.4);
+    this.lock.set(0.6, 0.2, 0.9);
     this.musket.localToWorld(this.lock);
     const aiming = pose.attack === 'shot' && pose.state === 'windup';
     const firing = pose.attack === 'shot' && pose.state === 'attacking';
 
-    // Visée : la platine rougeoie, un filet de fumée noire rampe le long du canon.
+    // Visée : la platine rougeoie, un filet de fumée noire coule du canon (télégraphe du tir).
     this.fuse.position.copy(this.lock);
-    this.fuse.scale.setScalar(aiming ? 4 + 2 * Math.sin(now * 0.04) : 0.01);
-    this.fuse.material.opacity = aiming ? 0.6 + 0.4 * clamp01(k / 0.8) : 0;
+    this.fuse.scale.setScalar(aiming ? 2.5 + 1.2 * Math.sin(now * 0.04) : 0.01);
+    this.fuse.material.opacity = aiming ? 0.5 + 0.4 * clamp01(k / 0.8) : 0;
     this.puffClock -= dt;
     if (aiming && this.puffClock <= 0) {
-      this.puffClock = 0.05;
-      this.emit(this.muzzle.x, this.muzzle.y, this.muzzle.z, (Math.random() - 0.5) * 5, -3, (Math.random() - 0.5) * 5, 1.3);
+      this.puffClock = 0.08;
+      this.emit(this.muzzle.x, this.muzzle.y, this.muzzle.z, (Math.random() - 0.5) * 4, -2, (Math.random() - 0.5) * 4, 1.1);
     }
     if (firing && !this.lastShot) {
       this.flash.position.copy(this.muzzle);
       this.flash.material.opacity = 1;
-      this.flash.scale.setScalar(30);
+      this.flash.scale.setScalar(22);
       for (let i = 0; i < 12; i++) {
         this.emit(this.muzzle.x, this.muzzle.y, this.muzzle.z,
           pose.facingX * 34 + (Math.random() - 0.5) * 20, 4 + Math.random() * 6, pose.facingY * 34 + (Math.random() - 0.5) * 20, 2.4);
@@ -678,8 +965,8 @@ export class ChampionGear {
         const fy = pose.facingX * s + pose.facingY * c;
         trail.position.set(pose.x + fx * length / 2, 1.2 + i * 0.05, pose.y + fy * length / 2);
         trail.rotation.set(-Math.PI / 2, 0, Math.atan2(-fy, fx));
-        trail.scale.set(length, 3.2, 1);
-        trail.material.opacity = 0.9;
+        trail.scale.set(length, 2.4, 1);
+        trail.material.opacity = 0.8;
       });
       this.trailLife = 1;
     }
@@ -689,8 +976,8 @@ export class ChampionGear {
     this.trailLife = Math.max(0, this.trailLife - dt * 0.6);
     for (const trail of this.trails) {
       if (!trail.visible) continue;
-      trail.material.opacity = 0.9 * this.trailLife * (0.75 + 0.25 * Math.sin(now * 0.03));
-      trail.material.color.setRGB(1, 0.25 + 0.2 * this.trailLife, 0.08);
+      trail.material.opacity = 0.8 * this.trailLife * (0.75 + 0.25 * Math.sin(now * 0.03));
+      trail.material.color.setRGB(1, 0.45 + 0.2 * this.trailLife, 0.18);
       if (this.trailLife <= 0) trail.visible = false;
     }
     for (const puff of this.smoke) {
@@ -703,41 +990,54 @@ export class ChampionGear {
       puff.vx *= 1 - dt * 1.5;
       puff.vz *= 1 - dt * 1.5;
       const age = Math.max(0, puff.life);
-      puff.sprite.scale.setScalar(6 + (1 - Math.min(1, age)) * 16);
-      puff.sprite.material.opacity = Math.min(0.78, age * 0.6);
+      puff.sprite.scale.setScalar(5 + (1 - Math.min(1, age)) * 14);
+      puff.sprite.material.opacity = Math.min(0.7, age * 0.55);
       puff.sprite.visible = puff.life > 0;
     }
   }
 
-  /** La hache glisse des doigts au début de la mort, tombe et rebondit sur le sol. */
-  private dropAxe(pose: Actor3D, k: number) {
+  /** IK du bras gauche vers la poignée de l'afena (sous la main droite, près du pommeau). */
+  private gripWithLeftHand(pose: Actor3D) {
+    const torso = this.rig.torso;
+    this.afena.localToWorld(this.grip.set(0, AFENA.pommel + 1.2, 0));
+    torso.worldToLocal(this.grip);
+    // Le coude part vers le bas et vers l'extérieur gauche.
+    this.pole.set(-0.8, -0.6, -0.2).normalize();
+    solveArm(this.rig.arms[0].position, this.grip, this.pole, this.solution);
+    this.rig.arms[0].quaternion.copy(this.solution.shoulder);
+    this.limbs[0].elbow.rotation.set(this.solution.elbow, 0, 0);
+    void pose;
+  }
+
+  /** L'afena glisse des doigts au début de la mort, tombe et rebondit sur le sol. */
+  private dropAfena(pose: Actor3D, k: number) {
     const dead = pose.state === 'dead';
     if (!dead) {
-      if (this.droppedAxe) this.droppedAxe.visible = false;
+      if (this.droppedAfena) this.droppedAfena.visible = false;
       return;
     }
-    if (!this.droppedAxe) {
-      this.droppedAxe = this.axe.clone();
-      this.scene.add(this.droppedAxe);
+    if (!this.droppedAfena) {
+      this.droppedAfena = this.afena.clone();
+      this.scene.add(this.droppedAfena);
     }
-    const axe = this.droppedAxe;
+    const sword = this.droppedAfena;
     if (k <= 0.15) {
-      axe.visible = false;
-      this.axe.getWorldPosition(this.dropFrom);
+      sword.visible = false;
+      this.afena.getWorldPosition(this.dropFrom);
       return;
     }
-    axe.visible = true;
+    sword.visible = true;
     const t = clamp01((k - 0.15) / 0.13);
-    const bounce = Math.sin(clamp01((k - 0.28) / 0.08) * Math.PI) * 2.5;
-    const ground = 1.2 + bounce;
-    axe.position.set(this.dropFrom.x + pose.facingY * 10, lerp(this.dropFrom.y, ground, t * t), this.dropFrom.z - pose.facingX * 10);
-    axe.rotation.set(lerp(0.3, Math.PI / 2, t), Math.atan2(pose.facingX, pose.facingY) + 0.6, lerp(0, 0.2, t));
-    axe.scale.setScalar(BADU_SCALE);
+    const bounce = Math.sin(clamp01((k - 0.28) / 0.08) * Math.PI) * 2;
+    const ground = 0.9 + bounce;
+    sword.position.set(this.dropFrom.x + pose.facingY * 8, lerp(this.dropFrom.y, ground, t * t), this.dropFrom.z - pose.facingX * 8);
+    sword.rotation.set(lerp(0.3, Math.PI / 2, t), Math.atan2(pose.facingX, pose.facingY) + 0.6, lerp(0, Math.PI / 2, t));
+    sword.scale.setScalar(BADU_SCALE);
   }
 
   dispose() {
     this.scene.remove(this.fx, this.brokenMusket);
-    if (this.droppedAxe) this.scene.remove(this.droppedAxe);
+    if (this.droppedAfena) this.scene.remove(this.droppedAfena);
     this.materials.forEach((material) => material.dispose());
   }
 
@@ -772,5 +1072,5 @@ export class ChampionGear {
 
 /** Arme tenue (utile aux traînées d'arme de BossFx). */
 export function baduWeapon(pose: Actor3D): Weapon {
-  return pose.attack === 'shot' && pose.state !== 'chase' ? 'musket' : 'axe';
+  return pose.attack === 'shot' && pose.state !== 'chase' ? 'musket' : 'afena';
 }
