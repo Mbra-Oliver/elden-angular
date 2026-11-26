@@ -33,7 +33,7 @@ export const ACTION_GLYPHS: Record<InputAction, Record<InputDevice, string>> = {
   choice2: { keyboard: '2', gamepad: 'X', touch: '' },
   confirm: { keyboard: 'Entrée', gamepad: 'A', touch: '' },
   back: { keyboard: 'Échap', gamepad: 'B', touch: '' },
-  kaolin: { keyboard: 'T', gamepad: 'LB', touch: '◌' },
+  kaolin: { keyboard: 'T', gamepad: '', touch: '◌' },
   lock: { keyboard: 'Q', gamepad: 'RS', touch: '⊙' },
 };
 

@@ -512,6 +512,8 @@ export class Prologue3D {
 
     const spear = merge([
       [cyl(0.45, 0.45, 34, 5), C.wood, m4(0, 17, 0)],
+      [cyl(0.55, 0.55, 0.8, 6), C.leather, m4(0, 32.5, 0)],
+      [cyl(0.55, 0.55, 0.8, 6), C.leather, m4(0, 34.6, 0)],
       [new T.ConeGeometry(1.4, 6, 4), C.iron, m4(0, 37, 0, 0, 0, 0, 1, 1, 0.35)],
     ]);
     this.scatter(spear, material, SPEARS, (s, o) => {
@@ -530,6 +532,8 @@ export class Prologue3D {
       [cyl(0.45, 0.5, 20, 6), C.iron, m4(0, 0, 0, 0, 0, Math.PI / 2)],
       [box(9, 1.8, 1.3), C.wood, m4(-12, -0.4, 0, 0, 0, -0.12)],
       [box(2, 1, 1), C.iron, m4(-6.5, 0.6, 0.4)],
+      [box(0.7, 2.2, 0.7), C.iron, m4(-6.5, 1.9, 0.4, 0, 0, 0.3)],
+      [cyl(0.16, 0.16, 18, 4), C.bone, m4(-1, -0.9, 0.5, 0, 0, Math.PI / 2)],
     ]);
     this.scatter(musket, material, MUSKETS, (s, o) => {
       o.position.y = 1;
@@ -537,11 +541,15 @@ export class Prologue3D {
     });
     const blade = merge([
       [cyl(0.5, 0.5, 4, 5), C.leather, m4(-3, 0, 0, 0, 0, Math.PI / 2)],
+      [box(2.6, 0.4, 3), C.leather, m4(0.4, 0, 0, 0, 0, 0.12)],
       [box(12, 0.3, 2.2), C.iron, m4(5, 0, 0, 0, 0, 0, 1, 1, 1)],
       [new T.ConeGeometry(1.1, 3, 4), C.iron, m4(12.4, 0, 0, Math.PI / 2, 0, -Math.PI / 2, 1, 1, 0.2)],
     ]);
     this.scatter(blade, material, BLADES, (s, o) => { o.position.y = 0.4; o.rotation.set(0, s.yaw, 0.05); });
-    const bow = merge([[new T.TorusGeometry(10, 0.4, 4, 10, 2.1), C.darkWood, m4(0, 0, 0, Math.PI / 2, 0, 0)]]);
+    const bow = merge([
+      [new T.TorusGeometry(10, 0.4, 4, 10, 2.1), C.darkWood, m4(0, 0, 0, Math.PI / 2, 0, 0)],
+      [box(0.18, 0.18, 17.35), C.bone, m4(2.47, 0, 4.31, 0, -1.05, 0)],
+    ]);
     this.scatter(bow, material, BOWS, (s, o) => { o.position.y = 0.5; o.rotation.set(0, s.yaw, 0); });
     const keg = merge([
       [cyl(4, 4.4, 7, 8), C.darkWood, m4(0, 3.5, 0)],
@@ -1046,9 +1054,15 @@ export class Prologue3D {
         // Arme tenue droite de la main droite, l'autre bras le long du corps.
         pose: (rig) => { rig.arms[1].rotation.set(-0.42, 0, -0.05); rig.arms[0].rotation.z = -0.08; },
       }),
-      musket
-        ? [cyl(0.45, 0.5, 27, 6), C.iron, m4(3.75, 21, 3.4)]
-        : [cyl(0.45, 0.45, 38, 5), C.wood, m4(3.75, 25, 3.4)],
+      ...(musket
+        ? [
+          [cyl(0.45, 0.5, 27, 6), C.iron, m4(3.75, 21, 3.4)],
+          [box(3, 1, 1.4), C.darkWood, m4(3.75, 8.5, 3.4)],
+        ] as Part[]
+        : [
+          [cyl(0.45, 0.45, 38, 5), C.wood, m4(3.75, 25, 3.4)],
+          [new T.ConeGeometry(1.3, 5, 4), C.iron, m4(3.75, 46.5, 3.4)],
+        ] as Part[]),
     ]);
     for (const musket of [false, true]) {
       this.scatter(warrior(musket), material, CAMP_WARRIORS.filter((w) => (w.variant % 2 === 1) === musket), () => undefined);

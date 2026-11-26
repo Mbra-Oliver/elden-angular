@@ -70,15 +70,18 @@ export class CombatFeel3D {
   updateFov(player: Actor3D, dt: number) {
     const heavy = player.attack === 'heavy';
     const winding = heavy && player.state === 'windup';
+    const aiming = player.weapon === 'bow' && (player.state === 'aiming' || player.state === 'release');
     if (this.heavyWindup && heavy && player.state === 'attacking') {
       // Impact : retour brutal, un poil sous la normale.
       this.fov = FOV.base + FOV.impactPunch;
     }
     this.heavyWindup = winding;
-    let target: number = FOV.base;
-    if (player.sprint && player.state === 'moving') target += FOV.sprint;
-    if (winding) target += FOV.heavyCharge * T.MathUtils.smoothstep(player.phase, 0, 1);
-    const rate = target > this.fov ? 4.5 : 7;
+    let target: number = aiming ? FOV.ads : FOV.base;
+    if (!aiming) {
+      if (player.sprint && player.state === 'moving') target += FOV.sprint;
+      if (winding) target += FOV.heavyCharge * T.MathUtils.smoothstep(player.phase, 0, 1);
+    }
+    const rate = target > this.fov ? 4.5 : aiming ? 9 : 7;
     this.fov += (target - this.fov) * (1 - Math.exp(-rate * dt));
     return this.fov;
   }

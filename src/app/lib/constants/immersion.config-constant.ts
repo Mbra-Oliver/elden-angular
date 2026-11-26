@@ -55,6 +55,7 @@ export const FOV = {
   heavyCharge: 7,
   /** Au moment de l'impact lourd, le cadre se resserre un instant sous la base. */
   impactPunch: -2.5,
+  ads: 40,
 } as const;
 
 /** Attaques imparables, annoncées par un éclat et un son aigu. */

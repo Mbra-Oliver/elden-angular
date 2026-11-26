@@ -266,11 +266,34 @@ export class Slice3D {
   private buildItems() {
     const glow = this.mat(new T.MeshBasicMaterial({ color: '#ffe2a0', transparent: true, opacity: 0.55, depthWrite: false }));
     const body = this.mat(flat('#c9a46a', { emissive: '#5a3a12', emissiveIntensity: 0.6 }));
+    const iron = this.mat(new T.MeshStandardMaterial({ color: '#a7a69e', metalness: 0.55, roughness: 0.4, flatShading: true }));
+    const brass = this.mat(new T.MeshStandardMaterial({ color: '#a07a35', metalness: 0.7, roughness: 0.45, flatShading: true }));
+    const leather = this.mat(flat('#2a1a12'));
     for (const item of ITEM_PLACEMENTS) {
       const group = new T.Group();
       const halo = new T.Mesh(this.geo(new T.SphereGeometry(5, 8, 6)), glow);
       halo.position.y = 6;
-      const object = new T.Mesh(this.geo(new T.OctahedronGeometry(2.6)), body);
+      const object = new T.Group();
+      if (item.id === 'afena') {
+        const outline = new T.Shape();
+        outline.moveTo(-0.3, 0);
+        outline.quadraticCurveTo(-1.3, 1.8, -0.4, 4.4);
+        outline.quadraticCurveTo(-0.1, 5.4, 1.2, 4.6);
+        outline.quadraticCurveTo(1.4, 2.2, 0.3, 0);
+        outline.closePath();
+        const blade = new T.Mesh(this.geo(new T.ExtrudeGeometry(outline, {
+          depth: 0.18, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 1,
+        })), iron);
+        blade.position.set(0, 0.4, -0.09);
+        const guard = new T.Mesh(this.geo(new T.BoxGeometry(2, 0.2, 0.4)), brass);
+        guard.position.y = 0.25;
+        const grip = new T.Mesh(this.geo(new T.CylinderGeometry(0.24, 0.28, 1.5, 6)), leather);
+        grip.position.y = -0.55;
+        object.add(blade, guard, grip);
+        object.rotation.z = 0.3;
+      } else {
+        object.add(new T.Mesh(this.geo(new T.OctahedronGeometry(2.6)), body));
+      }
       object.position.y = 6;
       group.add(halo, object);
       group.position.set(item.x, 0, item.y);

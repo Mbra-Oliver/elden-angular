@@ -6,6 +6,8 @@ import { ProgressionStore } from '../slice/progression.store';
 import { BOSS_LORE, type BossId } from '../constants/boss-lore';
 import { ANCESTRAL_THREAD, adinkraFor } from '../constants/adinkra';
 import { GameStateService } from '../services/game-state.service';
+import { EquipmentStore } from '../entities/player/equipment.store';
+import { WEAPONS, type WeaponId } from '../constants/equipment.config-constant';
 
 export type CodexKind = 'souvenir' | 'relique' | 'adversaire';
 
@@ -43,6 +45,10 @@ export class CodexService {
       id: `item:${id}`, kind: 'relique', title: item.name, subtitle: item.effect,
       chapter: id === 'perle' || id === 'calebasse' ? 'Lignée des Serwaa' : 'Trésors du chemin', text: [item.lore],
     })),
+    ...(Object.entries(WEAPONS) as [WeaponId, (typeof WEAPONS)[WeaponId]][]).map(([id, weapon]): CodexEntry => ({
+      id: `weapon:${id}`, kind: 'relique', title: weapon.name, subtitle: 'Arme d’Ama',
+      chapter: 'Les armes du chemin', text: [weapon.description],
+    })),
     ...(Object.entries(BOSS_LORE) as [BossId, (typeof BOSS_LORE)[BossId]][]).map(([id, boss]): CodexEntry => ({
       id: `boss:${id}`, kind: 'adversaire', title: boss.name, subtitle: `${boss.epithet} · ${boss.chapter}`,
       chapter: boss.chapter, text: boss.lore,
@@ -68,6 +74,7 @@ export class CodexService {
     const prologue = inject(PrologueService);
     const progression = inject(ProgressionStore);
     const game = inject(GameStateService);
+    const equipment = inject(EquipmentStore);
     effect(() => {
       const read = prologue.reading();
       if (read) untracked(() => this.discover(`remains:${read.id}`));
@@ -75,6 +82,10 @@ export class CodexService {
     effect(() => {
       const items = progression.items();
       untracked(() => items.forEach((id) => this.discover(`item:${id}`)));
+    });
+    effect(() => {
+      const owned = equipment.state().owned;
+      untracked(() => owned.forEach((id) => this.discover(`weapon:${id}`)));
     });
     effect(() => {
       const name = game.hud()?.defeated?.name;

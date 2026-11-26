@@ -487,6 +487,8 @@ export class ChampionGear {
     const fer = new T.ExtrudeGeometry(blade, { depth: 0.8, bevelEnabled: false });
     add(this.axe, fer, iron, 0.6, 34, -0.4, 0, 0, Math.PI / 2);
     add(this.axe, fer, iron, -0.6, 34, 0.4, 0, Math.PI, Math.PI / 2).scale.setScalar(0.7);
+    add(this.axe, new T.CylinderGeometry(0.4, 0.4, 0.25, 6), brass, 0, 34, 0.9, Math.PI / 2, 0, 0);
+    add(this.axe, new T.CylinderGeometry(0.95, 0.95, 1, 6), brass, 0, 32, 0);
     this.rightHand.add(this.axe);
 
     // Mousquet à silex de traite, tenu de la main gauche.
@@ -495,6 +497,9 @@ export class ChampionGear {
     add(this.musket, new T.BoxGeometry(1.8, 15, 2.4), wood, 0, 3, 0.4);
     add(this.musket, new T.BoxGeometry(2.2, 6, 3.4), wood, 0, -6, 0, 0.25, 0, 0);
     add(this.musket, new T.BoxGeometry(1.2, 2.2, 1.6), brass, 0, 6, 2.4);
+    add(this.musket, new T.BoxGeometry(0.5, 2.4, 0.7), iron, 0.95, 9.5, 2.1, 0, 0, -0.4);
+    add(this.musket, new T.TorusGeometry(1.5, 0.18, 4, 8, Math.PI), iron, 0, 0.5, 3.1, 0, 0, Math.PI);
+    add(this.musket, new T.CylinderGeometry(0.12, 0.12, 26, 4), brass, 0, 14, -1.1);
     this.leftHand.add(this.musket);
     // Mousquet brisé, jeté au sol pendant la transition (posé par update).
     add(this.brokenMusket, new T.CylinderGeometry(0.55, 0.6, 30, 6), iron, 0, 0.6, 0, 0, 0, Math.PI / 2);

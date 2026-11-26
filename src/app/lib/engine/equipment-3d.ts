@@ -1,6 +1,7 @@
 import * as T from 'three';
 import { EQUIPMENT_CONFIG, type WeaponId } from '../constants/equipment.config-constant';
 import { dressHuman, type HumanBody } from './human-body';
+import { WeaponTrail } from './player-rig-3d';
 
 interface ArrowView {
   x: number;
@@ -37,10 +38,23 @@ export class Equipment3D {
   });
   private readonly quiver = new T.Group();
   private readonly arrows: T.Group[] = [];
+  private readonly arrowStreaks: T.Mesh[] = [];
+  private readonly arrowStreakMaterial = new T.MeshBasicMaterial({
+    color: '#bfe9ff', transparent: true, opacity: 0.32, depthWrite: false,
+    side: T.DoubleSide, blending: T.AdditiveBlending,
+  });
+  private readonly bowStrings: T.Mesh[] = [];
+  private readonly nockedArrow = new T.Group();
+  private readonly bowTipY: number;
+  private readonly bowTipZ: number;
+  private arrowCount = 0;
+  private ammo = 0;
   private weapon: WeaponId = 'spear';
   /** Afena (épée courte à lame en feuille) et batakari (tunique à talismans). */
   private readonly afena = new T.Group();
   private readonly afenaBlade: T.MeshStandardMaterial;
+  private readonly afenaGlow: T.MeshBasicMaterial;
+  private readonly afenaTrail: WeaponTrail;
   private batakari = new T.Group();
   private look: GearLook = { batakari: false, tier: 0, ready: false };
 
@@ -58,14 +72,20 @@ export class Equipment3D {
     // La poignée est à l'origine, le ventre de l'arc vers l'avant (-y) et la
     // corde côté archer (+y).
     const radius = 8;
+    this.bowTipY = radius * (1 - Math.sin(Math.PI * 0.09));
+    this.bowTipZ = radius * Math.cos(Math.PI * 0.09);
     const limb = new T.Mesh(new T.TorusGeometry(radius, 0.5, 5, 18, Math.PI * 0.82), wood);
     limb.rotation.set(0, Math.PI / 2, -Math.PI * 0.91);
     limb.position.y = radius;
-    const string = new T.Mesh(
-      new T.CylinderGeometry(0.12, 0.12, 2 * radius * Math.cos(Math.PI * 0.09), 3), fibre);
-    string.rotation.x = Math.PI / 2;
-    string.position.y = radius * (1 - Math.sin(Math.PI * 0.09));
-    this.bow.add(limb, string);
+    const stringGeometry = new T.CylinderGeometry(0.12, 0.12, 1, 3);
+    for (const side of [1, -1]) {
+      const segment = new T.Mesh(stringGeometry, fibre);
+      segment.scale.y = this.bowTipZ;
+      segment.position.set(0, this.bowTipY, side * this.bowTipZ / 2);
+      segment.rotation.x = side * Math.PI / 2;
+      this.bow.add(segment);
+      this.bowStrings.push(segment);
+    }
     this.bow.position.set(0, -8.6, 0.6);
     this.bow.visible = false;
     arms[0].add(this.bow);
@@ -114,17 +134,47 @@ export class Equipment3D {
 
     // Afena : poignée, garde ronde et lame en feuille, alignée comme la lance.
     this.afenaBlade = new T.MeshStandardMaterial({ color: TIERS[0].color, metalness: 0.35, roughness: 0.6, flatShading: true });
-    const hilt = new T.Mesh(new T.CylinderGeometry(0.45, 0.5, 3.4, 6), leather);
-    const guard = new T.Mesh(new T.SphereGeometry(0.9, 6, 4), wood);
-    guard.position.y = 1.9;
-    const blade = new T.Mesh(new T.SphereGeometry(1, 8, 6), this.afenaBlade);
-    blade.scale.set(1.5, 6.2, 0.22);
-    blade.position.y = 7.6;
-    this.afena.add(hilt, guard, blade);
+    this.afenaGlow = new T.MeshBasicMaterial({
+      color: '#ff9a3c', transparent: true, opacity: 0, depthWrite: false,
+      side: T.DoubleSide, blending: T.AdditiveBlending,
+    });
+    const brass = new T.MeshStandardMaterial({ color: '#a07a35', metalness: 0.7, roughness: 0.45, flatShading: true });
+    const outline = new T.Shape();
+    outline.moveTo(-0.28, 0);
+    outline.quadraticCurveTo(-1.25, 3.1, -0.45, 8.2);
+    outline.quadraticCurveTo(-0.12, 9.9, 1.15, 8.7);
+    outline.quadraticCurveTo(1.35, 4.1, 0.28, 0);
+    outline.closePath();
+    const bladeGeometry = new T.ExtrudeGeometry(outline, {
+      depth: 0.34, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.12, bevelSegments: 1,
+    });
+    const blade = new T.Mesh(bladeGeometry, this.afenaBlade);
+    blade.position.set(0, 2.1, -0.17);
+    const ridge = new T.Mesh(new T.CylinderGeometry(0.08, 0.1, 7.4, 4), this.afenaBlade);
+    ridge.position.set(0.32, 6.2, 0.28);
+    ridge.rotation.z = -0.06;
+    const glow = new T.Mesh(new T.PlaneGeometry(2.9, 9.2), this.afenaGlow);
+    glow.position.set(0.3, 6.6, -0.55);
+    const hilt = new T.Mesh(new T.CylinderGeometry(0.42, 0.5, 3.2, 6), leather);
+    hilt.position.y = -1.5;
+    const neck = new T.Mesh(new T.CylinderGeometry(0.36, 0.42, 2.2, 6), brass);
+    neck.position.y = 1.1;
+    const guard = new T.Mesh(new T.BoxGeometry(3, 0.36, 0.78), brass);
+    guard.position.y = 1.85;
+    const guardEnd = new T.IcosahedronGeometry(0.42, 0);
+    for (const side of [-1, 1]) {
+      const knob = new T.Mesh(guardEnd, brass);
+      knob.position.set(side * 1.5, 1.85, 0);
+      this.afena.add(knob);
+    }
+    const pommel = new T.Mesh(new T.IcosahedronGeometry(0.55, 0), brass);
+    pommel.position.y = -3.2;
+    this.afena.add(hilt, neck, guard, pommel, blade, ridge, glow);
     this.afena.position.set(0, -8.6, 1);
     this.afena.rotation.x = Math.PI / 2 - 0.18;
     this.afena.visible = false;
     arms[1].add(this.afena);
+    this.afenaTrail = new WeaponTrail(scene, 8, new T.Vector3(0.3, 12, 0.2), new T.Vector3(0.1, 5, 0));
 
     // Batakari : tunique de coton rayé couverte de sachets de cuir (talismans).
     const cotton = new T.MeshStandardMaterial({ color: '#c8b48a', roughness: 0.95, flatShading: true });
@@ -153,6 +203,7 @@ export class Equipment3D {
     const shaftGeometry = new T.CylinderGeometry(0.22, 0.22, 15, 4);
     const tipGeometry = new T.ConeGeometry(0.6, 2.2, 4);
     const tip = new T.MeshStandardMaterial({ color: '#8f8d86', metalness: 0.5, roughness: 0.4 });
+    const streakGeometry = new T.PlaneGeometry(1.1, 13);
     for (let i = 0; i < ARROW_POOL; i++) {
       const arrow = new T.Group();
       const shaft = new T.Mesh(shaftGeometry, wood);
@@ -160,11 +211,30 @@ export class Equipment3D {
       const head = new T.Mesh(tipGeometry, tip);
       head.rotation.x = Math.PI / 2;
       head.position.z = 8.2;
-      arrow.add(shaft, head);
+      const streak = new T.Mesh(streakGeometry, this.arrowStreakMaterial);
+      streak.rotation.x = Math.PI / 2;
+      streak.position.z = -6.5;
+      streak.visible = false;
+      arrow.add(shaft, head, streak);
       arrow.visible = false;
       scene.add(arrow);
       this.arrows.push(arrow);
+      this.arrowStreaks.push(streak);
     }
+    const nockShaft = new T.Mesh(shaftGeometry, wood);
+    nockShaft.position.y = -6.5;
+    const nockHead = new T.Mesh(tipGeometry, tip);
+    nockHead.rotation.x = Math.PI;
+    nockHead.position.y = -15.2;
+    this.nockedArrow.add(nockShaft, nockHead);
+    for (const side of [-1, 1]) {
+      const feather = new T.Mesh(new T.ConeGeometry(0.45, 2.2, 3), fibre);
+      feather.position.set(side * 0.48, 0.4, 0);
+      feather.rotation.z = side * 0.35;
+      this.nockedArrow.add(feather);
+    }
+    this.nockedArrow.visible = false;
+    this.bow.add(this.nockedArrow);
   }
 
   /**
@@ -196,16 +266,27 @@ export class Equipment3D {
     this.afenaBlade.metalness = tint.metalness;
     this.afenaBlade.roughness = tint.roughness;
     this.afenaBlade.emissive.set(look.ready ? '#7a3a10' : '#000000');
+    this.afenaGlow.opacity = look.ready ? 0.28 : 0;
   }
 
   setWeapon(weapon: WeaponId) {
     this.weapon = weapon;
   }
 
+  setAmmo(ammo: number) {
+    this.ammo = ammo;
+  }
+
+  get warmables(): T.Object3D[] {
+    return [this.afena, this.bow, this.nockedArrow, ...this.arrowStreaks];
+  }
+
   setArrows(arrows: readonly ArrowView[]) {
+    this.arrowCount = arrows.length;
     this.arrows.forEach((mesh, i) => {
       const arrow = arrows[i];
       mesh.visible = !!arrow;
+      this.arrowStreaks[i].visible = !!arrow && !arrow.grounded;
       if (!arrow) return;
       mesh.rotation.set(0, Math.atan2(arrow.dirX, arrow.dirY), 0);
       if (arrow.grounded) {
@@ -227,7 +308,11 @@ export class Equipment3D {
     this.mixture.visible = drinking;
     if (this.spear) this.spear.visible = this.weapon === 'spear' && !drinking;
     this.afena.visible = this.weapon === 'afena' && !drinking;
-    if (this.look.ready) this.afenaBlade.emissiveIntensity = 0.6 + Math.sin(performance.now() / 160) * 0.35;
+    const pulse = Math.sin(performance.now() / 160);
+    this.afenaBlade.emissiveIntensity = this.look.ready ? 0.6 + pulse * 0.35 : 1;
+    this.afenaGlow.opacity = this.look.ready ? 0.24 + pulse * 0.1 : 0;
+    this.nockedArrow.visible = bow && !drinking && this.ammo > 0;
+    this.setBowDraw(0);
     if (!drinking) {
       this.healAura.visible = false;
       this.auraMaterial.opacity = 0;
@@ -243,6 +328,7 @@ export class Equipment3D {
       left.rotation.set(-1.5 * Math.max(draw, 0.35), 0, -0.1);
       right.rotation.set(-1.3 * Math.max(draw, 0.2), 0, 0.55 * draw);
       this.torso.rotation.set(0, -0.32 * draw, 0);
+      this.setBowDraw(draw);
     } else if (drinking) {
       const phase = Math.min(1, Math.max(0, pose.phase));
       const lift = Math.min(1, phase / 0.45);
@@ -262,5 +348,27 @@ export class Equipment3D {
       right.rotation.set(-1.8 * lift + 0.9 * swallow, 0, -0.4 * lift);
       this.torso.rotation.set(-0.12 * lift + 0.2 * swallow, 0, 0);
     }
+
+    let trail = 0;
+    if (this.afena.visible) {
+      if (pose.state === 'attacking') trail = 1;
+      else if (pose.state === 'windup' && pose.phase > 0.8) trail = 0.4;
+      else if (pose.state === 'recover' && pose.phase < 0.2) trail = 0.35;
+    }
+    this.afenaTrail.push(this.afena, trail, this.look.ready ? [1, 0.68, 0.26] : [0.62, 0.9, 0.76]);
+  }
+
+  private setBowDraw(draw: number) {
+    const nockY = this.bowTipY + draw * 4.6;
+    for (let i = 0; i < this.bowStrings.length; i++) {
+      const side = i === 0 ? 1 : -1;
+      const segment = this.bowStrings[i];
+      const dz = side * this.bowTipZ;
+      const dy = this.bowTipY - nockY;
+      segment.scale.y = Math.hypot(dy, dz);
+      segment.rotation.x = Math.atan2(dz, dy);
+      segment.position.set(0, (nockY + this.bowTipY) / 2, dz / 2);
+    }
+    this.nockedArrow.position.y = nockY;
   }
 }
