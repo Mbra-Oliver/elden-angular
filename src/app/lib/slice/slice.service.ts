@@ -68,6 +68,8 @@ export class SliceService {
 
   /** Murs + portes fermées (collision, ligne de tir, flèches). */
   private solids: Rect[] = [...DUNGEON_WALLS, ...DOORS.map((d) => d.rect)];
+  /** Cibles ennemies du tir joueur, alignées sur le scratch `arrowTargets()`. */
+  private arrowEnemyScratch: Enemy[] = [];
 
   readonly blocking = computed(() => this.hookLine() !== null || this.restMenu() !== null);
 
@@ -253,7 +255,7 @@ export class SliceService {
   }
 
   arrowBlocked = (x: number, y: number) =>
-    this.fieldActive && x > 1890 && this.solids.some((rect) => inRect(x, y, rect));
+    this.fieldActive && (this.terrain.blocksShot(x, y) || this.solids.some((rect) => inRect(x, y, rect)));
 
   onArrowHit(hit: ArrowHit) {
     const enemy = hit.index !== undefined ? this.arrowScratch.enemies[hit.index] : undefined;

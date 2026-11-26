@@ -5,11 +5,11 @@ import { SliceService } from '../../lib/slice/slice.service';
 import { AsyncWorldService } from '../../lib/social/async-world.service';
 import { PrologueService } from '../../lib/prologue/prologue.service';
 
-type Pad = 'dodge' | 'attack' | 'heavy' | 'drink' | 'switch';
+type Pad = 'dodge' | 'attack' | 'heavy' | 'drink' | 'switch' | 'guard';
 
 /** Chaque bouton tactile appuie sur la touche clavier équivalente. */
 const PAD_KEYS: Record<Pad, string> = {
-  dodge: 'ShiftLeft', attack: 'Space', heavy: 'KeyE', drink: 'KeyB', switch: 'KeyR',
+  dodge: 'ShiftLeft', attack: 'Space', heavy: 'KeyE', drink: 'KeyB', switch: 'KeyR', guard: 'KeyG',
 };
 
 /** Un appui très bref est tenu au moins ce temps, pour qu'une image de jeu le voie. */
@@ -67,6 +67,7 @@ export class TouchControlsComponent implements OnDestroy {
     { id: 'dodge', label: 'Esquive (maintenir : sprint)', glyph: '↺', combatOnly: false },
     { id: 'attack', label: 'Frappe légère', glyph: '⟋', combatOnly: false },
     { id: 'heavy', label: 'Frappe lourde', glyph: '⟱', combatOnly: true },
+    { id: 'guard', label: 'Garder (maintenir)', glyph: '🛡', combatOnly: true },
     { id: 'drink', label: 'Avaler la mixture', glyph: '🍃', combatOnly: true },
     { id: 'switch', label: 'Changer d’arme', glyph: '⇄', combatOnly: false },
   ];

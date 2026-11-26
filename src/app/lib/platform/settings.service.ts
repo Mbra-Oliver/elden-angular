@@ -26,7 +26,8 @@ const DEFAULTS: GameSettings = {
   music: 0.35,
   sfx: 0.9,
   sensitivity: 1,
-  autoLock: true,
+  // Sur mobile, le verrouillage auto gêne la caméra tactile ; le joueur peut l'activer.
+  autoLock: !(typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches),
   // Vue par-dessus l'épaule par défaut, sur ordinateur comme sur mobile (demande joueur).
   cameraMode: 'shoulder',
 };

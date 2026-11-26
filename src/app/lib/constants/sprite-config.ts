@@ -62,6 +62,10 @@ export function playerStateToClip(
       return 'hurt';
     case 'exhausted':
       return 'exhausted';
+    case 'drinking':
+    case 'blocking':
+    case 'shooting':
+      return 'idle';
     case 'dead':
       return 'dead';
     default:

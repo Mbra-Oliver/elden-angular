@@ -7,7 +7,7 @@ export type InputAction =
   | 'move' | 'attack' | 'heavy' | 'dodge' | 'sprint' | 'interact'
   | 'switch' | 'drink' | 'message' | 'choice1' | 'choice2' | 'confirm' | 'back'
   // Chapitre 1 : poudre de kaolin sur la lame, verrouillage de cible.
-  | 'kaolin' | 'lock';
+  | 'kaolin' | 'lock' | 'guard';
 
 /** Boutons manette (disposition standard W3C, noms façon Xbox). */
 export const PAD = {
@@ -26,6 +26,7 @@ export const ACTION_GLYPHS: Record<InputAction, Record<InputDevice, string>> = {
   dodge: { keyboard: 'Maj', gamepad: 'B', touch: '↺' },
   sprint: { keyboard: 'Maj ⟳', gamepad: 'B ⟳', touch: '↺' },
   interact: { keyboard: 'F', gamepad: 'A', touch: '◈' },
+  guard: { keyboard: 'G', gamepad: 'LB', touch: '🛡' },
   switch: { keyboard: 'R', gamepad: 'Y', touch: '⇄' },
   drink: { keyboard: 'B', gamepad: 'X', touch: '⚱' },
   message: { keyboard: 'N', gamepad: '▤', touch: '✎' },

@@ -20,6 +20,7 @@ import { GraphicsQuality, SettingsService } from '../../lib/platform/settings.se
         <label>Bruitages<input type="range" min="0" max="100" [value]="s.sfx * 100" (input)="set('sfx', $event)"></label>
         <label>Caméra<input type="range" min="40" max="200" step="5" [value]="s.sensitivity * 100" (input)="set('sensitivity', $event)"></label>
         <label class="toggle"><input type="checkbox" [checked]="s.autoLock" (change)="settings.update({ autoLock: $any($event.target).checked })"> Verrouillage au premier coup reçu</label>
+        <p class="hint">Garde : maintenir G / bouton bouclier</p>
       </div>
       <button type="button" class="link quit" (click)="quit.emit()">Retour au menu principal</button>
     </section>
@@ -42,6 +43,7 @@ import { GraphicsQuality, SettingsService } from '../../lib/platform/settings.se
     input { min-height: 36px; accent-color: #c9a25d; }
     label.toggle { display: flex; gap: 10px; min-height: 44px; }
     label.toggle input { min-height: 0; width: 20px; height: 20px; }
+    .hint { margin: 0; color: #cdbd9f; font-size: 12px; text-align: center; }
     :host { overflow: auto; }
     @media (max-height: 440px) {
       .pause { gap: 2px; padding-block: 8px; }

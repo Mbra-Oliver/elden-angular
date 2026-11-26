@@ -104,4 +104,9 @@ export class InputService {
     // B comme mixture de soin
     return this.isPressed('KeyB') || this.pad.button(PAD.X);
   }
+
+  guard(): boolean {
+    // G : garde / parade (maintenir). Bloque devant, coûte de l'endurance.
+    return this.isPressed('KeyG') || this.pad.button(PAD.LB);
+  }
 }

@@ -9,6 +9,7 @@ export type PlayerState =
   | 'exhausted' // Le joueur est en exhaus­tion
   | 'shooting' // Bande l'arc puis décoche une flèche
   | 'drinking' // Avale des feuilles écrasées en mixture de soin (immobile, interruptible)
+  | 'blocking' // Garde levée : réduit les dégâts de face, coûte l'endurance
   | 'dead'; // Le joueur n'a plus de PV
 
 //Fiche de stat globale du joueur

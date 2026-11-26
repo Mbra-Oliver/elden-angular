@@ -126,7 +126,7 @@ for (const c of ['lLx', 'lLz', 'lRx', 'lRz', 'tY'] as Channel[]) LOWER_MASK[I[c]
 LOWER_MASK[I.rZ] = 0.35; // balancement des hanches
 LOWER_MASK[I.rX] = 0.2; // légère inclinaison dans la marche
 /** États dont seul le haut du corps est animé : les jambes peuvent marcher dessous. */
-const UPPER_BODY_STATES = new Set(['drinking', 'aiming', 'release', 'windup']);
+const UPPER_BODY_STATES = new Set(['drinking', 'aiming', 'release', 'windup', 'blocking']);
 
 const TRAIL = 11;
 const SPEAR_TRAIL_TIP_Y = 22;
@@ -435,6 +435,13 @@ export class PlayerAnimator {
           this.target[I.aRz] += 0.45 * b;
           this.target[I.lLx] += 0.5 * b;
           this.target[I.lRx] -= 0.35 * b;
+          break;
+        }
+        case 'blocking': {
+          // Garde haute : lance ramenée devant, bras gauche en appui, buste de profil.
+          this.blend(base, { rX: -0.08, rY: -0.2, rZ: -0.04, tY: -0.2,
+            aLx: -0.95, aLz: -0.55, aRx: -1.15, aRz: -0.1, wr: 0.7,
+            lLx: 0.1, lRx: -0.08 }, 1);
           break;
         }
         case 'exhausted': {

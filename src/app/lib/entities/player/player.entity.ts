@@ -35,7 +35,10 @@ type BufferedAction = 'light' | 'heavy' | 'dodge';
 
 
 /** Vitesse de marche (fraction de la vitesse normale) pendant une action du haut du corps. */
-const BUSY_WALK = { drinking: 0.35, aiming: 0.45 };
+const BUSY_WALK = { drinking: 0.35, aiming: 0.45, blocking: 0.45 };
+const GUARD_ANGLE = Math.cos((70 * Math.PI) / 180); // cône de garde ~140° devant
+const BLOCK_COST = 18; // endurance perdue par coup bloqué
+const BLOCK_KNOCK = 0.35; // recul gardé sur un coup bloqué
 
 @Injectable({
   providedIn: 'root',
@@ -196,6 +199,10 @@ export class PlayerEntity {
 
       case 'drinking':
         this.handleDrinking(deltaTime);
+        break;
+
+      case 'blocking':
+        this.handleBlocking(deltaTime, dodgePressed);
         break;
     }
 
@@ -369,6 +376,11 @@ export class PlayerEntity {
         if (this.equipment.getData().arrows > 0) this.enterShooting(shot);
         else this.equipment.say('Plus de flèches');
       }
+      return;
+    }
+
+    if (this.input.guard() && !dodgePressed && currentData.stamina > 0) {
+      this.store.update({ state: 'blocking', attackType: 'none', comboCount: 0, comboTimer: 0, vx: 0, vy: 0 });
       return;
     }
 
@@ -696,6 +708,22 @@ export class PlayerEntity {
     this.store.update(changes);
   }
 
+  private handleBlocking(deltaTime: number, dodgePressed: boolean) {
+    const data = this.store.getData();
+    if (dodgePressed && data.stamina > 0) { this.consume(); this.enterRoll(); return; }
+    if (!this.input.guard() || data.stamina <= 0) {
+      this.store.update({ state: 'idle', stateTimer: 0 });
+      return;
+    }
+    this.walkWhileBusy(deltaTime, BUSY_WALK.blocking);
+    const target = this.lockTarget;
+    if (target) {
+      const dx = target.x - this.centerX, dy = target.y - this.centerY;
+      const d = Math.hypot(dx, dy);
+      if (d > 0) this.store.update({ facingX: dx / d, facingY: dy / d });
+    }
+  }
+
   /** Pose 3D pour les états d'équipement (null = laisser la logique par défaut). */
   equipmentPose(data?: PlayerData): { state: string; phase: number } | null {
     const d = data ?? this.store.getData();
@@ -736,9 +764,28 @@ export class PlayerEntity {
   }
 
   //Le joueur encaisse un coup du boss : dégâts + recul + état hurt.
-  takeDamage(amount: number, knockX: number, knockY: number) {
+  takeDamage(amount: number, knockX: number, knockY: number, options?: { unblockable?: boolean }) {
     const data = this.store.getData();
     if (data.state === 'dead' || data.invicible) return;
+
+    if (!options?.unblockable && data.state === 'blocking') {
+      const len = Math.hypot(knockX, knockY) || 1;
+      const dot = -((knockX / len) * data.facingX + (knockY / len) * data.facingY);
+      if (dot > GUARD_ANGLE) {
+        const stamina = Math.max(0, data.stamina - BLOCK_COST);
+        const broken = stamina <= 0;
+        this.store.update({
+          stamina,
+          state: broken ? 'hurt' : 'blocking',
+          stateTimer: broken ? PLAYER_CONFIG.hurtDuration : data.stateTimer,
+          vx: knockX * BLOCK_KNOCK,
+          vy: knockY * BLOCK_KNOCK,
+          attackType: 'none', comboCount: 0, comboTimer: 0,
+        });
+        this.staminaRegenCooldown = PLAYER_CONFIG.staminaRegenDelay;
+        return;
+      }
+    }
 
     const newHp = Math.max(0, data.hp - amount);
 
@@ -820,7 +867,7 @@ export class PlayerEntity {
   private updateStamina(delatTime: number) {
     const data = this.store.getData();
 
-    if (data.state === 'attacking' || data.state === 'rolling' || data.state === 'shooting' || this.sprinting) return;
+    if (data.state === 'attacking' || data.state === 'rolling' || data.state === 'shooting' || data.state === 'blocking' || this.sprinting) return;
 
     //Petit délai avat de regenerer le souffle.
 

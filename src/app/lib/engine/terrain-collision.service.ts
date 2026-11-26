@@ -174,8 +174,8 @@ export class TerrainCollisionService {
 
   /**
    * Une balle passant en (x, y) touche-t-elle le décor ? Les obstacles durs
-   * (cases, arbres, rochers, troncs, murs) et le décor cassable, mais pas les
-   * bords du sentier ni l'eau : un tireur posté tire par-dessus le talus.
+   * (cases, arbres, rochers, troncs, murs), les murs/briques et le décor
+   * cassable, mais pas les bords du sentier ni l'eau.
    */
   blocksShot(x: number, y: number): boolean {
     return this.solidAt(x, y, 1) !== null || !!this.dynamicBlocker?.(x, y, 1);

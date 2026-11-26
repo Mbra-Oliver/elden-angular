@@ -175,7 +175,7 @@
         </label>
         <label class="toggle">
           <input type="checkbox" [checked]="s.autoLock" (change)="settings.update({ autoLock: $any($event.target).checked })">
-          Verrouiller la cible au premier coup reçu
+          Verrouiller la cible au premier coup reçu (désactivé par défaut sur mobile)
         </label>
         <label class="toggle">
           <input type="checkbox" [checked]="s.cameraMode === 'wide'"
@@ -190,9 +190,10 @@
               <dt>Esquive</dt><dd>Bouton du bas</dd>
               <dt>Frappe légère</dt><dd>Bouton central</dd>
               <dt>Frappe lourde</dt><dd>Bouton du haut</dd>
+              <dt>Garde</dt><dd>Bouton bouclier (maintenir)</dd>
               <dt>Mixture de soin (feuilles)</dt><dd>Bouton de côté</dd>
               <dt>Caméra</dt><dd>Glisser au doigt</dd>
-              <dt>Verrouiller la cible</dt><dd>Bouton ⌖</dd>
+              <dt>Verrouiller la cible</dt><dd>Bouton ⌖ (optionnel)</dd>
               <dt>Changer de cible</dt><dd>Glisser vite à gauche ou à droite</dd>
               <dt>Pause</dt><dd>Icône en haut à droite</dd>
             </dl>
@@ -201,6 +202,7 @@
               <dt>Déplacement</dt><dd>ZQSD / WASD ou flèches</dd>
               <dt>Frappe légère</dt><dd>Clic gauche ou Espace</dd>
               <dt>Frappe lourde</dt><dd>Clic droit ou E</dd>
+              <dt>Garde / parade</dt><dd>G (maintenir, face à l’ennemi)</dd>
               <dt>Esquive</dt><dd>Maj (appui bref)</dd>
               <dt>Sprint</dt><dd>Maj maintenue</dd>
               <dt>Lance / arc</dt><dd>R</dd>

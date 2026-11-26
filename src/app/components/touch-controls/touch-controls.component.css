@@ -87,9 +87,10 @@
 .pad.dodge { right: 0; bottom: 0; width: 62px; height: 62px; font-size: 22px; }
 .pad.attack { right: 72px; bottom: 20px; width: 58px; height: 58px; font-size: 21px; }
 .pad.heavy { right: 10px; bottom: 74px; }
+.pad.guard { right: 70px; bottom: 90px; width: 44px; height: 44px; font-size: 17px; }
 .pad.drink { right: 132px; bottom: 80px; width: 42px; height: 42px; font-size: 16px; }
 .pad.switch { right: 140px; bottom: 8px; width: 38px; height: 38px; font-size: 14px; opacity: 0.7; }
-.pad.lock { right: 68px; bottom: 126px; width: 42px; height: 42px; font-size: 19px; }
+.pad.lock { right: 68px; bottom: 136px; width: 42px; height: 42px; font-size: 19px; }
 
 @keyframes appear { from { opacity: 0; transform: scale(0.85); } }
 
