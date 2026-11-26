@@ -16,6 +16,7 @@ import { TerrainCollisionService } from '../../engine/terrain-collision.service'
 import { AssetLoaderService } from '../../engine/asset-loader.service';
 import { Animator } from '../../engine/sprite';
 import { PlayerData } from '../../interfaces/PlayerData';
+import { AttackData } from '../../interfaces/AttackData';
 import { InputService } from '../../services/input.service';
 import { RendererService } from '../../services/renderer.service';
 import { PlayerStore } from './player.store';
@@ -36,9 +37,10 @@ type BufferedAction = 'light' | 'heavy' | 'dodge';
 
 /** Vitesse de marche (fraction de la vitesse normale) pendant une action du haut du corps. */
 const BUSY_WALK = { drinking: 0.35, aiming: 0.45, blocking: 0.45 };
-const GUARD_ANGLE = Math.cos((70 * Math.PI) / 180); // cône de garde ~140° devant
+const GUARD_ANGLE = Math.cos((70 * Math.PI) / 180); // cône de garde ~140°
 const BLOCK_COST = 18; // endurance perdue par coup bloqué
 const BLOCK_KNOCK = 0.35; // recul gardé sur un coup bloqué
+const DARK_JUMP_ATTACK: AttackData = { damage: 42, staminaCost: 22, duration: 760, range: 2.2, windup: 260, active: 170, chain: 700 };
 
 @Injectable({
   providedIn: 'root',
@@ -95,6 +97,8 @@ export class PlayerEntity {
   private lockTarget: { x: number; y: number } | undefined;
   /** Attaque spéciale en cours (lancée par SliceService, touche C). */
   special: SpecialId | null = null;
+  /** Saut combo noir actif : dégâts x3 et aura sombre. */
+  darkJump = false;
 
   /** Combo et coup lourd de l'arme de corps à corps en main. */
   private moveset() {
@@ -131,6 +135,7 @@ export class PlayerEntity {
     this.mixtureHealed = false;
     this.switchHeld = false;
     this.drinkHeld = false;
+    this.darkJump = false;
   }
 
   tryCounter(targetX: number, targetY: number): boolean {
@@ -164,7 +169,7 @@ export class PlayerEntity {
     //Si le joueur est mort on ne fait rien.
 
     if (data.state === 'dead') return;
-    if (data.state !== 'attacking') this.special = null;
+    if (data.state !== 'attacking') { this.special = null; this.darkJump = false; }
 
     this.lockTarget = this.cameraHeading !== null ? target : undefined;
     this.tickHurtIFrames(deltaTime);
@@ -431,8 +436,14 @@ export class PlayerEntity {
 
   private enterHeavyAttack() {
     const data = this.store.getData();
+    // Combo 2 frappes légères + lourde : saute et enveloppe d'une magie noire (x3 dégâts).
+    if (data.attackType === 'light' && data.comboCount >= 2) {
+      this.enterDarkJumpAttack();
+      return;
+    }
     const HEAVY_ATTACK = this.moveset().heavy;
     this.special = null;
+    this.darkJump = false;
 
     this.store.update({
       state: 'attacking',
@@ -445,6 +456,24 @@ export class PlayerEntity {
       stamina: Math.max(0, data.stamina - HEAVY_ATTACK.staminaCost),
     });
 
+    this.staminaRegenCooldown = PLAYER_CONFIG.staminaRegenDelay;
+  }
+
+  private enterDarkJumpAttack() {
+    const data = this.store.getData();
+    this.special = null;
+    this.darkJump = true;
+    this.store.update({
+      state: 'attacking',
+      attackType: 'jump',
+      stateTimer: DARK_JUMP_ATTACK.duration,
+      vx: data.facingX * 360,
+      vy: data.facingY * 360,
+      comboTimer: 0,
+      comboCount: 0,
+      stamina: Math.max(0, data.stamina - DARK_JUMP_ATTACK.staminaCost),
+      invicible: true,
+    });
     this.staminaRegenCooldown = PLAYER_CONFIG.staminaRegenDelay;
   }
 
@@ -528,6 +557,25 @@ export class PlayerEntity {
     const attack = this.getActiveAttackData(data);
     const elapsed = attack.duration - data.stateTimer;
     const impactEnd = attack.windup + attack.active;
+
+    if (data.attackType === 'jump') {
+      const newTimer = data.stateTimer - deltaTime * 1000;
+      const jumpProgress = 1 - newTimer / attack.duration;
+      const lunge = elapsed < attack.windup ? elapsed / attack.windup : Math.max(0, 1 - (elapsed - attack.windup) / (attack.active + 120));
+      this.store.update({
+        x: data.x + data.facingX * 320 * lunge * deltaTime,
+        y: data.y + data.facingY * 320 * lunge * deltaTime,
+        invicible: jumpProgress < 0.72,
+      });
+      if (newTimer <= 0) {
+        this.store.update({ state: 'idle', stateTimer: 0, vx: 0, vy: 0, attackType: 'none', invicible: this.hurtIFrames > 0, comboTimer: 0, comboCount: 0 });
+        this.darkJump = false;
+        if (this.store.getData().stamina <= 0) this.enterExhausted();
+      } else {
+        this.store.update({ stateTimer: newTimer });
+      }
+      return;
+    }
 
     // Fenêtres d'annulation : roulade dès la fin de l'impact, nouvelle attaque
     // à partir de `chain`. L'appui a pu être fait bien avant (tampon).
@@ -1076,6 +1124,7 @@ export class PlayerEntity {
     const special = this.special && d.state === 'attacking' ? SPECIALS[this.special].attack : undefined;
     if (special) return special;
     if (d.attackType === 'counter') return COUNTER_ATTACK;
+    if (d.attackType === 'jump') return DARK_JUMP_ATTACK;
     if (d.attackType === 'heavy') {
       return this.moveset().heavy;
     }

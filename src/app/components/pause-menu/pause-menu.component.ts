@@ -19,6 +19,8 @@ import { GraphicsQuality, SettingsService } from '../../lib/platform/settings.se
         <label>Musique<input type="range" min="0" max="100" [value]="s.music * 100" (input)="set('music', $event)"></label>
         <label>Bruitages<input type="range" min="0" max="100" [value]="s.sfx * 100" (input)="set('sfx', $event)"></label>
         <label>Caméra<input type="range" min="40" max="200" step="5" [value]="s.sensitivity * 100" (input)="set('sensitivity', $event)"></label>
+        <label>Taille boutons<input type="range" min="80" max="160" step="5" [value]="s.touchScale * 100" (input)="setScale('touchScale', $event)"></label>
+        <label>Taille HUD<input type="range" min="80" max="140" step="5" [value]="s.hudScale * 100" (input)="setScale('hudScale', $event)"></label>
         <label class="toggle"><input type="checkbox" [checked]="s.autoLock" (change)="settings.update({ autoLock: $any($event.target).checked })"> Verrouillage au premier coup reçu</label>
         <p class="hint">Garde : maintenir G / bouton bouclier</p>
       </div>
@@ -73,6 +75,10 @@ export class PauseMenuComponent implements AfterViewInit {
   }
 
   set(key: 'music' | 'sfx' | 'sensitivity', event: Event) {
+    this.settings.update({ [key]: Number((event.target as HTMLInputElement).value) / 100 });
+  }
+
+  setScale(key: 'touchScale' | 'hudScale', event: Event) {
     this.settings.update({ [key]: Number((event.target as HTMLInputElement).value) / 100 });
   }
 }

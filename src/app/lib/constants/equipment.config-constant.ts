@@ -44,8 +44,8 @@ export const BOW_POWER_SHOT: BowShotData = {
 };
 
 /**
- * Hypothèses de réglage (à ajuster) : carquois de 12 flèches, 3 poignées de
- * feuilles écrasées en mixture de soin rendant chacune 45 PV. Les flèches manquées tombent
+ * Hypothèses de réglage (à ajuster) : carquois de 12 flèches, 5 poignées de
+ * feuilles écrasées en mixture de soin rendant chacune 60 PV. Les flèches manquées tombent
  * au sol et peuvent être ramassées en marchant dessus.
  */
 export const EQUIPMENT_CONFIG = {
@@ -54,8 +54,8 @@ export const EQUIPMENT_CONFIG = {
   arrowPickupRadius: 22,
   groundArrowLifetime: 30, // secondes avant qu'une flèche au sol disparaisse
 
-  maxMixture: 3,
-  mixtureHeal: 45,
+  maxMixture: 5,
+  mixtureHeal: 60,
   mixtureDuration: 1100, // ms, le joueur est immobile et vulnérable
   mixtureHealAt: 0.6, // fraction de la mastication où le soin s'applique
 };

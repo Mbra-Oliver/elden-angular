@@ -57,8 +57,8 @@
   position: absolute;
   right: calc(env(safe-area-inset-right) + 14px);
   bottom: calc(env(safe-area-inset-bottom) + 10px);
-  width: 190px;
-  height: 180px;
+  width: calc(190px * var(--touch-scale, 1));
+  height: calc(180px * var(--touch-scale, 1));
   pointer-events: none;
 }
 
@@ -66,14 +66,14 @@
   position: absolute;
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: calc(48px * var(--touch-scale, 1));
+  height: calc(48px * var(--touch-scale, 1));
   padding: 0;
   border-radius: 50%;
   border: 1px solid #efe6d433;
   background: #0f0a0840;
   color: #efe6d4cc;
-  font: 19px/1 system-ui, sans-serif;
+  font: calc(19px * var(--touch-scale, 1))/1 system-ui, sans-serif;
   pointer-events: auto;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
@@ -84,13 +84,13 @@
 .pad.held { transform: scale(0.92); background: #e5c17b44; }
 
 /* Esquive en bas, frappe légère au centre ; en combat : lourde au-dessus, mixture sur le côté, verrou en haut. */
-.pad.dodge { right: 0; bottom: 0; width: 62px; height: 62px; font-size: 22px; }
-.pad.attack { right: 72px; bottom: 20px; width: 58px; height: 58px; font-size: 21px; }
-.pad.heavy { right: 10px; bottom: 74px; }
-.pad.guard { right: 70px; bottom: 90px; width: 44px; height: 44px; font-size: 17px; }
-.pad.drink { right: 132px; bottom: 80px; width: 42px; height: 42px; font-size: 16px; }
-.pad.switch { right: 140px; bottom: 8px; width: 38px; height: 38px; font-size: 14px; opacity: 0.7; }
-.pad.lock { right: 68px; bottom: 136px; width: 42px; height: 42px; font-size: 19px; }
+.pad.dodge { right: 0; bottom: 0; width: calc(62px * var(--touch-scale, 1)); height: calc(62px * var(--touch-scale, 1)); font-size: calc(22px * var(--touch-scale, 1)); }
+.pad.attack { right: calc(72px * var(--touch-scale, 1)); bottom: calc(20px * var(--touch-scale, 1)); width: calc(58px * var(--touch-scale, 1)); height: calc(58px * var(--touch-scale, 1)); font-size: calc(21px * var(--touch-scale, 1)); }
+.pad.heavy { right: calc(10px * var(--touch-scale, 1)); bottom: calc(74px * var(--touch-scale, 1)); }
+.pad.guard { right: calc(70px * var(--touch-scale, 1)); bottom: calc(90px * var(--touch-scale, 1)); width: calc(44px * var(--touch-scale, 1)); height: calc(44px * var(--touch-scale, 1)); font-size: calc(17px * var(--touch-scale, 1)); }
+.pad.drink { right: calc(132px * var(--touch-scale, 1)); bottom: calc(80px * var(--touch-scale, 1)); width: calc(42px * var(--touch-scale, 1)); height: calc(42px * var(--touch-scale, 1)); font-size: calc(16px * var(--touch-scale, 1)); }
+.pad.switch { right: calc(140px * var(--touch-scale, 1)); bottom: calc(8px * var(--touch-scale, 1)); width: calc(38px * var(--touch-scale, 1)); height: calc(38px * var(--touch-scale, 1)); font-size: calc(14px * var(--touch-scale, 1)); opacity: 0.7; }
+.pad.lock { right: calc(68px * var(--touch-scale, 1)); bottom: calc(136px * var(--touch-scale, 1)); width: calc(42px * var(--touch-scale, 1)); height: calc(42px * var(--touch-scale, 1)); font-size: calc(19px * var(--touch-scale, 1)); }
 
 @keyframes appear { from { opacity: 0; transform: scale(0.85); } }
 

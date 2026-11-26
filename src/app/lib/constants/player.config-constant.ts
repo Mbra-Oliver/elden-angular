@@ -82,4 +82,4 @@ export const HEAVY_ATTACK: AttackData = {
 
 export const COUNTER_ATTACK: AttackData = { damage: 44, staminaCost: 0, duration: 290, range: 2.4, windup: 32, active: 145 };
 
-export type AttackType = 'light' | 'heavy' | 'counter' | 'none';
+export type AttackType = 'light' | 'heavy' | 'counter' | 'jump' | 'none';

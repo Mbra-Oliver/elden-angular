@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { GameStateService } from '../../lib/services/game-state.service';
+import { SettingsService } from '../../lib/platform/settings.service';
 import { KeyHintComponent } from '../key-hint/key-hint.component';
 
 /**
@@ -19,8 +20,10 @@ import { KeyHintComponent } from '../key-hint/key-hint.component';
 })
 export class CombatHudComponent {
   private readonly game = inject(GameStateService);
+  private readonly settings = inject(SettingsService);
   readonly hud = this.game.hud;
   readonly playing = computed(() => this.game.currentScreen() === 'playing');
+  readonly hudScale = computed(() => this.settings.settings().hudScale);
 
   pct(value: number, max: number) {
     return `${Math.max(0, Math.min(100, (value / (max || 1)) * 100))}%`;

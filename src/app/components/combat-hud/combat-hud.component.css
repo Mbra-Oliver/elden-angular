@@ -9,7 +9,7 @@
   container-type: inline-size;
 }
 
-.hud { position: absolute; inset: 0; transition: opacity 0.35s ease; }
+.hud { position: absolute; inset: 0; transition: opacity 0.35s ease; transform: scale(var(--hud-scale, 1)); transform-origin: top left; }
 .hud.hidden { opacity: 0; }
 
 .hit-direction { position: absolute; inset: 0; pointer-events: none; --hit-angle: 0deg; }

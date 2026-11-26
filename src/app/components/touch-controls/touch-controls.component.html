@@ -10,7 +10,7 @@
 </div>
 
 <!-- Hors combat : frappe et esquive seulement. En combat : lourde, mixture et verrou s'ajoutent. -->
-<div class="arc" [class.combat]="combat()" role="group" aria-label="Actions">
+<div class="arc" [class.combat]="combat()" [style.--touch-scale]="uiScale()" role="group" aria-label="Actions">
   @for (pad of pads; track pad.id) {
     @if (combat() || !pad.combatOnly) {
       <button type="button" [class]="'pad ' + pad.id" [class.held]="held().has(pad.id)"

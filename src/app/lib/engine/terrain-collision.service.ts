@@ -173,12 +173,12 @@ export class TerrainCollisionService {
   }
 
   /**
-   * Une balle passant en (x, y) touche-t-elle le décor ? Les obstacles durs
-   * (cases, arbres, rochers, troncs, murs), les murs/briques et le décor
-   * cassable, mais pas les bords du sentier ni l'eau.
+   * Une balle passant en (x, y) touche-t-elle le décor ? Obstacles durs
+   * (arbres, rochers, troncs, murs/briques) et décor cassable.
    */
   blocksShot(x: number, y: number): boolean {
-    return this.solidAt(x, y, 1) !== null || !!this.dynamicBlocker?.(x, y, 1);
+    return this.solidAt(x, y, 1) !== null || !!this.dynamicBlocker?.(x, y, 1)
+      || this.blockers.some((b) => b(x, y, 1));
   }
 
   private blocked(x: number, y: number, radius: number) {

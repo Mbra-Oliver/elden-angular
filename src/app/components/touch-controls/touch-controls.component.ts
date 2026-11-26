@@ -4,6 +4,7 @@ import { GameStateService } from '../../lib/services/game-state.service';
 import { SliceService } from '../../lib/slice/slice.service';
 import { AsyncWorldService } from '../../lib/social/async-world.service';
 import { PrologueService } from '../../lib/prologue/prologue.service';
+import { SettingsService } from '../../lib/platform/settings.service';
 
 type Pad = 'dodge' | 'attack' | 'heavy' | 'drink' | 'switch' | 'guard';
 
@@ -44,6 +45,8 @@ export class TouchControlsComponent implements OnDestroy {
   private readonly slice = inject(SliceService);
   private readonly world = inject(AsyncWorldService);
   private readonly prologue = inject(PrologueService);
+  readonly settings = inject(SettingsService);
+  readonly uiScale = computed(() => this.settings.settings().touchScale);
   /**
    * L'unique invite à l'écran, par priorité : parler / examiner, objet ou
    * foyer, tache de sang, signe au sol ; le kaolin seulement en combat.

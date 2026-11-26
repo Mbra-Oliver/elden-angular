@@ -15,6 +15,12 @@ export interface GameSettings {
   autoLock: boolean;
   /** Caméra large (soulslike) ou épaule rapprochée (TPS mobile). */
   cameraMode: CameraMode;
+  /** Taille des contrôles tactiles (0.8 à 1.6). */
+  touchScale: number;
+  /** Taille du HUD (0.8 à 1.4). */
+  hudScale: number;
+  /** Le joueur a explicitement choisi son mode caméra. */
+  cameraChosen?: boolean;
 }
 
 const KEY = 'terre-rouge.settings.v1';
@@ -30,6 +36,8 @@ const DEFAULTS: GameSettings = {
   autoLock: !(typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches),
   // Vue par-dessus l'épaule par défaut, sur ordinateur comme sur mobile (demande joueur).
   cameraMode: 'shoulder',
+  touchScale: 1,
+  hudScale: 1,
 };
 
 /** Échelle de rendu par qualité, appliquée sous le plafond de densité (display.ts). */
@@ -72,7 +80,7 @@ function load(): GameSettings {
     // Ancien défaut enregistré sans que le joueur l'ait choisi : on applique le nouveau.
     if (raw?.music === 0.55) delete raw.music;
     // Caméra : l'ancien défaut « large » enregistré sans choix du joueur passe à l'épaule.
-    if (raw && !(raw as { cameraChosen?: boolean }).cameraChosen) delete raw.cameraMode;
+    if (raw && !raw.cameraChosen) delete raw.cameraMode;
     return { ...DEFAULTS, ...(raw ?? {}) };
   } catch {
     return { ...DEFAULTS };

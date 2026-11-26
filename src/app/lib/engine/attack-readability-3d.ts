@@ -146,6 +146,8 @@ export class AttackTelegraph3D {
     let step = 0;
     if (windup) {
       t = pose.progress;
+      // Tir de Badu : la trajectoire n'apparaît que brièvement avant le coup pour laisser esquiver.
+      if (attack === 'shot' && t < 0.58) { this.release = 0; return; }
       late = T.MathUtils.smoothstep(t, 0.72, 1);
       this.release = 1;
     } else {

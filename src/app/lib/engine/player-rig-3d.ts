@@ -220,6 +220,8 @@ export class PlayerAnimator {
   private readonly wrist = new T.Group();
   private readonly trail: WeaponTrail;
   private readonly flashMaterials: T.MeshStandardMaterial[] = [];
+  private darkAura?: T.Mesh<T.SphereGeometry, T.MeshBasicMaterial>;
+  private darkLight?: T.PointLight;
   private heading: number | undefined;
   private speed = 0;
   private forward = 0;
@@ -270,6 +272,12 @@ export class PlayerAnimator {
     // L'ombre ne doit pas tourner avec le corps pendant la roulade.
     this.shadow = rig.root.children.find((c) => c instanceof T.Mesh && c.geometry instanceof T.CircleGeometry);
     if (this.shadow) scene.add(this.shadow);
+    const auraMat = new T.MeshBasicMaterial({ color: 0x1a0030, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false });
+    this.darkAura = new T.Mesh(new T.SphereGeometry(18, 18, 14), auraMat);
+    this.darkAura.visible = false;
+    scene.add(this.darkAura);
+    this.darkLight = new T.PointLight(0x7a2cff, 0, 90, 2);
+    scene.add(this.darkLight);
 
     const parts: T.Object3D[] = [...rig.torso.children, ...rig.arms.flatMap((a) => a.children),
       ...rig.legs.flatMap((l) => l.children), spear];
@@ -687,8 +695,25 @@ export class PlayerAnimator {
     const glow = this.flash * this.flash;
     // Clignotement pâle pendant l'invincibilité qui suit un coup reçu.
     const blink = pose.guarded && Math.sin(now * 0.075) > 0 ? 0.22 : 0;
+    const dark = !!pose.dark;
     for (const material of this.flashMaterials) {
-      material.emissive.setRGB(glow * 0.55 + blink, glow * 0.12 + blink * 0.9, glow * 0.06 + blink * 0.75);
+      const dr = dark ? 0.18 : 0;
+      const dg = dark ? 0.02 : 0;
+      const db = dark ? 0.32 : 0;
+      material.emissive.setRGB(glow * 0.55 + blink + dr, glow * 0.12 + blink * 0.9 + dg, glow * 0.06 + blink * 0.75 + db);
+    }
+    if (this.darkAura) {
+      this.darkAura.visible = dark;
+      if (dark) {
+        const pulse = 1 + Math.sin(now * 0.012) * 0.08;
+        this.darkAura.position.set(root.position.x, root.position.y + 15, root.position.z);
+        this.darkAura.scale.setScalar(pulse);
+        (this.darkAura.material as T.MeshBasicMaterial).opacity = 0.28 + Math.sin(now * 0.02) * 0.06;
+      }
+    }
+    if (this.darkLight) {
+      this.darkLight.intensity = dark ? 2.8 + Math.sin(now * 0.015) * 0.8 : 0;
+      this.darkLight.position.set(root.position.x, root.position.y + 18, root.position.z);
     }
   }
 }

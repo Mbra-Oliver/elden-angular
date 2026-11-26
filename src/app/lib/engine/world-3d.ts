@@ -96,6 +96,8 @@ export interface Actor3D extends Point {
   sprint?: boolean;
   /** Invincibilité brève après un coup reçu : le corps clignote. */
   guarded?: boolean;
+  /** Combo saut noir actif : aura sombre et dégâts magiques. */
+  dark?: boolean;
   /** Ennemi : sursaut du buste (1 → 0) et direction du coup reçu. */
   flinch?: number;
   flinchX?: number;

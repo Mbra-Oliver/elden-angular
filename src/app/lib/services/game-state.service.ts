@@ -744,28 +744,28 @@ export class GameStateService {
         const knockbarY = player.facingY * 150;
 
         const backstab = this.isBackstab(boss);
-        this.bossEntity.takeDamage(this.slice.meleeDamage(attackData.damage), knockbackX, knockbarY, player.attackType === 'counter',
+        const darkJump = player.attackType === 'jump';
+        this.bossEntity.takeDamage(this.slice.meleeDamage(attackData.damage) * (darkJump ? 3 : 1), knockbackX * (darkJump ? 1.4 : 1), knockbarY * (darkJump ? 1.4 : 1), player.attackType === 'counter',
           { weight: player.attackType as HitWeight, backstab, poise: this.prologue.poiseBonus() });
         this.dilateOnCriticalHit(backstab ? 'backstab' : player.attackType === 'counter' ? 'counter' : null);
         this.groundEffects.emit(this.bossEntity.centerX, this.bossEntity.centerY, 7, player.facingX, player.facingY);
-        const guarded = boss.state !== 'recover' && player.attackType !== 'counter';
+        const guarded = boss.state !== 'recover' && player.attackType !== 'counter' && !darkJump;
         const heavy = player.attackType !== 'light';
         const finisher = player.attackType === 'light' && player.comboCount >= 3;
-        this.rendered.shake(guarded ? 2 : heavy ? 8 : 4);
-        // Hitstop 40–80 ms : attaquant et cible figés (la boucle logique est suspendue).
-        // Micro-gel : ~70 ms sur un coup franc, plus long sur un coup lourd.
-        this.gameloop.freeze(guarded ? 45 : heavy ? 85 : finisher ? 75 : 70);
+        this.rendered.shake(guarded ? 2 : heavy ? 9 : 4);
+        this.gameloop.freeze(guarded ? 45 : darkJump ? 110 : heavy ? 85 : finisher ? 75 : 70);
         const duelist = this.bossEntity.id.startsWith('duel');
-        const style: StrikeStyle = player.attackType === 'heavy' ? 'slam'
+        const style: StrikeStyle = player.attackType === 'heavy' || darkJump ? 'slam'
           : player.attackType === 'counter' || finisher ? 'thrust' : 'slash';
         const material: ImpactMaterial = duelist ? guarded ? 'guard' : 'flesh' : guarded ? 'shell' : 'spirit';
         const bx = this.bossEntity.centerX;
         const by = this.bossEntity.centerY;
         this.fx.hit({ x: bx - player.facingX * 8, y: by - player.facingY * 8, height: duelist ? 22 : 14,
           dirX: player.facingX, dirY: player.facingY, material, style, target: 'boss',
-          strength: guarded ? 0.5 : player.attackType === 'counter' ? 1.5 : heavy ? 1.4 : finisher ? 1.1 : 0.9 });
+          strength: guarded ? 0.5 : darkJump ? 2 : player.attackType === 'counter' ? 1.5 : heavy ? 1.4 : finisher ? 1.1 : 0.9 });
+        if (darkJump) { this.fx.flash(bx, by, '#120018', 6.5, 0.18, 34); this.fx.quake(bx, by, 34, 'wet', 1.3); }
         if (player.attackType === 'counter') this.fx.flash(bx, by, '#bff8ff', 4.5, 0.12);
-        if (player.attackType === 'heavy' && !guarded) this.fx.mark(bx, by, 16, duelist ? 'crack' : 'wet');
+        if ((player.attackType === 'heavy' || darkJump) && !guarded) this.fx.mark(bx, by, darkJump ? 24 : 16, duelist ? 'crack' : 'wet');
         this.bossHitThisFrame = true;
       }
     }
@@ -1630,6 +1630,7 @@ export class GameStateService {
       dodge: this.playerEntity.dodgeKind,
       sprint: this.playerEntity.sprinting,
       guarded: player.invicible && (player.state === 'idle' || player.state === 'moving'),
+      dark: player.attackType === 'jump',
       knockX: player.vx, knockY: player.vy,
       hpRatio: player.maxHp ? player.hp / player.maxHp : 1,
       ...this.playerEntity.equipmentPose(player),
