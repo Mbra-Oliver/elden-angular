@@ -1561,6 +1561,8 @@ export class GameStateService {
       state: boss.state, progress: this.bossEntity.progress(boss), attack: boss.currentAttack as BossAttackType,
       shotAngles: boss.currentAttack === 'shot' ? shotAngles(boss.phase) : undefined,
       targetX: boss.chargeTargetX, targetY: boss.chargeTargetY, comboStep: boss.comboStep,
+      // Relief (crête du prologue) : les zones se posent sur le sol réel, pas à hauteur 0.
+      ground: this.terrain.groundAt(this.bossEntity.centerX, this.bossEntity.centerY),
     };
   }
 

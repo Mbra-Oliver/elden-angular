@@ -53,6 +53,12 @@ const GUARD: Pose = {
   lLx: -0.3, lLz: -0.08, lRx: 0.24, lRz: 0.08,
 };
 
+const BLOCK: Pose = {
+  rX: -0.08, rY: -0.2, rZ: -0.04, tY: -0.2,
+  aLx: -0.95, aLz: -0.55, aRx: -1.15, aRz: -0.1, wr: 0.7,
+  lLx: 0.1, lRx: -0.08,
+};
+
 const JUMP_CROUCH: Pose = {
   rX: 0.62, tY: -3, tF: -2.4,
   aRx: -0.15, aRz: 0.1, wr: 0.6,
@@ -129,6 +135,7 @@ function springFor(state: string, attack: string): [number, number] {
     case 'attacking': return attack === 'jump' ? [38, 0.62] : [46, 0.72];
     case 'recover': return attack === 'heavy' || attack === 'jump' ? [10, 0.68] : attack === 'light' ? [13, 0.66] : [11, 0.66];
     case 'rolling': return [30, 0.9];
+    case 'blocking': return [16, 0.9];
     case 'hurt': return [22, 0.48];
     case 'exhausted': return [6, 1];
     case 'dead': return [11, 0.75];
@@ -259,6 +266,7 @@ export class PlayerAnimator {
   private lastX = 0;
   private lastY = 0;
   private lastState = '';
+  private guardBlend = 0;
   private wasFrozen = false;
   private flash = 0;
   private knockForward = 0;
@@ -367,6 +375,12 @@ export class PlayerAnimator {
       } else if (state === 'moving' && this.lastState === 'idle') {
         this.v[I.rX] += 1.4; // départ : on s'élance vers l'avant
       }
+      if (state === 'blocking') {
+        this.guardBlend = 0;
+        this.v[I.rX] -= 1.4;
+        this.v[I.aLx] += 2;
+        this.v[I.aRx] += 2.4;
+      }
       if (state === 'hurt') {
         const kx = pose.knockX ?? 0;
         const ky = pose.knockY ?? 0;
@@ -404,6 +418,7 @@ export class PlayerAnimator {
     this.wasFrozen = frozen;
 
     // --- Cibles de la pose.
+    this.guardBlend += ((state === 'blocking' ? 1 : 0) - this.guardBlend) * (1 - Math.exp(-14 * dt));
     const base = engaged ? GUARD : REST;
     this.fill(base);
     let spin = 0;
@@ -521,10 +536,7 @@ export class PlayerAnimator {
           break;
         }
         case 'blocking': {
-          // Garde haute : lance ramenée devant, bras gauche en appui, buste de profil.
-          this.blend(base, { rX: -0.08, rY: -0.2, rZ: -0.04, tY: -0.2,
-            aLx: -0.95, aLz: -0.55, aRx: -1.15, aRz: -0.1, wr: 0.7,
-            lLx: 0.1, lRx: -0.08 }, 1);
+          this.blend(base, BLOCK, this.guardBlend);
           break;
         }
         case 'exhausted': {

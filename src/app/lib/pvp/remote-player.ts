@@ -1,4 +1,4 @@
-import type { DuelPose } from './duel-rules';
+import { attackTimeline, type DuelPose } from './duel-rules';
 
 function lerp(from: number, to: number, amount: number): number {
   return from + (to - from) * amount;
@@ -10,7 +10,7 @@ export class RemotePlayer {
   private currentYaw = 0;
   private initialized = false;
   private latest: DuelPose = {
-    x: 0, z: 0, yaw: 0, state: 'idle', hp: 100, stamina: 100, alive: true, heals: 2, cosmetics: [],
+    x: 0, z: 0, yaw: 0, state: 'idle', actionMs: 0, step: 0, hp: 100, stamina: 100, alive: true, heals: 2, totem: false, cosmetics: [], ack: 0,
   };
 
   update(pose: DuelPose | null, dt: number): void {
@@ -38,16 +38,19 @@ export class RemotePlayer {
   actor(): {
     x: number; z: number; y: number; facingX: number; facingY: number; state: string; phase: number;
   } {
+    const timeline = attackTimeline(this.latest.state, this.latest.actionMs, this.latest.step);
+    const state = timeline
+      ? timeline.segment === 'windup' ? 'windup' : 'attacking'
+      : this.latest.state === 'dodge' ? 'rolling'
+        : this.latest.state === 'walk' ? 'moving' : this.latest.state;
     return {
       x: this.x,
       z: this.z,
       y: this.z,
       facingX: Math.sin(this.currentYaw),
       facingY: Math.cos(this.currentYaw),
-      state: this.latest.state === 'dodge' ? 'roll'
-        : this.latest.state === 'light' || this.latest.state === 'heavy' ? 'attack'
-          : this.latest.state === 'heal' ? 'interact' : this.latest.state,
-      phase: 0,
+      state,
+      phase: timeline ? (timeline.segment === 'recover' ? 1 : timeline.t) : 0,
     };
   }
 }

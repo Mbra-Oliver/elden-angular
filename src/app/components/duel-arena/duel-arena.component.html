@@ -1,5 +1,6 @@
 <section class="duel-shell">
-  <div #viewport class="viewport"></div>
+  <div #viewport class="viewport" (pointerdown)="onPointerDown($event)" (pointerup)="onPointerUp($event)"
+    (contextmenu)="$event.preventDefault()"></div>
 
   @if (!joined()) {
     <div class="lobby">
@@ -7,16 +8,17 @@
         <p class="waiting">{{ waitingLabel() }}</p>
       } @else {
         <h2>L’Épreuve des Guerriers</h2>
-        <p class="intro">Deux combattants, même équipement, deux poignées de feuilles à avaler. Le reste n’est que timing.</p>
+        <p class="intro">Deux combattants, un seul reste debout. Garde, parades et coups lourds punissables : chaque mixture compte.</p>
         <button type="button" class="quick" (click)="quickMatch()">Duel aléatoire</button>
         <div class="or">ou</div>
         <button type="button" (click)="create()">Ouvrir un duel entre amis</button>
         <div class="or">ou</div>
         <label>
           Code de salon
-          <input [value]="codeInput()" (input)="setCode($event)" maxlength="8" placeholder="ASH-74">
+          <input [value]="codeInput()" (input)="setCode($event)" maxlength="8" placeholder="KTR-4M"
+          autocapitalize="characters" autocomplete="off" spellcheck="false">
         </label>
-        <button type="button" (click)="join()" [disabled]="codeInput().length < 5">Rejoindre</button>
+        <button type="button" (click)="join()" [disabled]="codeInput().replace('-', '').length < 5">Rejoindre</button>
         @if (error()) { <p class="error">{{ error() }}</p> }
         <button type="button" class="back" (click)="exit()">Retour au menu</button>
       }
@@ -26,8 +28,17 @@
       <div class="top">
         <span class="phase">{{ phaseLabel() }}</span>
         <span class="room">Salon {{ snapshot().code }}</span>
-        <button type="button" class="share" (click)="share()">{{ copied() ? 'Lien copié' : 'Défier un ami' }}</button>
+        @if (inviteUrl()) {
+          <button type="button" class="share" (click)="share()">{{ copied() ? 'Lien partagé' : 'Partager le lien' }}</button>
+        }
       </div>
+      @if (snapshot().phase === 'waiting' && inviteUrl()) {
+        <div class="invite">
+          <p>Sur l’autre appareil (même Wi-Fi), ouvre&nbsp;:</p>
+          <code>{{ inviteUrl() }}</code>
+          <p>ou choisis « Duel d’honneur » et entre le code <strong>{{ snapshot().code }}</strong>.</p>
+        </div>
+      }
       <div class="fighters">
         <div class="fighter" [class.winner]="snapshot().winner === 0">
           <strong>Vous</strong>
@@ -42,25 +53,40 @@
           <small>{{ opponent()?.heals ?? 2 }} mixture</small>
         </div>
       </div>
+      @if (duelTotem) {
+        <div class="totem" [class.mine]="me()?.totem" [class.theirs]="opponent()?.totem">
+          <span>{{ totemHolder() }}</span>
+          <div class="bar"><i [style.width.%]="totemProgress()"></i></div>
+        </div>
+      }
     </div>
 
-    <div class="touch-pad" (pointerdown)="move($event)" (pointermove)="move($event)"
-      (pointerup)="releaseMove()" (pointercancel)="releaseMove()" (pointerleave)="releaseMove()">
-      <span></span>
-    </div>
-    <div class="actions">
-      <button type="button" (pointerdown)="press('light')">Attaque</button>
-      <button type="button" (pointerdown)="press('heavy')">Lourde</button>
-      <button type="button" (pointerdown)="press('dodge')">Esquive</button>
-      <button type="button" (pointerdown)="press('heal')">Soin</button>
-    </div>
+    @if (touch && !menuOpen() && snapshot().phase !== 'finished') {
+      <!-- Les mêmes contrôles tactiles que l'aventure (joystick, arc d'actions, pause). -->
+      <app-touch-controls [combat]="true" (pause)="toggleMenu()" />
+      <button type="button" class="throw-pad" aria-label="Lancer le javelot"
+        (pointerdown)="press('throw', $event)" (contextmenu)="$event.preventDefault()">➶</button>
+    } @else if (!touch) {
+      <p class="keys">ZQSD bouger · Espace / clic frappe · E / clic droit lourde · G garde · Maj esquive · B mixture · T javelot · Échap menu</p>
+    }
+
+    @if (menuOpen()) {
+      <app-pause-menu (resume)="toggleMenu()" (quit)="exit()" />
+    }
 
     @if (snapshot().phase === 'finished') {
       <div class="result">
         <span class="adinkra">⋔</span>
         <h2>{{ result() }}</h2>
         <p>{{ phaseLabel() }}</p>
-        <button type="button" (click)="exit()">Quitter l’arène</button>
+        @if (opponentGone()) {
+          <p class="note">Ton adversaire a quitté l’arène.</p>
+        } @else if (rematchAsked()) {
+          <p class="note">En attente de la réponse de ton adversaire…</p>
+        } @else {
+          <button type="button" (click)="rematch()">{{ rematchOffered() ? 'Accepter la revanche' : 'Revanche' }}</button>
+        }
+        <button type="button" class="back" (click)="exit()">Quitter l’arène</button>
       </div>
     }
   }

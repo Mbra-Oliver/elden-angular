@@ -22,6 +22,8 @@ export class AppComponent {
   private readonly settings = inject(SettingsService);
 
   constructor() {
+    // Lien d'invitation « ?duel=CODE » : on va droit à l'arène, qui rejoint le salon.
+    if (new URLSearchParams(window.location.search).has('duel')) this.gameState.openDuel();
     // Double tap et pincement : ni zoom ni décalage de la page (iOS ignore user-scalable=no).
     const block = (event: Event) => event.preventDefault();
     document.addEventListener('dblclick', block, { passive: false });

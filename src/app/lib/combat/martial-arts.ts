@@ -82,10 +82,14 @@ const CHECK_HAND: ArtPose = { oX: -1.0, oY: 0.4, oZ: -0.2, oE: -1.5 };
  */
 export const SPEAR_ART: WeaponArt = {
   gripMin: -22, gripMax: 18, order: 1, minGap: 2.6,
-  // Hors combat : lance de marche, tenue d'une main près du milieu, talon près du sol.
-  rest: { hY: 0, wT: 0, wL: 0, wF: 0,
-    hx: 5.6, hy: 15.5, hz: 1.2, yw: 0.05, pt: 1.25, ro: 0, gm: -7, go: 0, kM: 1, kO: 0,
-    oX: 0, oY: 0, oZ: 0, oE: -0.2 },
+  // Hors combat : garde de marche, relâchée. Les deux mains sur le fût (main
+  // d'arme à la hanche près du talon, main avant à hauteur de poitrine), lance
+  // inclinée pointe devant, hanches à demi de profil, pieds légèrement décalés.
+  // La marche reprend les jambes (voir 'moving' dans martial-arts-3d.ts).
+  rest: { rX: 0.06, rY: 0.28, rZ: 0, tY: -0.4, hY: 0.42,
+    lLx: -0.12, lLz: -0.08, lRx: 0.1, lRz: 0.08,
+    hx: 2, hy: 16, hz: -0.5, yw: -0.12, pt: 0.26, ro: 0, gm: -18.5, go: -7, kM: 1, kO: 1,
+    oX: 0, oY: 0, oZ: 0, oE: -0.2, wT: 0.7, wL: 1, wF: 0 },
   // Garde moyenne de profil : talon à la hanche, pointe à hauteur de gorge.
   guard: { rX: 0.12, rY: 0.35, rZ: 0, tY: -0.8, hY: 0.5,
     lLx: -0.42, lLz: -0.12, lRx: 0.36, lRz: 0.12,

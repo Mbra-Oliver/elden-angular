@@ -137,6 +137,8 @@ export class World3D {
   private readonly remotePlayer = new RemotePlayer();
   private remotePose: DuelPose | null = null;
   private remoteVisible = false;
+  private readonly totem: T.Group;
+  private totemCarrier = -1;
   /** Habillage et armes du porte-glaive du Denkyira sur le rig du duelliste. */
   private readonly champion: ChampionGear;
   private bossKind: BossId = 'duelist';
@@ -165,6 +167,7 @@ export class World3D {
   private readonly projection = new T.Vector3();
   private readonly cameraGoal = new T.Vector3();
   private readonly cameraLook = new T.Vector3();
+  private duelLockPoint: Point | null = null;
   private readonly lookGoal = new T.Vector3();
   private readonly cameraArmBase = new T.Vector3();
   private groundSource?: HTMLCanvasElement;
@@ -321,6 +324,8 @@ export class World3D {
     this.duelist = this.makeFighter('#873f30', '#c2a176', false, undefined, true);
     this.remote = this.makeFighter('#6c3a2f', '#d0a85f');
     this.remote.root.visible = false;
+    this.totem = this.makeTotem();
+    this.scene.add(this.totem);
     this.duelist.gait = new BipedGait(DUELIST_GAIT);
     // Le bâton de Kofi est la dernière pièce du bras droit (buildHumanoid).
     this.champion = new ChampionGear(this.scene, this.duelist, this.duelist.arms[1].children.at(-1));
@@ -441,6 +446,23 @@ export class World3D {
     const rig = buildHumanoid((color) => this.material(color), clothColor, accentColor, { bareChest, outfit, outline });
     this.scene.add(rig.root);
     return { ...rig, walk: 0 };
+  }
+
+  private makeTotem(): T.Group {
+    const group = new T.Group();
+    const gold = this.material('#e5b75c');
+    gold.metalness = 0.7;
+    gold.roughness = 0.3;
+    gold.emissive.set('#8a4d00');
+    gold.emissiveIntensity = 0.6;
+    const core = new T.Mesh(new T.OctahedronGeometry(3.6, 0), gold);
+    const ring = new T.Mesh(new T.TorusGeometry(5.4, 0.55, 6, 24), gold);
+    ring.rotation.x = Math.PI / 2;
+    const beam = new T.Mesh(new T.CylinderGeometry(0.6, 0.6, 14, 6),
+      new T.MeshBasicMaterial({ color: '#ffd27a', transparent: true, opacity: 0.32, depthWrite: false }));
+    group.add(core, ring, beam);
+    group.visible = false;
+    return group;
   }
 
   private makeVeille() {
@@ -664,6 +686,15 @@ export class World3D {
       this.animate(this.remote, remoteActor, dt);
       this.feel.applyFlinch(this.remote.root, this.remote.torso, remoteActor);
     }
+    if (this.totem.visible) {
+      const lift = (this.totemCarrier >= 0 ? 28 : 12) + Math.sin(now * 0.004) * 1.1;
+      const [core, ring, beam] = this.totem.children;
+      core.position.y = lift;
+      ring.position.y = lift;
+      ring.rotation.z = now * 0.0015;
+      beam.position.y = lift / 2;
+      beam.scale.y = Math.max(0.2, lift / 14);
+    }
     this.duelist.root.visible = !!enemy && duelist;
     this.veille.visible = !!enemy && !duelist;
     if (enemy && duelist) {
@@ -843,6 +874,21 @@ export class World3D {
     this.remoteVisible = visible;
   }
 
+  setDuelLockTarget(target: Point | null): void {
+    this.duelLockPoint = target;
+  }
+
+  setDuelTotem(target: { x: number; z: number; carrier: number } | null): void {
+    if (!target) {
+      this.totem.visible = false;
+      this.totemCarrier = -1;
+      return;
+    }
+    this.totem.visible = true;
+    this.totemCarrier = target.carrier;
+    this.totem.position.set(target.x, 0, target.z);
+  }
+
   /** Changement de phase : demi-tour lent autour du boss, de bas en haut. */
   playPhaseShot(from: Point, boss: () => Point, duration: number) {
     const look = new T.Vector3();
@@ -881,7 +927,7 @@ export class World3D {
     this.aimingFactor = aiming ? 0.62 : 1;
     this.glideLock(dt);
     // Cible cadrée : le boss du duel, sinon l'ennemi verrouillé.
-    const enemy = boss ?? this.lockPoint;
+    const enemy = this.duelLockPoint ?? boss ?? this.lockPoint;
     // Pas de marqueur sur un boss qui tombe.
     this.lockMarker.visible = !!enemy && (boss as Actor3D | null)?.state !== 'dead';
     if (enemy) {
@@ -962,7 +1008,10 @@ export class World3D {
       ? profile.lead + Math.min(distance, 160) * profile.leadDistance
       : profile.lead;
     const sight = lead * (aiming ? 0.55 : 1);
-    this.lookGoal.set(player.x + dx * sight, ground + profile.lookHeight, player.y + dy * sight);
+    const focus = this.duelLockPoint;
+    const lookX = focus ? (player.x + focus.x) / 2 : player.x + dx * sight;
+    const lookY = focus ? (player.y + focus.y) / 2 : player.y + dy * sight;
+    this.lookGoal.set(lookX, ground + profile.lookHeight, lookY);
     if (this.initialized) {
       this.camera.position.lerp(this.cameraGoal, 1 - Math.exp(-10 * dt));
       // Le point visé est lissé lui aussi : les reculs et roulades ne font

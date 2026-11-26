@@ -385,7 +385,7 @@ export class PlayerEntity {
     }
 
     if (this.input.guard() && !dodgePressed && currentData.stamina > 0) {
-      this.store.update({ state: 'blocking', attackType: 'none', comboCount: 0, comboTimer: 0, vx: 0, vy: 0 });
+      this.store.update({ state: 'blocking', attackType: 'none', comboCount: 0, comboTimer: 0 });
       return;
     }
 

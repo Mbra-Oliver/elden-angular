@@ -1,5 +1,5 @@
 export type DuelPhase = 'waiting' | 'countdown' | 'fighting' | 'finished';
-export type DuelAction = 'light' | 'heavy' | 'dodge' | 'heal';
+export type DuelAction = 'light' | 'heavy' | 'dodge' | 'heal' | 'throw';
 
 export interface DuelInput {
   seq: number;
@@ -7,52 +7,173 @@ export interface DuelInput {
   moveZ: number;
   yaw: number;
   actions: DuelAction[];
+  /** Garde tenue (G, LB, bouton bouclier). */
+  guard: boolean;
 }
 
 export interface DuelPose {
   x: number;
   z: number;
   yaw: number;
+  /**
+   * idle, walk, guard, dodge, light, heavy, throw, heal, hurt, stagger
+   * (garde brisée ou parade subie), dead.
+   */
   state: string;
+  /** Temps écoulé dans l'état courant (ms), pour caler les animations. */
+  actionMs: number;
+  /** Coup du combo léger (0, 1, 2). */
+  step: number;
   hp: number;
   stamina: number;
   alive: boolean;
   heals: number;
+  totem: boolean;
   cosmetics: readonly string[];
+  ack: number;
 }
 
+export interface DuelFx {
+  kind: 'hit' | 'block' | 'parry' | 'guardbreak' | 'heal' | 'evade';
+  attacker: number;
+  target: number;
+  attack: 'light' | 'heavy' | 'throw';
+  damage: number;
+  x: number;
+  z: number;
+  dirX: number;
+  dirZ: number;
+  id?: number;
+}
+
+/**
+ * Duel à mort, dans l'esprit des boss de l'histoire : même allure que le
+ * héros (pas, roulade, combo en trois coups), mais des anticipations plus
+ * lisibles, une garde qui coûte de l'endurance, une parade au bon moment, des
+ * coups lourds qui brisent la garde et se punissent, deux mixtures à boire
+ * sans être touché. Pas de chrono ni de totem : seul le dernier debout gagne.
+ * [SUPPOSITION] toutes les valeurs sont réglées à l'œil, pas encore jouées.
+ */
 export const DUEL_RULES = {
   radius: 220,
-  tickRate: 20,
+  tickRate: 30,
   countdownMs: 3000,
-  roundMs: 90000,
-  maxHp: 100,
+  /** 0 : pas de limite de temps, le duel est à mort. */
+  roundMs: 0,
+  maxHp: 160,
   maxStamina: 100,
-  staminaRegen: 24,
-  speed: 205,
-  dodgeCost: 28,
+  /** Endurance : remonte vite, mais seulement après une courte pause (comme l'histoire). */
+  staminaRegen: 52,
+  staminaDelayMs: 620,
+  /** En garde, l'endurance remonte trois fois moins vite. */
+  guardRegenFactor: 0.28,
+  speed: 165,
+  guardSpeed: 0.5,
+
+  dodgeCost: 20,
   dodgeMs: 520,
-  iFramesMs: 260,
-  lightCost: 14,
-  lightDamage: 11,
-  lightRange: 78,
-  lightArc: 0.66,
-  lightWindup: 140,
-  lightLock: 420,
-  heavyCost: 28,
-  heavyDamage: 22,
-  heavyRange: 88,
-  heavyArc: 0.58,
-  heavyWindup: 320,
-  heavyLock: 720,
-  healCost: 20,
-  healAmount: 35,
-  healLock: 620,
+  dodgeSpeed: 420,
+  iFramesFrom: 30,
+  iFramesMs: 320,
+  /** Sans direction : pas en arrière, plus court. */
+  backstepMs: 340,
+  backstepSpeed: 330,
+  backstepIFramesMs: 180,
+
+  /** Combo léger : trois coups, le suivant part à partir de chainMs. */
+  lightCost: 16,
+  lightDamage: [13, 14, 20] as readonly number[],
+  lightWindup: [210, 200, 290] as readonly number[],
+  lightActive: 90,
+  lightLock: [520, 520, 760] as readonly number[],
+  lightChainMs: [360, 360, 9999] as readonly number[],
+  lightLunge: 16,
+  lightRange: 74,
+  lightArc: 0.45,
+
+  /** Lourde : longue anticipation (lisible, esquivable), brise la garde, longue récupération (punissable). */
+  heavyCost: 34,
+  heavyDamage: 32,
+  heavyWindup: 560,
+  heavyActive: 110,
+  heavyLock: 1240,
+  heavyLunge: 30,
+  heavyRange: 86,
+  heavyArc: 0.4,
+  /** Pendant l'anticipation, la lourde suit lentement sa cible (rad/s). */
+  heavyTrack: 1.6,
+
+  /** Garde : de face seulement, chaque coup paré coûte de l'endurance et laisse passer un peu. */
+  guardArc: 0.2,
+  guardChip: 0.15,
+  guardCostLight: 20,
+  guardCostHeavy: 48,
+  guardCostThrow: 14,
+  /** Garde levée juste avant l'impact : parade, l'attaquant chancelle. */
+  parryWindowMs: 170,
+  parryStunMs: 950,
+  guardBreakMs: 1150,
+  /** Coup reçu pendant un étourdissement : dégâts majorés (la riposte). */
+  stunBonus: 1.5,
+
+  /** Mixture : on boit, puis seulement on guérit ; un coup pendant la gorgée la gâche. */
+  healCost: 12,
+  healAmount: 55,
+  healDrinkMs: 900,
+  healLock: 1350,
   maxHeals: 2,
-  hitstopMs: 110,
+
+  hurtLightMs: 330,
+  hurtHeavyMs: 640,
+  knockLight: 10,
+  knockHeavy: 36,
+  hitstopMs: 90,
+  /** Aide à la visée : au départ d'un coup, on se tourne vers l'adversaire s'il est devant. */
+  aimAssistArc: -0.2,
+  aimAssistRange: 170,
+
+  throwCost: 26,
+  throwDamage: 12,
+  throwRange: 210,
+  throwArc: 0.86,
+  throwWindup: 380,
+  throwLock: 760,
+  throwCooldownMs: 4000,
+
+  /** Mode totem (autre variante) : coupé, le duel se joue à mort. */
+  totemEnabled: false,
+  totemHoldMs: 12000,
+  totemPickupRange: 34,
+  totemSlow: 0.82,
 } as const;
 
-const ACTIONS = new Set<DuelAction>(['light', 'heavy', 'dodge', 'heal']);
+/** Découpage d'une attaque pour l'animation : anticipation, impact, récupération (phase 0 → 1). */
+export function attackTimeline(state: string, ms: number, step: number): { segment: 'windup' | 'attacking' | 'recover'; t: number } | null {
+  let windup: number;
+  let active: number;
+  let lock: number;
+  if (state === 'light') {
+    const index = Math.min(2, Math.max(0, step));
+    windup = DUEL_RULES.lightWindup[index];
+    active = DUEL_RULES.lightActive;
+    lock = DUEL_RULES.lightLock[index];
+  } else if (state === 'heavy') {
+    windup = DUEL_RULES.heavyWindup;
+    active = DUEL_RULES.heavyActive;
+    lock = DUEL_RULES.heavyLock;
+  } else if (state === 'throw') {
+    windup = DUEL_RULES.throwWindup;
+    active = 80;
+    lock = DUEL_RULES.throwLock;
+  } else {
+    return null;
+  }
+  if (ms < windup) return { segment: 'windup', t: ms / windup };
+  if (ms < windup + active) return { segment: 'attacking', t: (ms - windup) / active };
+  return { segment: 'recover', t: Math.min(1, (ms - windup - active) / Math.max(1, lock - windup - active)) };
+}
+
+const ACTIONS = new Set<DuelAction>(['light', 'heavy', 'dodge', 'heal', 'throw']);
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -72,6 +193,7 @@ export function sanitizeInput(raw: Partial<DuelInput> | undefined): DuelInput {
     moveZ: moveZ * scale,
     yaw: Number.isFinite(raw?.yaw) ? Number(raw?.yaw) : 0,
     actions,
+    guard: raw?.guard === true,
   };
 }
 

@@ -41,6 +41,10 @@ const easeOutBack = (t: number) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow
 /** Armement : rapide puis tenu (lisible), avec un léger tremblement de muscles à la fin. */
 const coil = (t: number, now: number) => easeOutCubic(clamp01(t / 0.7)) + (t > 0.7 ? Math.sin(now * 0.07) * 0.015 : 0);
 
+/** Appuis : amplitude des jambes (poses écrites plus larges) et longueur de jambe du rig. */
+const LEG_SCALE = 0.7;
+const LEG_LENGTH = 14;
+
 /** Taille de Badu par rapport au héros : grand et lourd, mais humain (≈ 1,95 m). */
 export const BADU_SCALE = 1.12;
 
@@ -204,6 +208,11 @@ export function animateBadu(f: FighterRig, pose: Actor3D, now: number) {
   } else if (memo.key !== key) {
     memo.carry = pose.state === 'recover' ? Math.max(0, memo.last.lunge) : 0;
     memo.from = copyJoints(memo.last);
+    // On quitte la marche : les jambes partent de la foulée réellement affichée.
+    if (memo.walking) {
+      memo.from.legL = f.legs[0].rotation.x / LEG_SCALE;
+      memo.from.legR = f.legs[1].rotation.x / LEG_SCALE;
+    }
     memo.key = key;
     memo.start = now;
   }
@@ -275,7 +284,9 @@ function swapWeapons(memo: Memo, j: Joints, pose: Actor3D, k: number, now: numbe
 }
 
 function applyJoints(f: FighterRig, j: Joints, pose: Actor3D, walking: boolean) {
-  f.torso.position.y = 16 + j.lift;
+  // Le buste ne s'enfonce plus dans le bassin (corps « disloqué ») : petite
+  // amplitude seulement ; la hauteur vient des appuis (jambes écartées).
+  f.torso.position.y = 16 + Math.max(-1.6, Math.min(0.8, j.lift * 0.35));
   f.torso.rotation.set(j.torsoX, j.torsoY, walking ? f.torso.rotation.z : j.torsoZ);
   f.arms[0].rotation.set(...j.armL);
   f.arms[1].rotation.set(...j.armR);
@@ -285,13 +296,15 @@ function applyJoints(f: FighterRig, j: Joints, pose: Actor3D, walking: boolean) 
     parts.elbows[1].rotation.set(j.elbowR, 0, 0);
     parts.sword.rotation.x = SWORD_PITCH + j.wristR;
   }
-  // Genoux fléchis : la jambe se raccourcit, le corps descend d'autant.
-  f.legs[0].scale.y = Math.min(f.legs[0].scale.y, 1 - j.crouch);
-  f.legs[1].scale.y = Math.min(f.legs[1].scale.y, 1 - j.crouch);
-  // En marche, les jambes gardent la démarche de base (pieds posés).
+  // En marche, les jambes gardent la démarche de base (pieds posés). Sinon,
+  // appuis écartés (sans étirer ni écraser les jambes) : le bassin descend de
+  // ce qu'il faut pour garder les deux pieds au sol.
   if (!walking) {
-    f.legs[0].rotation.x = j.legL;
-    f.legs[1].rotation.x = j.legR;
+    const legL = j.legL * LEG_SCALE;
+    const legR = j.legR * LEG_SCALE;
+    f.legs[0].rotation.x = legL;
+    f.legs[1].rotation.x = legR;
+    f.root.position.y -= LEG_LENGTH * (1 - (Math.cos(legL) + Math.cos(legR)) / 2);
   }
   const fx = pose.facingX;
   const fy = pose.facingY;
@@ -733,9 +746,12 @@ export class ChampionGear {
   /** Rangements dans le dos : fourreau derrière la hanche droite, bandoulière en travers du dos. */
   private readonly swordBack = new T.Group();
   private readonly musketBack = new T.Group();
+  private readonly sheath = new T.Group();
   private readonly afena = new T.Group();
   private readonly musket = new T.Group();
   private held: BaduHeld = 'afena';
+  /** Hauteur du sol sous Badu (relief de la crête). */
+  private floor = 0;
   private readonly brokenMusket = new T.Group();
   private readonly outfit = new T.Group();
   private readonly crest = new T.Group();
@@ -775,7 +791,7 @@ export class ChampionGear {
     // Or terne (feuille d'or sur bois) : poignée de l'afena royal, disque de la calotte.
     const gold = flat('#b8963f', { roughness: 0.4, metalness: 0.55, emissive: '#2a1a05' });
     // Lame de fer forgé claire : elle se lit contre le sol sombre de la crête.
-    const steel = flat('#b9b6ab', { roughness: 0.35, metalness: 0.6 });
+    const steel = flat('#d6d3ca', { roughness: 0.45, metalness: 0.25 });
     this.skin = flat('#4e2e22');
     this.loincloth = flat('#2f2420');
     const add = (parent: T.Object3D, geometry: T.BufferGeometry, material: T.Material,
@@ -814,11 +830,15 @@ export class ChampionGear {
     this.swordBack.position.set(3.1, -0.4, -2.1);
     this.swordBack.rotation.set(Math.PI - 0.4, 0, -0.18);
     const sheathLength = AFENA.tip - AFENA.base + 1;
-    add(this.swordBack, new T.BoxGeometry(0.5, sheathLength, 2.1), leather, 0, AFENA.base + sheathLength / 2 - 0.4, -0.35);
-    add(this.swordBack, new T.CylinderGeometry(0.62, 0.62, 0.4, 7), gold, 0, AFENA.base - 0.2, -0.1);
+    // Fourreau fin, visible seulement quand l'afena y est rangé (sinon on le prendrait pour une seconde arme).
+    this.sheath.add(new T.Mesh(new T.BoxGeometry(0.4, sheathLength, 1.9), leather));
+    this.sheath.children[0].position.set(0, AFENA.base + sheathLength / 2 - 0.4, -0.3);
+    this.swordBack.add(this.sheath);
     // Sangle du mousquet en travers de la poitrine (épaule droite → hanche gauche).
     add(this.outfit, new T.BoxGeometry(0.35, 13, 0.25), leather, 0.2, 3.2, 2.75, 0.12, 0, -0.62);
     rig.torso.add(this.swordBack, this.musketBack);
+    // Armes sans coque de contour (addOutlines épaissit les lames fines en « gourdins » sombres).
+    for (const group of [this.afena, this.musket, this.sheath]) group.traverse((o) => { o.userData['outline'] = true; });
 
     // Mousquet brisé, jeté au sol pendant la transition (posé par update).
     add(this.brokenMusket, new T.CylinderGeometry(0.3, 0.34, 13, 6), iron, 0, 0.4, 0, 0, 0, Math.PI / 2);
@@ -1004,6 +1024,7 @@ export class ChampionGear {
     }
     const two = (pose.bossPhase ?? 1) >= 2;
     const k = pose.phase;
+    this.floor = pose.groundZ ?? 0;
     // Le mousquet disparaît quand il le brise (transition), et ne revient plus.
     const broken = two && !(pose.state === 'shift' && k < 0.42);
     // Une seule arme en main, l'autre dans le dos (voir swapWeapons).
@@ -1015,11 +1036,12 @@ export class ChampionGear {
     }
     const dead = pose.state === 'dead';
     this.musket.visible = !broken && !(dead && k > 0.15 && held === 'musket');
+    this.sheath.visible = held !== 'afena';
     this.afena.visible = !(dead && k > 0.15 && held === 'afena');
     this.dropWeapon(pose, k);
     if (pose.state === 'shift' && k >= 0.42 && !this.brokenMusket.visible) {
       this.brokenMusket.visible = true;
-      this.brokenMusket.position.set(pose.x + pose.facingY * 18 + pose.facingX * 10, 0, pose.y - pose.facingX * 18 + pose.facingY * 10);
+      this.brokenMusket.position.set(pose.x + pose.facingY * 18 + pose.facingX * 10, pose.groundZ ?? 0, pose.y - pose.facingX * 18 + pose.facingY * 10);
       this.brokenMusket.rotation.y = Math.atan2(pose.facingX, pose.facingY) + 0.9;
     }
 
@@ -1094,7 +1116,7 @@ export class ChampionGear {
         const s = Math.sin(angle);
         const fx = pose.facingX * c - pose.facingY * s;
         const fy = pose.facingX * s + pose.facingY * c;
-        trail.position.set(pose.x + fx * length / 2, 1.2 + i * 0.05, pose.y + fy * length / 2);
+        trail.position.set(pose.x + fx * length / 2, (pose.groundZ ?? 0) + 1.2 + i * 0.05, pose.y + fy * length / 2);
         trail.rotation.set(-Math.PI / 2, 0, Math.atan2(-fy, fx));
         trail.scale.set(length, 2.4, 1);
         trail.material.opacity = 0.8;
@@ -1116,7 +1138,7 @@ export class ChampionGear {
       puff.life -= dt;
       const p = puff.sprite.position;
       p.x += puff.vx * dt;
-      p.y = Math.max(2, p.y + puff.vy * dt);
+      p.y = Math.max(this.floor + 2, p.y + puff.vy * dt);
       p.z += puff.vz * dt;
       puff.vx *= 1 - dt * 1.5;
       puff.vz *= 1 - dt * 1.5;
@@ -1170,7 +1192,7 @@ export class ChampionGear {
     sword.visible = true;
     const t = clamp01((k - 0.15) / 0.13);
     const bounce = Math.sin(clamp01((k - 0.28) / 0.08) * Math.PI) * 2;
-    const ground = 0.9 + bounce;
+    const ground = (pose.groundZ ?? 0) + 0.9 + bounce;
     sword.position.set(this.dropFrom.x + pose.facingY * 8, lerp(this.dropFrom.y, ground, t * t), this.dropFrom.z - pose.facingX * 8);
     sword.rotation.set(lerp(0.3, Math.PI / 2, t), Math.atan2(pose.facingX, pose.facingY) + 0.6, lerp(0, Math.PI / 2, t));
     sword.scale.setScalar(BADU_SCALE);

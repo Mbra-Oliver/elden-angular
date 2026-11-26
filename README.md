@@ -12,6 +12,18 @@ ng serve
 
 Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
 
+## Duel 1v1 local
+
+To play the networked duel with someone on the same Wi-Fi:
+
+```bash
+npm run start:duel
+```
+
+Open the LAN URL printed by the server on both devices, choose **Duel d’honneur**, then open a private room and share the link/code. The server listens on port `3001` and exposes `GET /duel-info` for the host address.
+
+Each fighter starts on opposite sides of the arena. The duel is to the death: stamina, guarded parries, punishable heavy attacks and two mixtures decide the fight. `T` throws a period javelin. Camera and aim stay locked on the opponent; movement is predicted locally and reconciled with server acknowledgements.
+
 ## Code scaffolding
 
 Angular CLI includes powerful code scaffolding tools. To generate a new component, run:

@@ -21,6 +21,8 @@
 
 .lobby {
   position: absolute;
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
   top: 50%;
   left: 50%;
   width: min(440px, 86vw);
@@ -76,7 +78,7 @@ button, input {
   cursor: not-allowed;
 }
 
-.lobby .back {
+.lobby .back, .result .back {
   border-color: #5c4b3a;
   background: transparent;
   font-size: 14px;
@@ -149,6 +151,42 @@ input {
   font-size: 12px;
 }
 
+.invite {
+  pointer-events: auto;
+  width: min(520px, 90vw);
+  margin: 12px auto 0;
+  padding: 12px 16px;
+  background: #140f0bee;
+  border: 1px solid #9c6d39;
+  text-align: center;
+  font-size: 13px;
+  color: #cbb99c;
+}
+
+.invite p {
+  margin: 4px 0;
+}
+
+.invite code {
+  display: block;
+  margin: 6px 0;
+  color: #f0cf8a;
+  font-size: 15px;
+  word-break: break-all;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.invite strong {
+  color: #f0cf8a;
+  letter-spacing: 0.08em;
+}
+
+.result .note {
+  font-size: 13px;
+  font-style: italic;
+}
+
 .fighters {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -185,47 +223,60 @@ input {
 .stamina i { background: #c9a75c; }
 .fighter small { color: #bda98a; }
 
-.touch-pad {
-  position: absolute;
-  left: 4vw;
-  bottom: 5vh;
-  width: min(150px, 22vw);
-  aspect-ratio: 1;
-  border: 1px solid #f2e5cf55;
-  border-radius: 50%;
-  background: #0003;
-  touch-action: none;
-}
-
-.touch-pad span {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 42%;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border: 1px solid #f2e5cf77;
-  border-radius: 50%;
-}
-
-.actions {
-  position: absolute;
-  right: 3vw;
-  bottom: 4vh;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(74px, 1fr));
-  gap: 8px;
-}
-
-.actions button {
-  min-width: 74px;
-  min-height: 48px;
-  border: 1px solid #9c6d39;
-  border-radius: 50%;
-  background: #1c140fdd;
-  color: #f2e5cf;
-  cursor: pointer;
+.totem {
+  width: min(420px, 80vw);
+  margin: 10px auto 0;
+  padding: 6px 10px;
+  border: 1px solid #e2b45e;
+  background: #1a120acc;
+  text-align: center;
+  color: #f0cf8a;
   font-size: 12px;
+  letter-spacing: 0.06em;
+}
+.totem .bar { height: 5px; border: 0; }
+.totem .bar i { background: #f0cf8a; box-shadow: 0 0 10px #f0cf8a; }
+.totem.mine { border-color: #8ee0a4; }
+.totem.mine .bar i { background: #8ee0a4; box-shadow: 0 0 10px #8ee0a4; }
+.totem.theirs { border-color: #e07d5c; }
+.totem.theirs .bar i { background: #e07d5c; box-shadow: 0 0 10px #e07d5c; }
+
+.throw-pad {
+  position: absolute;
+  right: calc(env(safe-area-inset-right) + 12px);
+  top: 46%;
+  z-index: 6;
+  width: 48px;
+  height: 48px;
+  border: 1px solid #e5c17b66;
+  border-radius: 50%;
+  background: #1c140fb3;
+  color: #f2e5cf;
+  font-size: 22px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.keys {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  margin: 0;
+  transform: translateX(-50%);
+  color: #cbb99ccc;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-shadow: 0 1px 4px #000;
+  pointer-events: none;
+}
+
+/* Le duel n'a ni garde, ni changement d'arme, ni verrou : ces boutons de l'aventure sont masqués. */
+:host ::ng-deep app-touch-controls .action-guard,
+:host ::ng-deep app-touch-controls .action-switch,
+:host ::ng-deep app-touch-controls .lock {
+  display: none;
 }
 
 .result {
@@ -256,8 +307,23 @@ input {
   .fighter { padding: 5px 7px; font-size: 11px; }
 }
 
-@media (max-height: 420px) {
-  .lobby { padding: 14px 22px; }
-  .intro { margin-bottom: 8px; }
+/* Téléphone en paysage : HUD resserré, le combat garde l'écran. */
+@media (max-height: 440px) {
+  .lobby { padding: 12px 20px; }
+  .lobby h2 { font-size: 20px; margin-bottom: 4px; }
+  .intro { display: none; }
+  .or { margin: 4px 0 2px; }
   .lobby button { min-height: 34px; margin-top: 6px; }
+  .hud { inset: calc(env(safe-area-inset-top) + 6px) calc(env(safe-area-inset-right) + 64px) auto calc(env(safe-area-inset-left) + 64px); }
+  .top { gap: 10px; font-size: 11px; }
+  .phase { font-size: 14px; }
+  .fighters { gap: 8px; margin-top: 4px; max-width: 520px; }
+  .fighter { padding: 3px 6px; font-size: 10px; }
+  .fighter small { display: none; }
+  .totem { margin-top: 4px; padding: 3px 8px; font-size: 10px; }
+  .invite { margin-top: 6px; padding: 6px 10px; font-size: 11px; }
+  .invite code { font-size: 12px; margin: 2px 0; }
+  .result { padding: 12px 18px; }
+  .result .adinkra { font-size: 26px; }
+  .result button { min-height: 36px; margin-top: 6px; }
 }

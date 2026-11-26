@@ -658,12 +658,13 @@ export class Slice3D {
         // Du canon à la poitrine du joueur, prolongée au-delà : la ligne suit la pente (ravine, rocher).
         const from = this.terrain.groundAt(enemy.x, enemy.y) + 19;
         const to = from + this.shotSlope(enemy, from, px, py) * (14 + length);
-        this.span(line, x1, from, y1, x2, to, y2, locked ? 1.6 : 1);
-        line.material.opacity = locked ? 0.95 : 0.25 + 0.2 * Math.sin(now * 18);
+        // Ligne épaisse : elle doit se lire de loin, même depuis un tireur posté sur son rocher.
+        this.span(line, x1, from, y1, x2, to, y2, locked ? 4 : 2.6);
+        line.material.opacity = locked ? 0.95 : 0.5 + 0.2 * Math.sin(now * 18);
         line.material.color.set(locked ? '#ffe4b0' : '#ff3b2a');
-        // Bande au sol seulement si le tireur est au niveau du sentier : depuis
-        // son rocher, elle flotterait dans le vide (la ligne de visée suffit).
-        if (grounds < this.groundLine.length && Math.abs(to - from) < 12) {
+        // Bande au sol (la trajectoire lisible d'un coup d'œil), aussi pour un
+        // tireur posté : elle part du pied de son rocher et suit le relief.
+        if (grounds < this.groundLine.length) {
           const ground = this.groundLine[grounds++];
           this.span(ground, x1, this.terrain.groundAt(x1, y1) + 0.8, y1, x2, this.terrain.groundAt(x2, y2) + 0.8, y2, 1);
           ground.scale.x = 9 + 6 * progress;

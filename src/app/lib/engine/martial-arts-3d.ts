@@ -220,6 +220,14 @@ export class MartialArts3D {
           this.target[I.wL] = 0;
           this.target[I.wT] *= 0.5;
           this.target[I.hY] *= 0.5;
+          // L'arme vit avec le pas : elle monte et descend deux fois par
+          // foulée et la pointe se balance un peu, au lieu de flotter figée.
+          if (melee && !isAttack) {
+            const pace = clamp01(this.speed / 150);
+            this.target[I.hy] += 0.35 * Math.cos(2 * this.walk) * pace;
+            this.target[I.yw] += 0.05 * Math.sin(this.walk) * pace;
+            this.target[I.pt] += 0.03 * Math.cos(2 * this.walk) * pace;
+          }
           break;
         }
         case 'rolling':

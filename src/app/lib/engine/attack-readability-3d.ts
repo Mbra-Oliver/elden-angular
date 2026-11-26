@@ -64,6 +64,8 @@ export interface ThreatPose {
   attack: BossAttackType;
   /** Tir du boss : un couloir par balle. */
   shotAngles?: readonly number[];
+  /** Hauteur du sol sous le boss (relief) ; 0 sur terrain plat. */
+  ground?: number;
   /** Point visé verrouillé (charge, sillon, saut). */
   targetX?: number;
   targetY?: number;
@@ -110,6 +112,7 @@ export class AttackTelegraph3D {
   private release = 0;
   private lastAttack: BossAttackType = 'none';
   private readonly zones: Zone[] = [];
+  private ground = 0;
 
   constructor(private readonly scene: T.Scene, private readonly read: () => ThreatPose | null) {
     this.fill = new T.MeshBasicMaterial({ color: PALETTE.danger, transparent: true, depthWrite: false, opacity: 0.2, side: T.DoubleSide });
@@ -171,6 +174,7 @@ export class AttackTelegraph3D {
     }
 
     this.zones.length = 0;
+    this.ground = pose.ground ?? 0;
     this.collect(pose, attack, step, windup);
     if (!this.zones.length) return;
     const ring = attack === 'surge' || attack === 'tide';
@@ -270,7 +274,7 @@ export class AttackTelegraph3D {
   private place({ fill, edge }: { fill: T.Mesh; edge: T.Mesh }, x: number, y: number, yaw: number) {
     for (const mesh of [fill, edge]) {
       mesh.visible = true;
-      mesh.position.set(x, 0.9, y);
+      mesh.position.set(x, this.ground + 0.9, y);
       mesh.rotation.y = yaw;
     }
   }
