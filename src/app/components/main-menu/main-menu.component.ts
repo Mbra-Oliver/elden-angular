@@ -1,5 +1,5 @@
 import {
-  AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild, inject, isDevMode, signal,
+  AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild, computed, inject, isDevMode, signal,
 } from '@angular/core';
 import { AudioEngineService } from '../../lib/audio/audio-engine.service';
 import { MenuAmbience } from '../../lib/audio/menu-ambience';
@@ -12,9 +12,13 @@ import { GameStateService } from '../../lib/services/game-state.service';
 import { SliceService } from '../../lib/slice/slice.service';
 import { BOSS_NAMES, Challenge, ChallengeService, describe, formatTime } from '../../lib/social/challenge.service';
 import { THREAD_LINE } from '../../lib/constants/adinkra';
-import { DEV_BOSS_RUSH, ENCOUNTERS, type EncounterId } from '../../lib/constants/boss-encounters';
+import { DEV_BOSS_RUSH, ENCOUNTERS, OFFICIAL_BOSS_RUSH, type EncounterId } from '../../lib/constants/boss-encounters';
+import { BOSS_LORE } from '../../lib/constants/boss-lore';
 
-type Panel = 'codex' | 'settings' | null;
+type Panel = 'codex' | 'settings' | 'challenges' | null;
+
+/** Combats singuliers proposés hors mode dev : les boss du récit, dans l'ordre. */
+const STORY_FIGHTS: readonly EncounterId[] = ['champion', 'ford', 'sluice'];
 
 @Component({
   selector: 'app-main-menu',
@@ -40,6 +44,26 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
   readonly touch = isTouchDevice();
   readonly dev = isDevMode();
   readonly devBosses = DEV_BOSS_RUSH.map((id) => ({ id, name: ENCOUNTERS[id].name }));
+  readonly rushNames = OFFICIAL_BOSS_RUSH.map((id) => ENCOUNTERS[id].name).join(' · ');
+  /** Relu à chaque ouverture du panneau (les records sont en localStorage). */
+  private readonly recordsTick = signal(0);
+  /**
+   * Un boss s'ouvre en combat singulier dès qu'il a été vaincu une fois
+   * (un record existe), ou quand l'Épreuve des gardiens est débloquée.
+   */
+  readonly fights = computed(() => {
+    this.recordsTick();
+    const unlocked = this.challenge.rushUnlocked();
+    return STORY_FIGHTS.map((id) => {
+      const record = this.challenge.record(id);
+      const encounter = ENCOUNTERS[id];
+      return {
+        id, record, name: encounter.name,
+        epithet: BOSS_LORE[encounter.boss].epithet,
+        open: unlocked || !!record,
+      };
+    });
+  });
 
   readonly panel = signal<Panel>(null);
   /** Scène 3D prête (sinon l'illustration fixe reste en fond). */
@@ -71,6 +95,8 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
     // Le navigateur n'ouvre l'audio qu'après un geste : premier toucher ou touche.
     window.addEventListener('pointerdown', this.wakeAudio, { once: true });
     window.addEventListener('keydown', this.wakeAudio, { once: true });
+    // Lien de défi reçu : on ouvre directement l'écran Challenges.
+    if (this.challenge.incoming()) queueMicrotask(() => this.openPanel('challenges'));
     // Focus sur le premier bouton : le menu se joue au clavier dès l'ouverture.
     queueMicrotask(() => this.nav?.nativeElement.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true }));
   }
@@ -110,8 +136,9 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
       return;
     }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    const root = (this.panel() ? document.querySelector('.menu-panel') : this.nav?.nativeElement) as HTMLElement | null;
-    const buttons = [...(root?.querySelectorAll<HTMLElement>('button:not([disabled]), input') ?? [])];
+    const buttons = [...(this.panel()
+      ? document.querySelector('.menu-panel')?.querySelectorAll<HTMLElement>('button:not([disabled]), input') ?? []
+      : this.stage.nativeElement.querySelectorAll<HTMLElement>('.title-content nav button'))];
     if (!buttons.length) return;
     event.preventDefault();
     const index = buttons.indexOf(document.activeElement as HTMLElement);
@@ -125,6 +152,7 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
   }
 
   openPanel(panel: Panel) {
+    if (panel === 'challenges') this.recordsTick.update((n) => n + 1);
     this.panel.set(panel);
     queueMicrotask(() => document.querySelector<HTMLElement>('.menu-panel button, .menu-panel input')?.focus());
   }
@@ -133,8 +161,8 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
     const was = this.panel();
     this.panel.set(null);
     this.openEntry.set(null);
-    queueMicrotask(() => this.nav?.nativeElement
-      .querySelector<HTMLButtonElement>(`[data-panel="${was}"]`)?.focus());
+    queueMicrotask(() => this.stage.nativeElement
+      .querySelector<HTMLButtonElement>(`nav [data-panel="${was}"]`)?.focus());
   }
 
   setQuality(quality: GraphicsQuality) {
@@ -167,10 +195,16 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
     this.depart(() => void this.gameState.continueGame());
   }
 
-  /** Boss Rush : Kofi puis le Gardien, sans exploration (débloqué en finissant l'histoire). */
+  /** Challenges, Épreuve des gardiens : Kofi puis le Gardien, sans exploration (débloquée en finissant l'histoire). */
   bossRush() {
     if (!this.challenge.rushUnlocked()) return;
-    this.depart(() => this.gameState.startBossRush(['ford', 'sluice']), false);
+    this.depart(() => this.gameState.startBossRush([...OFFICIAL_BOSS_RUSH]), false);
+  }
+
+  /** Challenges, combat singulier : un seul boss, chronométré, record à battre. */
+  singleFight(id: EncounterId) {
+    if (!this.fights().find((fight) => fight.id === id)?.open) return;
+    this.depart(() => this.gameState.startBossRush([id]), false);
   }
 
   devBossRush() {

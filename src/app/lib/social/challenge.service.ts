@@ -67,7 +67,7 @@ export function beats(result: BossResult, target: BossResult) {
 /**
  * Chronomètre chaque combat de boss, produit les URL de défi
  * (`?defi=…`, sans aucune donnée personnelle), lit le défi reçu et garde le
- * déblocage du Boss Rush et les records sur cet appareil.
+ * déblocage de l’Épreuve des gardiens (Challenges) et les records sur cet appareil.
  */
 @Injectable({ providedIn: 'root' })
 export class ChallengeService {

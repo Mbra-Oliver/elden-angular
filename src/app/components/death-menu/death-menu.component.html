@@ -13,7 +13,7 @@
         @if (gameService.mode() === 'story') {
           <p class="epilogue">{{ gameService.ending() }}</p>
         } @else if (gameService.mode() === 'rush') {
-          <p class="epilogue">Boss Rush terminé en {{ formatTime(challenge.rushTotal()) }}.</p>
+          <p class="epilogue">Challenge terminé en {{ formatTime(challenge.rushTotal()) }}.</p>
         } @else {
           @let target = challenge.target();
           @let last = challenge.results().at(-1);
@@ -49,7 +49,7 @@
           }
         }
         @if (gameService.mode() === 'story' && challenge.rushUnlocked()) {
-          <p class="unlock">Boss Rush débloqué dans le menu principal.</p>
+          <p class="unlock">Épreuve des gardiens débloquée dans Challenges.</p>
         }
       }
       <nav class="death-options">

@@ -22,37 +22,29 @@
       <p class="era">Feyiase · 1701</p>
     </header>
 
-    @if (challenge.incoming(); as received) {
-      <section class="challenge-card" aria-label="Défi reçu">
-        <strong>Défi reçu</strong>
-        <p>Un voyageur a vaincu {{ bossNames[received.boss] }} en {{ formatTime(received.time) }}, {{ received.hits }} coup{{ received.hits > 1 ? 's' : '' }} reçu{{ received.hits > 1 ? 's' : '' }}, {{ received.flasks }} mixture{{ received.flasks > 1 ? 's' : '' }} de soin.</p>
-        <div>
-          <button type="button" class="link" (click)="acceptChallenge(received)">Relever le défi</button>
-          <button type="button" class="link" (click)="challenge.dismissIncoming()">Plus tard</button>
-        </div>
-      </section>
-    }
-
-    <nav #nav aria-label="Menu principal" [attr.inert]="panel() ? '' : null">
+    <nav #nav class="main-nav" aria-label="Menu principal" [attr.inert]="panel() ? '' : null">
       @if (hasSave()) {
-        <button type="button" (click)="continue()">Continuer</button>
+        <button type="button" class="primary" (click)="continue()">
+          Continuer <small>Reprendre au dernier foyer</small>
+        </button>
       }
-      <button type="button" (click)="newLineage()">Nouvelle lignée</button>
-      <button type="button" data-panel="codex" (click)="openPanel('codex')">Chroniques et reliques</button>
-      <button type="button" class="duel-entry" (click)="openDuel()">Duel d’honneur</button>
+      <button type="button" [class.primary]="!hasSave()" (click)="newLineage()">
+        Nouvelle lignée <small>Feyiase, 1701 : le récit depuis le début</small>
+      </button>
+      <button type="button" data-panel="challenges" (click)="openPanel('challenges')">
+        Challenges
+        @if (challenge.incoming()) { <em class="badge">Défi reçu</em> }
+        <small>Les gardiens à la suite, chronomètre en main</small>
+      </button>
+      <button type="button" (click)="openDuel()">
+        Duel d’honneur <small>Contre un autre guerrier</small>
+      </button>
+    </nav>
+    <nav class="minor-nav" aria-label="Menu secondaire" [attr.inert]="panel() ? '' : null">
+      <button type="button" data-panel="codex" (click)="openPanel('codex')">Chroniques</button>
+      <span aria-hidden="true">◆</span>
       <button type="button" data-panel="settings" (click)="openPanel('settings')">Paramètres</button>
     </nav>
-    @if (dev) {
-      <section class="dev-rush" aria-label="Mode dev Boss Rush" [attr.inert]="panel() ? '' : null">
-        <strong>Mode dev · Ruée des boss</strong>
-        <button type="button" class="dev-all" (click)="devBossRush()">Enchaîner les {{ devBosses.length }} boss</button>
-        <div class="dev-bosses">
-          @for (boss of devBosses; track boss.id) {
-            <button type="button" (click)="devBoss(boss.id)">{{ boss.name }}</button>
-          }
-        </div>
-      </section>
-    }
   </div>
 
   @switch (panel()) {
@@ -85,11 +77,74 @@
             </li>
           }
         </ul>
-        @if (challenge.rushUnlocked()) {
-          <div class="trial">
-            <p>Les gardiens du Pra t’attendent encore, l’un après l’autre.</p>
-            <button type="button" class="link" (click)="bossRush()">Épreuve des gardiens (Boss Rush)</button>
-          </div>
+      </section>
+    }
+    @case ('challenges') {
+      <section class="menu-panel wide" role="dialog" aria-modal="true" aria-labelledby="challenges-title">
+        <header>
+          <h2 id="challenges-title">Challenges</h2>
+          <button type="button" class="close" (click)="closePanel()" aria-label="Fermer">✕</button>
+        </header>
+        <p class="lead">Ni exploration ni récit : l’arène, le gardien, et le temps qui court. Les mixtures et les flèches sont rendues à chaque combat, pas tes forces.</p>
+
+        @if (challenge.incoming(); as received) {
+          <article class="received">
+            <span class="kind">Défi reçu</span>
+            <strong>{{ bossNames[received.boss] }}</strong>
+            <p>Un voyageur l’a vaincu en <b>{{ formatTime(received.time) }}</b>,
+              {{ received.hits === 0 ? 'sans être touché' : received.hits + ' coup' + (received.hits > 1 ? 's' : '') + ' reçu' + (received.hits > 1 ? 's' : '') }},
+              {{ received.flasks === 0 ? 'sans mixture' : received.flasks + ' mixture' + (received.flasks > 1 ? 's' : '') }}.</p>
+            <div class="actions">
+              <button type="button" class="go" (click)="acceptChallenge(received)">Relever le défi</button>
+              <button type="button" class="quiet" (click)="challenge.dismissIncoming()">Plus tard</button>
+            </div>
+          </article>
+        }
+
+        <article class="trial" [class.locked]="!challenge.rushUnlocked()">
+          <span class="kind">Épreuve des gardiens</span>
+          <strong>{{ rushNames }}</strong>
+          @if (challenge.rushUnlocked()) {
+            <p>Les gardiens du Pra, l’un après l’autre, sans retour au foyer. Un seul chrono pour toute l’épreuve.</p>
+            <button type="button" class="go" (click)="bossRush()">Entrer dans l’arène</button>
+          } @else {
+            <p class="lock">S’ouvre quand l’eau revient au puits, à la fin du récit.</p>
+          }
+        </article>
+
+        <h3>Combats singuliers</h3>
+        <ul class="fights">
+          @for (fight of fights(); track fight.id) {
+            <li>
+              <button type="button" class="fight" [disabled]="!fight.open" (click)="singleFight(fight.id)">
+                <span class="who">
+                  <strong>{{ fight.name }}</strong>
+                  <small>{{ fight.open ? fight.epithet : 'Pas encore croisé' }}</small>
+                </span>
+                <span class="best">
+                  @if (fight.record; as r) {
+                    <b>{{ formatTime(r.time) }}</b>
+                    <small>{{ r.hits === 0 ? 'intouché' : r.hits + ' coup' + (r.hits > 1 ? 's' : '') }}</small>
+                  } @else {
+                    <small>{{ fight.open ? 'Aucun record' : '◆' }}</small>
+                  }
+                </span>
+              </button>
+            </li>
+          }
+        </ul>
+        <p class="note">Chaque victoire donne un lien de défi à partager. Les records restent sur cet appareil.</p>
+
+        @if (dev) {
+          <section class="dev-rush" aria-label="Challenges, mode dev">
+            <strong>Dev · toutes les épreuves</strong>
+            <button type="button" class="dev-all" (click)="devBossRush()">Enchaîner les {{ devBosses.length }} boss</button>
+            <div class="dev-bosses">
+              @for (boss of devBosses; track boss.id) {
+                <button type="button" (click)="devBoss(boss.id)">{{ boss.name }}</button>
+              }
+            </div>
+          </section>
         }
       </section>
     }

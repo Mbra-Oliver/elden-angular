@@ -106,15 +106,16 @@ h1 span {
   text-transform: uppercase;
 }
 
-nav {
+.main-nav {
   display: grid;
   justify-items: start;
-  gap: clamp(2px, 1vh, 10px);
+  gap: clamp(0px, 0.6vh, 8px);
 }
 
-nav button,
+.main-nav button,
 .link {
   position: relative;
+  display: grid;
   min-height: 48px;
   padding: 6px 0 6px 26px;
   border: 0;
@@ -128,17 +129,52 @@ nav button,
   text-align: left;
   text-shadow: 0 1px 10px #000;
   cursor: pointer;
-  opacity: 0.78;
+  opacity: 0.74;
   transition: opacity 0.25s, color 0.25s, transform 0.25s;
 }
 
+.main-nav button.primary { opacity: 0.95; font-size: clamp(22px, 2.7vw, 32px); }
+
+/* Sous-titre : n'apparaît que sur l'option choisie, pour garder le menu nu. */
+.main-nav small {
+  max-height: 0;
+  overflow: hidden;
+  color: #c9b28a;
+  font-size: 0.56em;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transition: max-height 0.25s, opacity 0.25s;
+}
+
+.main-nav button:hover small,
+.main-nav button:focus-visible small { max-height: 1.6em; opacity: 1; }
+
+.badge {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 12px;
+  padding: 2px 7px;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  font: 600 10px/1.4 system-ui, sans-serif;
+  font-style: normal;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  animation: badge-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes badge-pulse { 50% { border-color: #e5c17b44; } }
+
 /* Losange or devant l'option choisie, à la place d'un cadre. */
-nav button::before,
+.main-nav button::before,
 .link::before {
   content: "";
   position: absolute;
   left: 4px;
-  top: 50%;
+  top: 24px;
   width: 7px;
   height: 7px;
   border: 1px solid var(--gold);
@@ -146,8 +182,8 @@ nav button::before,
   transition: transform 0.25s;
 }
 
-nav button:hover,
-nav button:focus-visible,
+.main-nav button:hover,
+.main-nav button:focus-visible,
 .link:hover,
 .link:focus-visible {
   outline: none;
@@ -156,12 +192,43 @@ nav button:focus-visible,
   transform: translateX(4px);
 }
 
-nav button:hover::before,
-nav button:focus-visible::before,
+.main-nav button:hover::before,
+.main-nav button:focus-visible::before,
 .link:hover::before,
 .link:focus-visible::before {
   transform: translateY(-50%) rotate(45deg) scale(1);
 }
+
+/* Chroniques et Paramètres : une ligne discrète sous le menu. */
+.minor-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: calc(-1 * clamp(4px, 2vh, 20px));
+  padding-left: 22px;
+}
+
+.minor-nav span { color: #e5c17b66; font-size: 8px; }
+
+.minor-nav button {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: #d9ccb2;
+  font-family: inherit;
+  font-size: clamp(14px, 1.4vw, 17px);
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px #000;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.25s, color 0.25s;
+}
+
+.minor-nav button:hover,
+.minor-nav button:focus-visible { outline: none; opacity: 1; color: var(--gold); }
 
 /* ------------------------------------------------------------ PANNEAUX */
 
@@ -244,8 +311,6 @@ nav button:focus-visible::before,
 .thread-line { margin: 0 0 10px; color: #d6a85f; font-size: 12px; letter-spacing: 0.06em; }
 .entries .signification { color: #edbb78; font-style: italic; }
 
-.trial { margin-top: 16px; border-top: 1px solid #e5c17b33; padding-top: 10px; color: #cdbd9f; }
-.trial .link, .challenge-card .link { font-size: 17px; }
 
 fieldset { border: 0; margin: 0 0 14px; padding: 0; }
 legend, label { color: #d9ccb2; }
@@ -275,18 +340,6 @@ summary { min-height: 40px; line-height: 40px; cursor: pointer; color: var(--gol
 dl { margin: 6px 0 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; }
 dd { margin: 0; color: #e7c98f; text-align: right; }
 
-.challenge-card {
-  max-width: 420px;
-  padding: 10px 14px;
-  background: #0f0a08cc;
-  border-left: 2px solid var(--gold);
-  font-family: system-ui, sans-serif;
-}
-
-.challenge-card strong { color: var(--gold); }
-.challenge-card p { margin: 4px 0 4px; font-size: 14px; }
-.challenge-card div { display: flex; gap: 18px; }
-
 /* Voile noir final : le jeu s'ouvre ensuite en fondu sur Kwadwo. */
 .veil {
   position: absolute;
@@ -298,7 +351,6 @@ dd { margin: 0; color: #e7c98f; text-align: right; }
 }
 
 .veil.on { opacity: 1; }
-nav button.duel-entry { color: #f0d39a; border-color: #b88a45; }
 
 .dev-rush {
   display: grid;
@@ -349,13 +401,111 @@ nav button.duel-entry { color: #f0d39a; border-color: #b88a45; }
 @media (max-height: 480px) {
   .title-content { gap: 10px; }
   h1 { font-size: clamp(26px, 5vw, 48px); }
-  nav button { min-height: 44px; font-size: 18px; }
+  .main-nav button { min-height: 40px; padding-block: 3px; font-size: 18px; }
+  .main-nav button.primary { font-size: 21px; }
+  .main-nav button::before { top: 20px; }
+  .main-nav small { display: none; }
+  .era { display: none; }
+  .minor-nav { margin-top: -6px; }
+  .minor-nav button { min-height: 40px; font-size: 13px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .title-content, .backdrop, .veil, nav button { transition: none; }
+  .title-content, .backdrop, .veil, .main-nav button, .main-nav small { transition: none; }
+  .badge { animation: none; }
   .menu-panel { animation: none; }
 }
 
 label.toggle { display: flex; align-items: center; gap: 10px; min-height: 48px; }
 label.toggle input { grid-column: auto; min-height: 0; width: 20px; height: 20px; }
+
+/* ---------------------------------------------------------- CHALLENGES */
+
+.menu-panel.wide { width: min(520px, calc(100vw - 32px)); }
+
+.lead { margin: 0 0 14px; color: #cdbd9f; line-height: 1.5; }
+
+.received,
+.trial {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-left: 2px solid var(--gold);
+  background: #e5c17b10;
+}
+
+.received { background: #e5c17b1c; }
+.kind { color: #b08d55; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; }
+.received strong,
+.trial strong { color: var(--bone); font: 500 21px/1.15 "Cormorant Garamond", Garamond, "Times New Roman", serif; }
+.received p,
+.trial p { margin: 2px 0 6px; color: #e7dcc6; line-height: 1.45; }
+.received b { color: var(--gold); font-variant-numeric: tabular-nums; }
+.trial.locked { border-left-color: #e5c17b44; background: #ffffff06; }
+.trial.locked strong { color: #a8977a; }
+.lock { color: #a8977a !important; font-style: italic; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.go,
+.quiet {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--gold);
+  background: #e5c17b22;
+  color: var(--gold);
+  font: 600 13px/1 system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  justify-self: start;
+}
+
+.quiet { border-color: #e5c17b44; background: none; color: #d9ccb2; }
+.go:hover, .go:focus-visible { outline: none; background: #e5c17b3a; }
+.quiet:hover, .quiet:focus-visible { outline: none; color: var(--gold); }
+
+.menu-panel h3 {
+  margin: 4px 0 8px;
+  color: var(--gold);
+  font: 500 18px/1.2 "Cormorant Garamond", Garamond, "Times New Roman", serif;
+  letter-spacing: 0.06em;
+}
+
+.fights { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+
+.fight {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 12px;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: #ffffff08;
+  color: var(--bone);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fight:not(:disabled):hover,
+.fight:not(:disabled):focus-visible { outline: none; border-left-color: var(--gold); background: #e5c17b14; }
+.fight:disabled { cursor: default; opacity: 0.45; }
+.fight .who, .fight .best { display: grid; gap: 2px; }
+.fight .best { text-align: right; }
+.fight small { color: #a8977a; }
+.fight b { color: var(--gold); font-variant-numeric: tabular-nums; }
+
+.note { margin: 12px 0 0; color: #a8977a; font-size: 12px; line-height: 1.45; }
+
+.menu-panel .dev-rush { margin-top: 16px; width: auto; max-height: none; }
+
+@media (max-height: 480px) {
+  .lead { display: none; }
+  .received, .trial { padding: 8px 12px; margin-bottom: 10px; }
+  .fight { min-height: 46px; }
+}
