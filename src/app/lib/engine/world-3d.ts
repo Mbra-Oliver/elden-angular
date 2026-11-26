@@ -689,9 +689,10 @@ export class World3D {
     let weapon: { base: T.Vector3; tip: T.Vector3 } | null = null;
     let glint: T.Vector3 | null = null;
     if (enemy && duelist) {
+      let blade = true;
       if (this.bossKind === 'champion') {
-        // Badu : la lame de l'afena.
-        this.champion.bladeSegment(this.weaponBase, this.weaponTip);
+        // Badu : la lame de l'afena (ou la bouche du mousquet, sans traînée, quand il tire).
+        blade = this.champion.bladeSegment(this.weaponBase, this.weaponTip);
       } else {
         // Bâton tenu par le bras droit : axe local (0, 0.18, 0.98) autour de (0, -8.5, 10).
         this.duelist.root.updateMatrixWorld(true);
@@ -700,7 +701,7 @@ export class World3D {
         this.duelist.arms[1].localToWorld(this.weaponBase);
         this.duelist.arms[1].localToWorld(this.weaponTip);
       }
-      weapon = { base: this.weaponBase, tip: this.weaponTip };
+      weapon = blade ? { base: this.weaponBase, tip: this.weaponTip } : null;
       glint = this.weaponTip;
     } else if (enemy) {
       glint = this.glintPoint.set(enemy.x + enemy.facingX * 20, 16, enemy.y + enemy.facingY * 20);

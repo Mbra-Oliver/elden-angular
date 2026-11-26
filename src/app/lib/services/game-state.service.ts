@@ -82,11 +82,11 @@ export interface CombatHud {
 
 /** Cause de la mort et conseil, par coup de boss. [SUPPOSITION] formulations à relire. */
 const KILL_HINTS: Partial<Record<string, string>> = {
-  shot: 'Abattu par le mousquet de Badu. Quand la fumée noire sort du canon, esquive de côté au dernier moment.',
+  shot: 'Abattu par le mousquet de Badu. Quand il le tire de son dos et que la fumée noire sort du canon, esquive de côté au dernier moment.',
   reap: 'Fauché par la double faucheuse. Esquive vers l’avant, à travers la lame, pour finir dans son flanc.',
   judgment: 'Écrasé par le jugement retardé. Attends que la lame commence à descendre avant d’esquiver.',
   feint: 'Pris par la feinte. Quand il lève son sabre, ne frappe pas tant que le coup n’est pas parti.',
-  backhand: 'Frappé par le revers de crosse. Ne reste pas collé dans son dos.',
+  backhand: 'Frappé par le revers. Ne reste pas collé dans son dos.',
   furrow: 'Fauché par le sillon d’étincelles. Esquive en diagonale quand il relève la lame.',
   leap: 'Écrasé par la chute du roi. Roule sous lui pendant qu’il est en l’air.',
   mill: 'Pris dans le moulinet. Reste hors de portée des trois premiers coups, esquive le quatrième.',

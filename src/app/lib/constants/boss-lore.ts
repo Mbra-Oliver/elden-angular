@@ -43,14 +43,14 @@ export const BOSS_LORE: Record<BossId, BossLore> = {
     chapter: 'Chapitre 1 · 1701 · La crête de Feyiase',
     lore: [
       'Badu Ofosu est l’afenasoafo, le porte-glaive du roi du Denkyira : il porte l’afena royal aux audiences et il exécute ses sentences. Quand l’armée s’effondre à Feyiase et que Ntim Gyakari est sur le point d’être pris, il refuse de fuir : il tient seul la crête pour couvrir la retraite des derniers fidèles.',
-      'Ce n’est pas un furieux. C’est un vétéran froid, qui jauge son adversaire, économise ses gestes et cherche à briser son rythme. Il porte le batakari de guerre teint à l’indigo, couvert de talismans cousus, et la calotte de cuir à disque d’or de sa charge. Dans la main droite, l’afena du roi, sabre à lame large et poignée dorée ; dans la gauche, un long mousquet de traite.',
-      'À mi-combat, quand il comprend que le duel est à mort, il brise la crosse de son mousquet contre la roche et prend l’afena à deux mains.',
+      'Ce n’est pas un furieux. C’est un vétéran froid, qui jauge son adversaire, économise ses gestes et cherche à briser son rythme. Il porte le batakari de guerre teint à l’indigo, couvert de talismans cousus, et la calotte de cuir à disque d’or de sa charge. Il ne tient qu’une arme à la fois : l’afena du roi, sabre à lame large et poignée dorée, pour le corps à corps ; le mousquet de traite, qu’il porte en bandoulière, pour tirer de loin.',
+      'À mi-combat, quand il comprend que le duel est à mort, il tire le mousquet de son dos, le brise contre la roche et prend l’afena à deux mains.',
     ],
     phases: {
       1: {
         title: 'Le maître d’armes',
         line: '« Approche, Asante. Je t’ai entendu venir depuis le ravin. »',
-        design: 'Il garde ses distances : tir de mousquet (1,2 s de visée, 2,5 s de rechargement), double faucheuse, jugement retardé, feinte à la crosse, revers de crosse si on reste dans son dos.',
+        design: 'Il garde ses distances : tir de mousquet (1,2 s de visée, 2,5 s de rechargement), double faucheuse, jugement retardé, feinte, revers si on reste dans son dos ; il range l’afena et tire le mousquet de son dos avant chaque tir.',
       },
       2: {
         title: 'La fureur du dernier bastion',
