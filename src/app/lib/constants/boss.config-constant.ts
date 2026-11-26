@@ -66,6 +66,51 @@ export const BOSS_PHASE_PROFILE: Record<BossId, Record<1 | 2 | 3, BossPhaseProfi
     2: { timeScale: 1.1, emissive: '#2a8ca0', emissiveIntensity: 1, attacks: ['surge', 'slam', 'charge', 'tide', 'combo'] },
     3: { timeScale: 1.2, emissive: '#58c6ff', emissiveIntensity: 1, attacks: ['surge', 'slam', 'charge', 'tide', 'combo', 'sweep'] },
   },
+  sentinel: {
+    1: { timeScale: 1, emissive: '#1c4a55', emissiveIntensity: 0.7, attacks: ['surge', 'slam', 'charge'] },
+    2: { timeScale: 1.08, emissive: '#2f7f86', emissiveIntensity: 0.85, attacks: ['surge', 'slam', 'charge', 'tide', 'combo'] },
+    3: { timeScale: 1.18, emissive: '#7ad0c2', emissiveIntensity: 1, attacks: ['surge', 'slam', 'charge', 'tide', 'combo', 'sweep'] },
+  },
+  hunter: {
+    1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['slash', 'slam', 'charge'] },
+    2: { timeScale: 1.1, emissive: '#6b2d10', emissiveIntensity: 0.5, attacks: ['slash', 'slam', 'charge', 'combo'] },
+    3: { timeScale: 1.2, emissive: '#c8541c', emissiveIntensity: 0.8, attacks: ['slash', 'slam', 'charge', 'combo', 'sweep'] },
+  },
+  harvester: {
+    1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['reap', 'judgment', 'feint'] },
+    2: { timeScale: 1.11, emissive: '#7a5b12', emissiveIntensity: 0.6, attacks: ['reap', 'judgment', 'feint', 'furrow', 'leap'] },
+    3: { timeScale: 1.2, emissive: '#d5a92c', emissiveIntensity: 0.9, attacks: ['reap', 'judgment', 'furrow', 'leap', 'mill', 'thrust'] },
+  },
+  oracle: {
+    1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['shot', 'judgment', 'feint', 'backhand'] },
+    2: { timeScale: 1.09, emissive: '#3b1d66', emissiveIntensity: 0.55, attacks: ['shot', 'judgment', 'feint', 'thrust', 'backhand'] },
+    3: { timeScale: 1.17, emissive: '#8d62d6', emissiveIntensity: 0.9, attacks: ['shot', 'judgment', 'thrust', 'leap', 'mill'] },
+  },
+  berserker: {
+    1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['slam', 'charge', 'combo'] },
+    2: { timeScale: 1.12, emissive: '#8a1810', emissiveIntensity: 0.75, attacks: ['slam', 'charge', 'combo', 'sweep', 'mill'] },
+    3: { timeScale: 1.25, emissive: '#e03a1e', emissiveIntensity: 1, attacks: ['slash', 'slam', 'charge', 'combo', 'sweep', 'mill'] },
+  },
+  tideholder: {
+    1: { timeScale: 1, emissive: '#1c5b70', emissiveIntensity: 0.8, attacks: ['surge', 'tide', 'slam'] },
+    2: { timeScale: 1.09, emissive: '#3b91b4', emissiveIntensity: 1, attacks: ['surge', 'tide', 'slam', 'combo', 'charge'] },
+    3: { timeScale: 1.19, emissive: '#8ce0ff', emissiveIntensity: 1.1, attacks: ['surge', 'tide', 'slam', 'combo', 'charge', 'sweep'] },
+  },
+  ashafo: {
+    1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['slash', 'combo', 'charge'] },
+    2: { timeScale: 1.1, emissive: '#8a4a08', emissiveIntensity: 0.65, attacks: ['slash', 'combo', 'charge', 'sweep'] },
+    3: { timeScale: 1.2, emissive: '#e08a1c', emissiveIntensity: 0.95, attacks: ['slash', 'combo', 'charge', 'sweep', 'mill'] },
+  },
+  ironmouth: {
+    1: { timeScale: 1, emissive: '#33363a', emissiveIntensity: 0.5, attacks: ['slam', 'charge', 'surge'] },
+    2: { timeScale: 1.08, emissive: '#69737c', emissiveIntensity: 0.8, attacks: ['slam', 'charge', 'surge', 'tide', 'combo'] },
+    3: { timeScale: 1.17, emissive: '#b9c6cf', emissiveIntensity: 1, attacks: ['slam', 'charge', 'surge', 'tide', 'combo', 'sweep'] },
+  },
+  nightblade: {
+    1: { timeScale: 1, emissive: '#000000', emissiveIntensity: 0, attacks: ['slash', 'feint', 'backhand'] },
+    2: { timeScale: 1.12, emissive: '#241a46', emissiveIntensity: 0.6, attacks: ['slash', 'feint', 'backhand', 'thrust', 'leap'] },
+    3: { timeScale: 1.22, emissive: '#6f4cc4', emissiveIntensity: 0.95, attacks: ['slash', 'feint', 'thrust', 'leap', 'mill', 'judgment'] },
+  },
 };
 
 export type BossState =

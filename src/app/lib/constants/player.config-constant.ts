@@ -10,7 +10,7 @@ export const PLAYER_CONFIG = {
 
   //Mouvement
 
-  speed: 220, // x pixel par seconde (pas par frame)
+  speed: 165, // x pixel par seconde (pas par frame)
 
   //Souffle stamina.
 
@@ -37,13 +37,13 @@ export const PLAYER_CONFIG = {
 
   //Sprint : maintenir Shift (un appui bref, relâché avant sprintDelay, déclenche la roulade)
   sprintDelay: 220, // ms
-  sprintSpeed: 340,
+  sprintSpeed: 255,
   sprintStaminaPerSecond: 16,
 
   //Inertie et verrouillage
   acceleration: 24, // Réactivité vers la vitesse voulue (1/s)
   deceleration: 34,
-  lockedSpeedFactor: 0.82, // Marche plus posée quand on tourne autour de l'ennemi
+  lockedSpeedFactor: 0.78, // Marche plus posée quand on tourne autour de l'ennemi
 
   //Attaque
 

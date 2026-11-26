@@ -303,7 +303,7 @@ export class PlayerAnimator {
       this.forward += ((dx * fx + dy * fy) * unit - this.forward) * blend;
       this.side += ((dx * fy - dy * fx) * unit - this.side) * blend;
       this.lean += ((this.forward - prevForward) * 8 - this.lean) * (1 - Math.exp(-6 * dt));
-      const runGoal = state === 'moving' || UPPER_BODY_STATES.has(state) ? smooth(225, 335, this.speed) : 0;
+      const runGoal = state === 'moving' || UPPER_BODY_STATES.has(state) ? smooth(175, 255, this.speed) : 0;
       this.run += (runGoal - this.run) * (1 - Math.exp(-(runGoal > this.run ? 12 : 7) * dt));
       this.stepGait(state, travel, dt);
     }

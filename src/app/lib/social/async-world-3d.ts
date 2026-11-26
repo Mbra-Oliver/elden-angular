@@ -1,4 +1,15 @@
 import * as T from 'three';
+import { HIP_X } from '../engine/human-body';
+import { bakeHuman, coloredGeometry } from '../engine/human-bake';
+import { plainOutfit } from '../engine/human-outfits';
+
+/** Silhouette des fantômes : géométries partagées par tous (une seule cuisson). */
+let phantomGeometry: { upper: T.BufferGeometry; legs: T.BufferGeometry[] } | null = null;
+function phantomShape() {
+  const bake = (bones: number[]) => coloredGeometry(bakeHuman({ outfit: (m) => plainOutfit(m, '#808080'), bones }));
+  phantomGeometry ??= { upper: bake([0, 1, 2, 3, 4, 5, 6]), legs: [bake([7]), bake([8])] };
+  return phantomGeometry;
+}
 import type { TracePoint } from './async-world.backend';
 import { AsyncWorldService, TRACE_STEP } from './async-world.service';
 
@@ -193,15 +204,16 @@ export class AsyncWorld3D {
       return mesh;
     };
     root.add(body);
-    add(body, new T.CylinderGeometry(4.6, 3.6, 15, 7), 0, 21, 0);
-    add(body, new T.SphereGeometry(3.3, 8, 6), 0, 32, 0.4);
-    const spear = add(body, new T.CylinderGeometry(0.45, 0.45, 34, 5), 5.5, 22, 4);
+    // Même corps humain que les vivants (human-body.ts), cuit une fois : buste ici, jambes plus bas.
+    const shape = phantomShape();
+    add(body, shape.upper, 0, 0, 0);
+    const spear = add(body, new T.CylinderGeometry(0.45, 0.45, 34, 5), 4.2, 18, 4);
     spear.rotation.x = Math.PI / 2 - 0.35;
     const legs: T.Group[] = [];
     for (const side of [-1, 1]) {
       const leg = new T.Group();
-      leg.position.set(side * 2.4, 14, 0);
-      add(leg, new T.CylinderGeometry(1.5, 1.1, 13, 5), 0, -6.5, 0);
+      leg.position.set(side * HIP_X, 14, 0);
+      add(leg, shape.legs[side < 0 ? 0 : 1], -side * HIP_X, -14, 0);
       root.add(leg);
       legs.push(leg);
     }

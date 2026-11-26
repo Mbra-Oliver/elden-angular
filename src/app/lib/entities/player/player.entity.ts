@@ -290,8 +290,7 @@ export class PlayerEntity {
     // Sprint (Shift maintenu) tant qu'il reste du souffle ; marche plus posée
     // quand on tourne autour d'un ennemi verrouillé.
     const locked = heading !== null && !!target;
-    const stickSprint = this.input.analogActive() && magnitude > 0.92;
-    this.sprinting = length > 0 && (this.shift.sprinting || stickSprint) && data.stamina > 0;
+    this.sprinting = length > 0 && this.shift.sprinting && data.stamina > 0;
     const grade = length > 0 ? this.terrain.gradeFactor(data.x + PLAYER_CONFIG.size / 2,
       data.y + PLAYER_CONFIG.size / 2, normX, normY) : 1;
     const speed = (this.sprinting ? PLAYER_CONFIG.sprintSpeed

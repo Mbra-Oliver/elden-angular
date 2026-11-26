@@ -27,7 +27,8 @@ const DEFAULTS: GameSettings = {
   sfx: 0.9,
   sensitivity: 1,
   autoLock: true,
-  cameraMode: typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? 'shoulder' : 'wide',
+  // Vue par-dessus l'épaule par défaut, sur ordinateur comme sur mobile (demande joueur).
+  cameraMode: 'shoulder',
 };
 
 /** Échelle de rendu par qualité, appliquée sous le plafond de densité (display.ts). */
@@ -69,6 +70,8 @@ function load(): GameSettings {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<GameSettings> | null;
     // Ancien défaut enregistré sans que le joueur l'ait choisi : on applique le nouveau.
     if (raw?.music === 0.55) delete raw.music;
+    // Caméra : l'ancien défaut « large » enregistré sans choix du joueur passe à l'épaule.
+    if (raw && !(raw as { cameraChosen?: boolean }).cameraChosen) delete raw.cameraMode;
     return { ...DEFAULTS, ...(raw ?? {}) };
   } catch {
     return { ...DEFAULTS };

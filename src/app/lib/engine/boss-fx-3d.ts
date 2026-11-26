@@ -1,4 +1,6 @@
 import * as T from 'three';
+import { BOSS_FORM, type BossId } from '../constants/boss-lore';
+import { PERILOUS_ATTACKS } from '../constants/immersion.config-constant';
 import type { Actor3D } from './world-3d';
 
 /**
@@ -25,9 +27,20 @@ const FOG_F = `
  * écume → bleu kente pour le Gardien. À faire relire par une personne
  * qui connaît la culture akan avant la version finale.
  */
-const BOSS_COLORS = {
-  duelist: [new T.Color('#D4A017'), new T.Color('#E0661C'), new T.Color('#B3261E')],
-  guardian: [new T.Color('#CFE3DC'), new T.Color('#5FA8C8'), new T.Color('#2F5D8A')],
+const colors = (a: string, b: string, c: string) => [new T.Color(a), new T.Color(b), new T.Color(c)];
+const BOSS_COLORS: Record<BossId, T.Color[]> = {
+  duelist: colors('#D4A017', '#E0661C', '#B3261E'),
+  guardian: colors('#CFE3DC', '#5FA8C8', '#2F5D8A'),
+  champion: colors('#5A2A18', '#A6381C', '#E45A24'),
+  sentinel: colors('#4E8C86', '#52B5A4', '#8FE3D2'),
+  hunter: colors('#B9862E', '#D8A23A', '#E45A24'),
+  harvester: colors('#8A7624', '#C7A12E', '#F0C64A'),
+  oracle: colors('#4B2A78', '#7950B8', '#B98CE6'),
+  berserker: colors('#7C1C12', '#C33A1A', '#F06024'),
+  tideholder: colors('#2C6D86', '#4BB0D0', '#9BE8FF'),
+  ashafo: colors('#A66014', '#D18A1C', '#F0B43A'),
+  ironmouth: colors('#4A5157', '#7C8790', '#C2D0D8'),
+  nightblade: colors('#2B2050', '#523A8C', '#9A75E0'),
 };
 /** Au-delà de 1 : la passe de bloom existante fait briller l'aura sans second composer. */
 const HDR = 1.8;
@@ -88,10 +101,7 @@ export function attachHeroRim(root: T.Object3D, color = '#ffb070', strength = 0.
 const EMBERS = 140;
 
 /** Attaques à esquiver (pas de garde possible) : même liste que les sons d'éclat. */
-const PERILOUS: Record<'duelist' | 'guardian', string[]> = {
-  duelist: ['charge', 'sweep'],
-  guardian: ['tide', 'surge'],
-};
+const PERILOUS: Record<BossId, readonly string[]> = PERILOUS_ATTACKS;
 
 /** Braises qui montent autour du boss + halo au sol. Intensité selon la phase. */
 class Aura {
@@ -170,7 +180,7 @@ class Aura {
     this.group.visible = false;
   }
 
-  update(pose: Actor3D | null, boss: 'duelist' | 'guardian', now: number, dt: number) {
+  update(pose: Actor3D | null, boss: BossId, now: number, dt: number) {
     this.group.visible = !!pose;
     if (!pose) return;
     const phase = Math.max(1, Math.min(3, pose.bossPhase ?? 1));
@@ -448,7 +458,7 @@ export class BossFx {
    * @param weapon pointe/base de l'arme en monde (duelliste) ou null
    * @param glintAt point où briller pendant le télégraphe
    */
-  update(pose: Actor3D | null, boss: 'duelist' | 'guardian', weapon: { base: T.Vector3; tip: T.Vector3 } | null,
+  update(pose: Actor3D | null, boss: BossId, weapon: { base: T.Vector3; tip: T.Vector3 } | null,
     glintAt: T.Vector3 | null, now: number, dt: number) {
     this.aura.update(pose, boss, now, dt);
     this.sparks.update(dt);
@@ -468,8 +478,9 @@ export class BossFx {
     // Liseré : plus vif à chaque phase, monte pendant l'armement, éclate au changement de phase.
     if (started && pose.state === 'shift') this.rimFlash = 1;
     this.rimFlash = Math.max(0, this.rimFlash - dt * 1.2);
-    const rim = this.rims[boss];
-    rim.uRimColor.value.copy(boss === 'guardian' && phase === 1 ? BRASS : color).multiplyScalar(HDR);
+    const form = BOSS_FORM[boss];
+    const rim = this.rims[form === 'guardian' ? 'guardian' : 'duelist'];
+    rim.uRimColor.value.copy(form === 'guardian' && phase === 1 ? BRASS : color).multiplyScalar(HDR);
     rim.uRim.value = 0.25 + phase * 0.2 + (pose.state === 'windup' ? pose.phase * 0.5 : 0) + this.rimFlash * 2;
 
     // Trainée d'arme pendant la phase active (et le moulinet).
@@ -484,7 +495,7 @@ export class BossFx {
       const heavy = attack === 'slam' || attack === 'surge' || attack === 'tide';
       if (heavy) {
         this.wave(pose.x, pose.y, attack === 'slam' ? 70 : 90, color, 0.55);
-        if (boss === 'guardian' && attack !== 'slam') {
+        if (form === 'guardian' && attack !== 'slam') {
           // Eau : deux anneaux de plus, décalés, comme une houle.
           this.wave(pose.x, pose.y, 80, color, 0.6, 0.12);
           this.wave(pose.x, pose.y, 70, color, 0.65, 0.24);

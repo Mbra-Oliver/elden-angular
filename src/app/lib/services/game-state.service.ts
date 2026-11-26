@@ -2,6 +2,7 @@ export type GameScreen = 'main-menu' | 'playing' | 'paused' | 'death' | 'victory
 
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { BOSS_CONFIG } from '../constants/boss.config-constant';
+import { ENCOUNTERS, type EncounterId } from '../constants/boss-encounters';
 import { PLAYER_CONFIG } from '../constants/player.config-constant';
 import {
   BOSS_ATTACKS,
@@ -48,7 +49,7 @@ import { BACKSTAB, HitWeight, TIME_DILATION, isPerilous } from '../constants/imm
 import { GameLoopService } from './game-loop.service';
 import { RendererService } from './renderer.service';
 import { CombatFxService, type ImpactMaterial, type StrikeStyle } from './combat-fx.service';
-import { MusicCue, MusicDirectorService } from '../audio/music-director.service';
+import { MusicCue, MusicDirectorService, type MusicZone } from '../audio/music-director.service';
 import { AudioEngineService } from '../audio/audio-engine.service';
 import { BaduSfx } from '../audio/badu-sfx';
 import { TrophyService } from '../trophies/trophy.service';
@@ -211,10 +212,15 @@ export class GameStateService {
   private readonly prologueDuel = signal(false);
   private readonly inCombat = computed(() =>
     this.chapter() === 'battle' || this.decision() !== null || this.prologueDuel());
-  /** Boss humain (rig de combattant) : Kofi au gué ou le porte-hache en 1701. */
-  private readonly humanBoss = computed(() => this.chapter() === 'battle' || this.prologueDuel());
+  private readonly humanBoss = computed(() => {
+    const encounter = this.encounter();
+    if (encounter) return ENCOUNTERS[encounter].form === 'human';
+    return this.chapter() === 'battle' || this.prologueDuel();
+  });
   /** Arène du combat en cours. */
   private duelArena() {
+    const encounter = this.encounter();
+    if (encounter) return ENCOUNTERS[encounter].arena;
     return this.prologueDuel() ? PROLOGUE_DUEL : this.chapter() === 'battle' ? FORD_DUEL : SLUICE_DUEL;
   }
   /** Annonce « vaincu » affichée pendant l'animation de mort du boss. */
@@ -252,15 +258,18 @@ export class GameStateService {
     !this.dialogue() && !this.decision());
   /** Libellé du bouton d'interaction. */
   readonly interactLabel = computed(() => this.restPrompt()?.label ?? this.prologue.prompt()?.label ?? 'Interagir');
+  private readonly activeEncounter = signal<EncounterId | null>(null);
   /** Boss affronté en ce moment (chronomètre des défis), null hors combat. */
-  readonly encounter = computed<'ford' | 'sluice' | 'champion' | null>(() =>
-    this.prologueDuel() ? 'champion' : this.chapter() === 'battle' ? 'ford' : this.decision() ? 'sluice' : null);
+  readonly encounter = computed<EncounterId | null>(() =>
+    this.activeEncounter() ??
+    (this.prologueDuel() ? 'champion' : this.chapter() === 'battle' ? 'ford' : this.decision() ? 'sluice' : null));
   /** Histoire, Boss Rush (boss à la suite) ou défi reçu par URL. */
   readonly mode = signal<'story' | 'rush' | 'challenge'>('story');
   /** Fenêtre d'interface ouverte (écriture d'un message) : la partie attend. */
   readonly uiLock = signal(false);
-  private rushPlan: ('ford' | 'sluice')[] = [];
-  private rushNext: ('ford' | 'sluice')[] = [];
+  private rushPlan: EncounterId[] = [];
+  private rushNext: EncounterId[] = [];
+  private readonly pendingEncounter = signal<EncounterId | null>(null);
   private rushTransition = 0;
   readonly story = computed(() => {
     if (this.prologueDuel()) {
@@ -396,6 +405,12 @@ export class GameStateService {
     if (screen === 'death') return { zone: 'silence', defeated: true };
     if (screen !== 'playing' && screen !== 'paused') return { zone: 'silence' };
     const paused = screen === 'paused';
+    const encounter = this.encounter();
+    if (encounter && this.mode() !== 'story') {
+      const silent = encounter === 'champion' && this.introTime > 0 && !this.baduClick;
+      const zone: MusicZone = silent ? 'silence' : ENCOUNTERS[encounter].music;
+      return { zone, paused };
+    }
     const chapter = this.chapter();
     // Entrée de Badu : silence absolu jusqu'au déclic du mousquet, puis les tambours explosent.
     if (chapter === 'prologue') {
@@ -416,31 +431,43 @@ export class GameStateService {
    * Boss Rush / défi : enchaîne les boss demandés sans l'exploration. Les PV
    * sont conservés d'un boss à l'autre, les mixtures et flèches rechargées.
    */
-  startBossRush(plan: ('ford' | 'sluice')[], mode: 'rush' | 'challenge' = 'rush') {
+  startBossRush(plan: EncounterId[], mode: 'rush' | 'challenge' = 'rush') {
     if (!plan.length) return;
     this.startGame();
     this.mode.set(mode);
     this.rushPlan = [...plan];
     this.rushNext = plan.slice(1);
-    if (plan[0] === 'sluice') this.enterSluice();
+    this.enterEncounter(plan[0]);
   }
 
-  private enterSluice() {
-    this.chapter.set('village');
-    this.visited.set(2);
-    this.decision.set('expose');
+  private enterEncounter(id: EncounterId) {
+    const config = ENCOUNTERS[id];
+    const arena = config.arena;
+    this.activeEncounter.set(id);
+    this.pendingEncounter.set(null);
+    this.chapter.set(config.boss === 'champion' ? 'prologue' : config.form === 'guardian' ? 'village' : 'battle');
+    this.prologueDuel.set(config.boss === 'champion');
+    this.visited.set(config.form === 'guardian' ? 2 : 0);
+    this.decision.set(config.form === 'guardian' ? 'expose' : null);
     this.dialogueId.set(null);
     this.counterTime.set(0);
     this.bossStore.reset();
-    this.bossEntity.configure(false);
+    this.bossEntity.configure(config.boss);
     this.playerEntity.resetCombat();
     this.groundEffects.reset();
     this.arrows.reset();
     this.equipment.refill();
-    this.terrain.setArena(SLUICE_DUEL);
+    this.terrain.setArena(arena);
+    this.bossRewarded = false;
+    this.defeatShot = false;
+    this.baduClick = false;
     const half = PLAYER_CONFIG.size / 2;
     this.playerStore.update({
-      x: GATE.x + 20 - half, y: GATE.y - half, vx: 0, vy: 0, facingX: 1, facingY: 0, state: 'idle', stateTimer: 0,
+      x: arena.x - 180 - half, y: arena.y + 20 - half, vx: 0, vy: 0, facingX: 1, facingY: 0, state: 'idle', stateTimer: 0,
+    });
+    this.bossStore.update({
+      x: arena.x + 80 - BOSS_CONFIG.size / 2, y: arena.y - BOSS_CONFIG.size / 2,
+      facingX: -1, facingY: 0, hp: config.hp, maxHp: config.hp, stateTimer: 1150,
     });
     this.camera.snapTo(this.playerEntity.centerX, this.playerEntity.centerY);
     this.beginBossIntro();
@@ -449,6 +476,8 @@ export class GameStateService {
   startGame() {
     this.dying = 0;
     this.mode.set('story');
+    this.activeEncounter.set(null);
+    this.pendingEncounter.set(null);
     this.rushNext = [];
     this.rushTransition = 0;
     this.uiLock.set(false);
@@ -937,7 +966,10 @@ export class GameStateService {
     }
     if (this.rushTransition > 0) {
       this.rushTransition -= deltaTime;
-      if (this.rushTransition <= 0) this.enterSluice();
+      if (this.rushTransition <= 0) {
+        const next = this.pendingEncounter();
+        if (next) this.enterEncounter(next);
+      }
     }
     if (this.introPending && this.view3d && this.inCombat()) {
       this.introPending = false;
@@ -1516,11 +1548,12 @@ export class GameStateService {
       if (!this.bossEntity.deathDone) return;
       this.defeated.set(null);
       if (this.mode() !== 'story') {
-        // Boss Rush : court répit, puis boss suivant (seul le Gardien suit Kofi).
         if (this.rushTransition > 0) return;
         const next = this.rushNext.shift();
-        if (next === 'sluice') this.rushTransition = 1.8;
-        else {
+        if (next) {
+          this.pendingEncounter.set(next);
+          this.rushTransition = 1.8;
+        } else {
           this.stopGame();
           this._currentScreen.set('victory');
         }

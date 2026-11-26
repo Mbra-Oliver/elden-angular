@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { EQUIPMENT_CONFIG, type WeaponId } from '../constants/equipment.config-constant';
+import { dressHuman, type HumanBody } from './human-body';
 
 interface ArrowView {
   x: number;
@@ -40,7 +41,7 @@ export class Equipment3D {
   /** Afena (épée courte à lame en feuille) et batakari (tunique à talismans). */
   private readonly afena = new T.Group();
   private readonly afenaBlade: T.MeshStandardMaterial;
-  private readonly batakari = new T.Group();
+  private batakari = new T.Group();
   private look: GearLook = { batakari: false, tier: 0, ready: false };
 
   constructor(
@@ -171,6 +172,21 @@ export class Equipment3D {
    * la lame selon le niveau de Force (fer terne → fer poli → incrustation de
    * laiton, matériaux de l'époque), lueur chaude quand l'attaque spéciale est prête.
    */
+  /**
+   * Batakari ajusté au corps skinné (human-body.ts) : la blouse suit le buste
+   * et s'évase sur les cuisses, au lieu d'un cylindre posé autour du torse.
+   */
+  fitBody(body: HumanBody) {
+    const flat = (color: string) => new T.MeshStandardMaterial({ color, roughness: 0.95, flatShading: true });
+    const fitted = dressHuman(body, {
+      smock: { cloth: flat('#c9b58c'), trim: flat('#2f3a5a'), charm: flat('#4c2f1d'), red: flat('#8f2e22') },
+    });
+    fitted.name = 'batakari';
+    fitted.visible = this.batakari.visible;
+    this.batakari.removeFromParent();
+    this.batakari = fitted;
+  }
+
   setLook(look: GearLook) {
     if (look.batakari === this.look.batakari && look.tier === this.look.tier && look.ready === this.look.ready) return;
     this.look = look;

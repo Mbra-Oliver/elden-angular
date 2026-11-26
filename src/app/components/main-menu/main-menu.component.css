@@ -300,6 +300,52 @@ dd { margin: 0; color: #e7c98f; text-align: right; }
 .veil.on { opacity: 1; }
 nav button.duel-entry { color: #f0d39a; border-color: #b88a45; }
 
+.dev-rush {
+  display: grid;
+  gap: 6px;
+  width: min(420px, 100%);
+  max-height: 22vh;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid #a5342855;
+  background: #0c0806aa;
+  font-size: 13px;
+}
+
+.dev-rush strong {
+  color: #e8907f;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.dev-rush button {
+  border: 0;
+  background: none;
+  color: var(--bone);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.82;
+}
+
+.dev-rush button:hover,
+.dev-rush button:focus-visible {
+  color: var(--gold);
+  outline: none;
+  opacity: 1;
+}
+
+.dev-rush .dev-all {
+  color: #efc9b8;
+  letter-spacing: 0.08em;
+}
+
+.dev-bosses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
 @media (max-height: 480px) {
   .title-content { gap: 10px; }
   h1 { font-size: clamp(26px, 5vw, 48px); }

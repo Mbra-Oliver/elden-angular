@@ -1,5 +1,5 @@
 import {
-  AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild, inject, signal,
+  AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild, inject, isDevMode, signal,
 } from '@angular/core';
 import { AudioEngineService } from '../../lib/audio/audio-engine.service';
 import { MenuAmbience } from '../../lib/audio/menu-ambience';
@@ -12,6 +12,7 @@ import { GameStateService } from '../../lib/services/game-state.service';
 import { SliceService } from '../../lib/slice/slice.service';
 import { BOSS_NAMES, Challenge, ChallengeService, describe, formatTime } from '../../lib/social/challenge.service';
 import { THREAD_LINE } from '../../lib/constants/adinkra';
+import { DEV_BOSS_RUSH, ENCOUNTERS, type EncounterId } from '../../lib/constants/boss-encounters';
 
 type Panel = 'codex' | 'settings' | null;
 
@@ -37,6 +38,8 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
   readonly bossNames = BOSS_NAMES;
   readonly threadLine = THREAD_LINE;
   readonly touch = isTouchDevice();
+  readonly dev = isDevMode();
+  readonly devBosses = DEV_BOSS_RUSH.map((id) => ({ id, name: ENCOUNTERS[id].name }));
 
   readonly panel = signal<Panel>(null);
   /** Scène 3D prête (sinon l'illustration fixe reste en fond). */
@@ -60,6 +63,11 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit() {
     void this.loadScene();
+    if (this.dev && typeof location !== 'undefined') {
+      const rush = new URLSearchParams(location.search).get('bossrush');
+      if (rush === 'all') this.devBossRush();
+      else if (rush && this.devBosses.some((boss) => boss.id === rush)) this.devBoss(rush as EncounterId);
+    }
     // Le navigateur n'ouvre l'audio qu'après un geste : premier toucher ou touche.
     window.addEventListener('pointerdown', this.wakeAudio, { once: true });
     window.addEventListener('keydown', this.wakeAudio, { once: true });
@@ -163,6 +171,14 @@ export class MainMenuComponent implements AfterViewInit, OnDestroy {
   bossRush() {
     if (!this.challenge.rushUnlocked()) return;
     this.depart(() => this.gameState.startBossRush(['ford', 'sluice']), false);
+  }
+
+  devBossRush() {
+    this.depart(() => this.gameState.startBossRush([...DEV_BOSS_RUSH]), false);
+  }
+
+  devBoss(id: EncounterId) {
+    this.depart(() => this.gameState.startBossRush([id]), false);
   }
 
   /** Relève le défi reçu par lien : on affronte directement ce boss. */

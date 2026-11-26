@@ -173,7 +173,8 @@ export function attachToga(torso: T.Object3D, texture: T.Texture, wearer: 'man' 
   // Bande qui passe sur l'épaule gauche, de la poitrine au dos.
   const band = garment(new T.BoxGeometry(3.6, 1.2, 11.6), cloth, -3.3, 9.1, 0);
   band.userData['underBatakari'] = true;
-  group.add(band);
+  // Pagne de femme noué sous les bras : pas de bande sur l'épaule.
+  if (wearer === 'man') group.add(band);
 
   // Pan rejeté sur l'épaule : seule pièce soulevée par la course (WindLayer).
   const length = 13;
@@ -183,17 +184,23 @@ export function attachToga(torso: T.Object3D, texture: T.Texture, wearer: 'man' 
   tailMesh.name = WIND_CLOTH;
   tailMesh.userData['underBatakari'] = true;
   tailMesh.rotation.x = 0.12;
+  // Femme : le pan retombe dans le dos depuis le nœud, sous les aisselles.
+  if (wearer === 'woman') tailMesh.position.set(-1.5, 5.2, -5.2);
   group.add(tailMesh);
 
   if (wearer === 'woman') {
     // Foulard noué sur la tête, dans le même pagne.
-    const tie = garment(new T.CylinderGeometry(3.2, 3.6, 2.6, 9), cloth, 0, 12.7, -0.4);
+    const tie = garment(new T.CylinderGeometry(3.2, 3.6, 2.6, 9), cloth, 0, 12.55, -0.45);
     tie.rotation.x = -0.28;
+    // Ajusté à la tête du corps skinné, malgré l'échelle du groupe (ci-dessous).
+    tie.scale.set(0.86, 0.85, 1.02);
     group.add(tie);
   }
 
   // Ajusté au corps skinné (human-body.ts), plus étroit que l'ancien buste cylindrique.
-  group.scale.set(0.62, 1, 0.5);
+  // Femme : plus de profondeur pour la poitrine (corps de femme, human-body.ts).
+  if (wearer === 'woman') group.scale.set(0.64, 1, 0.66);
+  else group.scale.set(0.62, 1, 0.5);
   torso.add(group);
   return group;
 }

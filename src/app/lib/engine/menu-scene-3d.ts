@@ -1,4 +1,7 @@
 import * as T from 'three';
+import { bakeHuman, coloredGeometry } from './human-bake';
+import { kwadwoOutfit } from './human-outfits';
+import type { HumanoidRig } from './humanoid-rig';
 import { devicePixelRatioCapped } from '../platform/display';
 
 /**
@@ -364,70 +367,36 @@ export class MenuScene3D {
 
   /** Kwadwo Ofori agenouillé (genou droit à terre), lance plantée à côté. */
   private buildKwadwo(): T.Object3D {
-    const skin = new T.MeshStandardMaterial({ color: '#3d241a', roughness: 0.75, flatShading: true });
-    const cloth = new T.MeshStandardMaterial({ color: '#3d1a12', roughness: 0.95, flatShading: true });
-    const ash = new T.MeshStandardMaterial({ color: '#2b2522', roughness: 1, flatShading: true });
     const body = new T.Group();
     body.position.copy(KWADWO);
     body.rotation.y = 0.55;
 
-    const limb = (r1: number, r2: number, length: number, material: T.Material) => {
-      const geometry = new T.CylinderGeometry(r1, r2, length, 6);
-      geometry.translate(0, -length / 2, 0);
-      return new T.Mesh(geometry, material);
+    // Même corps humain que dans le jeu (human-body.ts), posé à genoux puis cuit
+    // (genou droit dans la cendre, pied gauche à plat, buste penché, tête basse).
+    const kneel = {
+      skin: '#3d241a',
+      outfit: (m: (color: string) => T.Material) => ({ ...kwadwoOutfit(m), wrap: { material: m('#3d1a12'), band: m('#2b1510'), flap: true, hem: 10 } }),
+      knees: [1.5, 1.55] as [number, number],
+      pose: (rig: HumanoidRig) => {
+        rig.root.position.y = -6.6;
+        rig.legs[0].rotation.x = -1.5;
+        rig.legs[1].rotation.x = -0.15;
+        rig.torso.rotation.x = 0.32;
+        rig.torso.children[3].rotation.x = 0.35;
+        rig.arms[0].rotation.set(-0.9, 0, -0.1);
+        rig.arms[1].rotation.set(-0.35, 0, 0.3);
+      },
     };
-
-    const hips = new T.Group();
-    hips.position.y = 0.5;
-    body.add(hips);
-    const pagne = new T.Mesh(new T.CylinderGeometry(0.17, 0.22, 0.24, 7), cloth);
-    pagne.position.y = -0.03;
-    hips.add(pagne);
-
-    // Jambe gauche : pied à plat, genou levé.
-    const thighL = limb(0.07, 0.06, 0.42, skin);
-    thighL.position.set(-0.1, 0, 0);
-    thighL.rotation.x = -1.45;
-    hips.add(thighL);
-    const shinL = limb(0.055, 0.045, 0.45, skin);
-    shinL.position.set(-0.1, -0.03, 0.42);
-    hips.add(shinL);
-    // Jambe droite : genou dans la cendre.
-    const thighR = limb(0.07, 0.06, 0.42, skin);
-    thighR.position.set(0.1, 0, 0);
-    thighR.rotation.x = -0.3;
-    hips.add(thighR);
-    const shinR = limb(0.055, 0.045, 0.44, ash);
-    shinR.position.set(0.1, -0.4, 0.12);
-    shinR.rotation.x = -1.5;
-    hips.add(shinR);
-
-    const chest = new T.Group();
-    chest.position.y = 0.1;
-    chest.rotation.x = 0.32;
-    hips.add(chest);
-    const torso = new T.Mesh(new T.CylinderGeometry(0.2, 0.15, 0.48, 7), skin);
-    torso.position.y = 0.24;
-    chest.add(torso);
-    const head = new T.Mesh(new T.IcosahedronGeometry(0.11, 1), skin);
-    head.position.set(0, 0.6, 0.05);
-    head.rotation.x = 0.35;
-    chest.add(head);
-    // Toge nouée sur l'épaule gauche.
-    const toga = new T.Mesh(new T.CylinderGeometry(0.22, 0.2, 0.2, 7, 1, true, 0, Math.PI * 1.2), cloth);
-    toga.material.side = T.DoubleSide;
-    toga.position.y = 0.36;
-    toga.rotation.z = 0.5;
-    chest.add(toga);
-
-    const armL = limb(0.05, 0.04, 0.5, skin);
-    armL.position.set(-0.22, 0.44, 0);
-    armL.rotation.set(-0.9, 0, 0.15);
-    chest.add(armL);
-    const armR = limb(0.05, 0.04, 0.52, skin);
-    armR.position.set(0.22, 0.44, 0);
-    armR.rotation.set(-0.35, 0, -0.35);
-    chest.add(armR);
+    const material = new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, flatShading: true });
+    const scale = 0.068;
+    const lower = new T.Mesh(coloredGeometry(bakeHuman({ ...kneel, bones: [0, 7, 8] })), material);
+    const chest = new T.Mesh(coloredGeometry(bakeHuman({ ...kneel, bones: [1, 2, 3, 4, 5, 6] })), material);
+    lower.scale.setScalar(scale);
+    chest.scale.setScalar(scale);
+    // La respiration (update) gonfle ce groupe, pas l'échelle du maillage.
+    const breath = new T.Group();
+    breath.add(chest);
+    body.add(lower, breath);
 
     // Lance plantée, que sa main droite tient encore.
     const spear = new T.Group();
@@ -447,7 +416,7 @@ export class MenuScene3D {
     body.add(shield);
 
     this.scene.add(body);
-    return chest;
+    return breath;
   }
 
   private buildEmbers(): T.Points {

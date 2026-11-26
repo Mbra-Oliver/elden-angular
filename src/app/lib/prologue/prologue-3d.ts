@@ -2,6 +2,8 @@ import * as T from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sceneryRandom } from '../constants/scenery';
 import { applyWind } from '../engine/wind';
+import { LYING_ON_BACK, LYING_ON_SIDE, bakeHuman } from '../engine/human-bake';
+import { plainOutfit, soldierOutfit } from '../engine/human-outfits';
 import {
   BLADES, BODIES, BOWS, CAMP_FIRES, CAMP_WARRIORS, CLEARINGS, FALLEN_TRUNK, FOREST, KEGS, LITTER, MUSKETS,
   PROLOGUE_AREA, PROLOGUE_FOYERS, REMAINS, SCORCHES, SMOKES, SPEARS, STREAM, TRAIL, TRAIL_HALF,
@@ -439,33 +441,37 @@ export class Prologue3D {
 
   // ─── Traces du combat ─────────────────────────────────────────────────────
 
+  /**
+   * Mort du champ de bataille : le même corps humain que les vivants
+   * (human-body.ts), posé puis cuit en géométrie statique. Asante : pagne
+   * indigo sous le batakari à talismans ; Denkyira : pagne rouille,
+   * ceinture et bandoulière de poudre.
+   */
   private body(denkyira: boolean, curled: boolean): T.BufferGeometry {
-    const cloth = denkyira ? C.denkyira : C.asanteSmock;
-    const parts: Part[] = [
-      [box(10, 3.6, 7), cloth, m4(0, 2, 0)],
-      [ball(2.6, 1), C.skin, m4(7.8, 2.2, 0)],
-      [box(5, 3.2, 7.4), denkyira ? C.denkyira : C.indigo, m4(-6.5, 1.8, 0)],
-    ];
+    const parts = bakeHuman({
+      skin: C.skin,
+      outfit: (m) => denkyira ? soldierOutfit(m, 'tireur', m(C.denkyira)) : plainOutfit(m, C.indigo),
+      smock: denkyira ? undefined : { cloth: C.asanteSmock, trim: C.indigo, charm: C.talisman, red: C.talismanRed },
+      pose: curled
+        ? (rig) => {
+          rig.torso.rotation.x = 0.55;
+          rig.legs[0].rotation.x = -1.25;
+          rig.legs[1].rotation.x = -1.0;
+          rig.arms[0].rotation.set(-1.1, 0, 0.2);
+          rig.arms[1].rotation.set(-0.8, 0, -0.1);
+        }
+        : (rig) => {
+          rig.arms[0].rotation.z = -0.7;
+          rig.arms[1].rotation.set(-0.2, 0, 1.1);
+          rig.legs[0].rotation.z = -0.12;
+          rig.legs[1].rotation.z = 0.18;
+          rig.torso.children[3].rotation.y = 0.5;
+        },
+      place: curled ? LYING_ON_SIDE : LYING_ON_BACK,
+    });
     if (denkyira) {
-      // Ceinture de poudre : petites gourdes de cuir.
-      parts.push([box(1.2, 4, 7.6), C.leather, m4(-3, 2.1, 0)]);
-      for (const z of [-3, -1, 1, 3]) parts.push([ball(0.9, 0), C.leather, m4(-3, 4.2, z)]);
-    } else {
-      // Batakari : talismans de cuir cousus sur la tunique.
-      for (const [x, z, c] of [[2, -2, C.talisman], [-1, 2, C.talismanRed], [3, 2.5, C.talisman], [-2, -2.6, C.talismanRed]] as const) {
-        parts.push([box(1.6, 0.8, 1.2), c, m4(x, 4, z)]);
-      }
-    }
-    if (curled) {
-      parts.push([box(7, 2.4, 2.6), C.skin, m4(-10, 1.3, 1.8, 0, 0.9, 0)]);
-      parts.push([box(7, 2.4, 2.6), C.skin, m4(-12, 1.3, -1.5, 0, 0.7, 0)]);
-      parts.push([box(8, 2, 2), C.skin, m4(5, 2, 4.5, 0, -0.8, 0)]);
-      parts.push([box(8, 2, 2), C.skin, m4(6, 1.6, 2, 0, -1.1, 0)]);
-    } else {
-      parts.push([box(13, 2.4, 2.6), C.skin, m4(-14, 1.3, 1.8, 0, -0.08, 0)]);
-      parts.push([box(13, 2.4, 2.6), C.skin, m4(-14, 1.3, -1.9, 0, 0.12, 0)]);
-      parts.push([box(9, 2, 2), C.skin, m4(4, 1.4, 7.5, 0, 0.9, 0)]);
-      parts.push([box(9, 2, 2), C.skin, m4(1, 1.4, -7, 0, -0.5, 0)]);
+      // Ceinture de poudre : petites gourdes de cuir (le long du corps couché).
+      for (const z of [-1.6, -0.5, 0.6, 1.7]) parts.push([ball(0.55, 0), C.leather, (curled ? LYING_ON_SIDE : LYING_ON_BACK).clone().multiply(m4(z, 17.4, 1.9))]);
     }
     return merge(parts);
   }
@@ -1026,17 +1032,16 @@ export class Prologue3D {
     for (const f of CAMP_FIRES) this.fire(material, f.x, f.y, 1.2);
     // Guerriers debout : batakari à talismans, lance ou mousquet tenu droit.
     const warrior = (musket: boolean) => merge([
-      [box(2.6, 13, 2.8), C.indigo, m4(-1.6, 6.5, 0)],
-      [box(2.6, 13, 2.8), C.indigo, m4(1.6, 6.5, 0)],
-      [box(8.5, 11, 5.2), C.asanteSmock, m4(0, 18, 0)],
-      [box(1.6, 0.8, 1.2), C.talismanRed, m4(-2, 20, 2.7)],
-      [box(1.6, 0.8, 1.2), C.talisman, m4(2.2, 17, 2.7)],
-      [ball(2.7, 1), C.skin, m4(0, 26.5, 0.3)],
-      [box(2, 10, 2), C.skin, m4(-5.4, 18, 0, 0, 0, 0.1)],
-      [box(2, 10, 2), C.skin, m4(5.4, 18, 1, -0.4, 0, -0.1)],
+      ...bakeHuman({
+        skin: C.skin,
+        outfit: (m) => plainOutfit(m, C.indigo),
+        smock: { cloth: C.asanteSmock, trim: C.indigo, charm: C.talisman, red: C.talismanRed },
+        // Arme tenue droite de la main droite, l'autre bras le long du corps.
+        pose: (rig) => { rig.arms[1].rotation.set(-0.42, 0, -0.05); rig.arms[0].rotation.z = -0.08; },
+      }),
       musket
-        ? [cyl(0.45, 0.5, 27, 6), C.iron, m4(6.5, 22, 3)]
-        : [cyl(0.45, 0.45, 38, 5), C.wood, m4(6.5, 22, 3)],
+        ? [cyl(0.45, 0.5, 27, 6), C.iron, m4(3.75, 21, 3.4)]
+        : [cyl(0.45, 0.45, 38, 5), C.wood, m4(3.75, 25, 3.4)],
     ]);
     for (const musket of [false, true]) {
       this.scatter(warrior(musket), material, CAMP_WARRIORS.filter((w) => (w.variant % 2 === 1) === musket), () => undefined);

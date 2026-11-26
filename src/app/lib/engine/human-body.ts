@@ -56,6 +56,11 @@ export interface Outfit {
   hair?: T.Material;
   /** Scarifications claires sur la poitrine et les bras. */
   scars?: T.Material;
+  /**
+   * Batakari : blouse de guerre ajustée au buste, évasée jusqu'à mi-cuisse,
+   * couverte de talismans de cuir cousus (et quelques-uns gainés de rouge).
+   */
+  smock?: { cloth: T.Material; trim: T.Material; charm: T.Material; red: T.Material };
 }
 
 export interface HumanBody {
@@ -373,6 +378,50 @@ function wrapRings(hem: number, grow: number): Ring[] {
   ];
 }
 
+function addSmock(at: (m: T.Material) => SkinBuilder, smock: NonNullable<Outfit['smock']>) {
+  const hem = 11.4;
+  // Le bas tombe autour des cuisses (mêmes poids que le pagne).
+  const cloth: WeightFn = (x, y) => {
+    const t = smooth((15.2 - y) / (15.2 - hem));
+    const u = T.MathUtils.clamp(x / 1.7, -1, 1);
+    const right = t * 0.75 * (0.5 + 0.5 * u);
+    const left = t * 0.75 * (0.5 - 0.5 * u);
+    return [[TORSO, 1 - left - right], [LEG[0], left], [LEG[1], right]];
+  };
+  // Haut : épouse le buste (anneaux du corps, gonflés) ; encolure ronde ouverte.
+  const fitted = TORSO_RINGS.filter((r) => r.y <= 23.5 && r.y >= 15.6)
+    .map((r) => {
+      // Assez d'aisance pour couvrir bandoulière et repli du pagne portés dessous.
+      const grow = r.y > 18.5 ? 0.42 : 0.8;
+      return { ...r, rx: r.rx + grow, rz: r.rz + grow, pec: (r.pec ?? 0) * 0.6, w: cloth };
+    });
+  fitted[0] = { ...fitted[0], rx: 3.15, rz: 2.15 };
+  const flare = (y: number, rx: number, rz: number): Ring => ({ y, rx, rz, back: 0.3, w: cloth });
+  const rings = [...fitted, flare(14.4, 3.95, 2.6), flare(12.8, 4.2, 2.85), flare(hem, 4.45, 3.05)];
+  at(smock.cloth).tube(rings, 14, 'y', [false, false]);
+  at(smock.cloth).tube(rings.map((r) => ({ ...r, rx: r.rx - 0.08, rz: r.rz - 0.08 })).reverse(), 14, 'y', [false, false]);
+  // Liseré indigo à l'ourlet et à l'encolure.
+  at(smock.trim).tube([flare(hem + 0.75, 4.4, 3.01), flare(hem - 0.05, 4.51, 3.11)].map((r) => ({ ...r, rx: r.rx + 0.06, rz: r.rz + 0.06 })), 14, 'y', [false, false]);
+  at(smock.trim).band(torsoLoop(() => 23.35, 0.48, 24), 0.45, 0.18, torsoW);
+  // Talismans : petits sachets de cuir cousus en rangs, devant et derrière.
+  const rows: [number, number[]][] = [
+    [21.4, [-0.55, 0.55, Math.PI - 0.5, Math.PI + 0.5]],
+    [19.6, [-1.0, -0.3, 0.3, 1.0, Math.PI - 0.8, Math.PI, Math.PI + 0.8]],
+    [17.7, [-0.65, 0, 0.65, Math.PI - 0.45, Math.PI + 0.45]],
+    [16.0, [-1.0, -0.35, 0.35, 1.0, Math.PI - 0.7, Math.PI + 0.7]],
+  ];
+  let n = 0;
+  for (const [y, angles] of rows) {
+    for (const a of angles) {
+      const p = torsoSurface(y, a);
+      const normal = new T.Vector3(p.x, 0, p.z).normalize();
+      p.addScaledVector(normal, y > 18.5 ? 0.62 : 1.0);
+      at(n++ % 4 === 1 ? smock.red : smock.charm).box(p, new T.Vector3(0.75, 0.9, 0.35),
+        new T.Euler(0, Math.atan2(normal.x, normal.z), 0), [[TORSO, 1]]);
+    }
+  }
+}
+
 function addOutfit(b: Map<T.Material, SkinBuilder>, outfit: Outfit) {
   const at = (material: T.Material) => {
     let builder = b.get(material);
@@ -410,6 +459,7 @@ function addOutfit(b: Map<T.Material, SkinBuilder>, outfit: Outfit) {
     const band = outfit.wrap.band ?? outfit.wrap.material;
     at(band).band(torsoLoop((a) => 16.9 + Math.cos(a) * 0.15, 0.2), 1.1, 0.4, torsoW);
   }
+  if (outfit.smock) addSmock(at, outfit.smock);
   if (outfit.belt) at(outfit.belt).band(torsoLoop(() => 17.6, 0.15), 0.7, 0.3, torsoW);
   if (outfit.strap) {
     // De l'épaule droite (+X, a = π/2) à la hanche gauche (a = -π/2).
@@ -497,15 +547,7 @@ export function skinHuman(bones: BodyBones, options: BodyOptions): HumanBody {
     outfit: new T.Group(), meshes: [], skeleton, bones, bind: bones.root.matrixWorld.clone(), rest,
   };
 
-  const body = new SkinBuilder();
-  body.tube(TORSO_RINGS, 14);
-  body.tube(headRings().reverse(), 12); // anneaux du haut vers le bas
-  for (const i of [0, 1]) {
-    body.tube(armRings(i), 8);
-    body.tube(legRings(i), 10);
-    body.tube(footRings(i), 8, 'z');
-  }
-  const skinMesh = skinnedMesh(human, body, options.skin, bones.torso, !!options.outline);
+  const skinMesh = skinnedMesh(human, bodyBuilder('man'), options.skin, bones.torso, !!options.outline);
   skinMesh.name = 'human-body';
   const rigid = (bone: T.Object3D, mesh: T.Mesh, x: number, y: number, z: number) => rigidAt(human, bone, mesh, x, y, z);
 
@@ -557,6 +599,71 @@ export function skinHuman(bones: BodyBones, options: BodyOptions): HumanBody {
   return human;
 }
 
+/** Silhouette du corps : homme (référence) ou femme (même squelette, mêmes articulations). */
+export type BodyShape = 'man' | 'woman';
+
+/**
+ * Femme : épaules et bras plus fins, poitrine, taille marquée, hanches et
+ * fessiers plus larges, mollets plus fins, visage un peu plus petit.
+ * Les anneaux de l'homme sont retouchés : mêmes hauteurs, mêmes poids.
+ */
+function womanTorso(r: Ring): Ring {
+  const y = r.y;
+  let rx = r.rx;
+  let rz = r.rz;
+  let pec = r.pec ?? 0;
+  let back = r.back ?? 0;
+  if (y >= 23) rx *= 0.86;
+  else if (y >= 22) { rx *= 0.88; pec = 0.35; }
+  else if (y >= 21) { rx *= 0.88; pec = 1.25; rz *= 0.95; }
+  else if (y >= 20) { rx *= 0.88; pec = 0.85; }
+  else if (y >= 18.5) rx *= 0.86;
+  else if (y >= 16.5) { rx *= 0.9; rz *= 0.95; }
+  else if (y >= 15) { rx *= 1.03; back += 0.15; }
+  else if (y >= 13.8) { rx *= 1.1; rz *= 1.04; back += 0.25; }
+  else if (y >= 13.2) rx *= 1.08;
+  return { ...r, rx, rz, pec, back };
+}
+
+function bodyBuilder(shape: BodyShape) {
+  const woman = shape === 'woman';
+  const scaleRing = (k: number, kz = k) => (r: Ring): Ring => ({ ...r, rx: r.rx * k, rz: r.rz * kz });
+  const body = new SkinBuilder();
+  body.tube(woman ? TORSO_RINGS.map(womanTorso) : TORSO_RINGS, 14);
+  const head = headRings().reverse(); // anneaux du haut vers le bas
+  body.tube(woman ? head.map((r) => ({ ...scaleRing(0.94)(r), face: (r.face ?? 0) * 0.7 })) : head, 12);
+  for (const i of [0, 1]) {
+    const arms = armRings(i);
+    // Bras plus fins et un peu plus près du buste (épaules plus étroites).
+    const inward = (r: Ring): Ring => ({ ...r, cx: (r.cx ?? 0) - Math.sign(r.cx ?? 0) * (r.y > 19 ? 0.3 : 0.2) });
+    body.tube(woman ? arms.map((r, n) => inward(scaleRing(n < 2 ? 0.86 : 0.84)(r))) : arms, 8);
+    const legs = legRings(i);
+    body.tube(woman ? legs.map((r) => scaleRing(r.y > 9 ? 1.02 : 0.88)(r)) : legs, 10);
+    const feet = footRings(i);
+    body.tube(woman ? feet.map(scaleRing(0.9)) : feet, 8, 'z');
+  }
+  return body;
+}
+
+/**
+ * Ajoute une autre silhouette sur le même squelette (ex. Ama, héroïne de
+ * 1874, sur le rig du joueur) et renvoie de quoi basculer de l'une à l'autre.
+ */
+export function addBodyShape(human: HumanBody, shape: BodyShape, outline = false): T.SkinnedMesh {
+  const base = human.meshes.find((m) => m.name === 'human-body')!;
+  const mesh = skinnedMesh(human, bodyBuilder(shape), base.material as T.Material, human.bones.torso, outline);
+  mesh.name = `human-body-${shape}`;
+  mesh.visible = false;
+  if (mesh.userData['hull']) mesh.userData['hull'].visible = false;
+  return mesh;
+}
+
+/** Montre une silhouette (et son contour), cache l'autre. */
+export function showBody(mesh: T.SkinnedMesh, visible: boolean) {
+  mesh.visible = visible;
+  if (mesh.userData['hull']) (mesh.userData['hull'] as T.Object3D).visible = visible;
+}
+
 function skinnedMesh(human: HumanBody, builder: SkinBuilder, material: T.Material, parent: T.Object3D, outline: boolean) {
   const geometry = builder.geometry();
   const mesh = new T.SkinnedMesh(geometry, material);
@@ -573,6 +680,7 @@ function skinnedMesh(human: HumanBody, builder: SkinBuilder, material: T.Materia
     hull.raycast = () => undefined;
     parent.add(hull);
     hull.bind(human.skeleton, human.bind);
+    mesh.userData['hull'] = hull;
   }
   return mesh;
 }

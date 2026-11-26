@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { BOSS_CONFIG, BOSS_PHASE_PROFILE, BOSS_TEMPO, BossState } from '../../constants/boss.config-constant';
 import { BOSS_TRANSITIONS } from './boss-fsm';
-import { BOSS_LORE, BossId, BossPhase } from '../../constants/boss-lore';
+import { BOSS_FORM, BOSS_LORE, BossId, BossPhase } from '../../constants/boss-lore';
 import { PLAYER_CONFIG } from '../../constants/player.config-constant';
 import {
   BOSS_CLIPS,
@@ -133,7 +133,7 @@ export class BossEntity {
   /** true : Kofi (gué), false : le Gardien, ou un identifiant de boss. */
   configure(boss: boolean | BossId) {
     this.kind = typeof boss === 'string' ? boss : boss ? 'duelist' : 'guardian';
-    this.duelist = this.kind !== 'guardian';
+    this.duelist = BOSS_FORM[this.kind] === 'human';
     this.lastAttack = 'none';
     this.queued = null;
     this.attackCount = 0;

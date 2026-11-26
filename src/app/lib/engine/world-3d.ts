@@ -14,7 +14,7 @@ import { CinematicCamera, type CinematicShot, SHOTS, STORY_SHOTS } from './cinem
 import { STORY_BEATS, type StoryBeatId, type StoryPoint, type StoryShotContext } from '../narrative/story-beats';
 import { Equipment3D, type GearLook } from './equipment-3d';
 import { buildHumanoid, type HumanoidRig } from './humanoid-rig';
-import type { Outfit } from './human-body';
+import { addBodyShape, dressHuman, showBody, type Outfit } from './human-body';
 import { kwadwoOutfit, plainOutfit } from './human-outfits';
 import { PlayerAnimator } from './player-rig-3d';
 import { MartialArts3D } from './martial-arts-3d';
@@ -59,10 +59,16 @@ const CAMERA_PROFILES: Record<CameraMode, CameraProfile> = {
     height: 42, heightDistance: 0.16, vistaHeight: 58, lookHeight: 25,
     lead: 30, leadDistance: 0.2, pitchMin: -18, pitchMax: 32, floorClearance: 12,
   },
+  // Vue par-dessus l'épaule (façon TPS mobile) : caméra proche, juste au-dessus
+  // de la tête, décalée à droite ; le regard part loin devant, presque à
+  // l'horizon, si bien que le héros occupe le bas-centre gauche de l'image.
+  // Calcul (héros ≈ 31 unités, champ vertical 54°) : tête à ~52 % de la
+  // hauteur d'écran, pieds à ~88 %, héros à ~42 % de la largeur.
+  // [SUPPOSITION] à confirmer en jeu.
   shoulder: {
-    boom: 50, boomDistance: 0.1, vistaBoom: 40, shoulder: 12,
-    height: 30, heightDistance: 0.08, vistaHeight: 40, lookHeight: 22,
-    lead: 24, leadDistance: 0.16, pitchMin: -14, pitchMax: 26, floorClearance: 8,
+    boom: 82, boomDistance: 0.05, vistaBoom: 18, shoulder: 10,
+    height: 38, heightDistance: 0.04, vistaHeight: 12, lookHeight: 26,
+    lead: 110, leadDistance: 0, pitchMin: -16, pitchMax: 22, floorClearance: 8,
   },
 };
 
@@ -220,6 +226,8 @@ export class World3D {
   /** Tenues du héros, une seule visible selon l'acte (setHero). */
   private readonly togas: { kwabena: T.Group; ama: T.Group };
   private hero: 'kwadwo' | 'kwabena' | 'ama' | null = null;
+  /** Corps d'homme (Kwadwo, Kwabena) et de femme (Ama) du joueur. */
+  private heroBodies?: { man: T.SkinnedMesh; woman: T.SkinnedMesh };
 
   constructor(private readonly host: HTMLElement) {
     this.renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -295,6 +303,14 @@ export class World3D {
     // La lance est la dernière pièce ajoutée au bras droit par makeFighter.
     const spear = this.player.arms[1].children.at(-1);
     this.gear = new Equipment3D(this.scene, this.player.torso, this.player.arms, spear);
+    if (this.player.body) this.gear.fitBody(this.player.body);
+    // Ama Serwaa (1874) : silhouette de femme sur le même squelette (bascule dans setHero).
+    if (this.player.body) {
+      this.heroBodies = {
+        man: this.player.body.meshes.find((m) => m.name === 'human-body')!,
+        woman: addBodyShape(this.player.body, 'woman', true),
+      };
+    }
     this.playerAnim = new PlayerAnimator(this.scene, this.player, spear!);
     // Prise martiale : l'arme quitte le poignet, les deux mains la tiennent par IK.
     this.martial = new MartialArts3D(this.player, spear!);
@@ -340,7 +356,13 @@ export class World3D {
       ama: attachToga(this.player.torso, kenteTexture(KENTE_PLAYER), 'woman'),
     };
     this.setHero('ama');
-    attachBatakari(this.duelist.torso);
+    // Batakari de Kofi : blouse ajustée au corps skinné (hors corps skinné : l'ancienne pièce).
+    if (this.duelist.body) {
+      const flat = (color: string) => new T.MeshStandardMaterial({ color, roughness: 0.95, flatShading: true });
+      dressHuman(this.duelist.body, {
+        smock: { cloth: flat('#d6c6a0'), trim: flat('#2b3a55'), charm: flat('#4a2f1c'), red: flat('#9a2f26') },
+      }, true).name = 'akan-batakari';
+    } else attachBatakari(this.duelist.torso);
     plantGrass(this.scene);
     // Avant ArenaDressing : il lit la lumière et la brume posées ici comme ambiance de base.
     this.landscape = new Landscape3D(this.scene, this.renderer);
@@ -678,7 +700,7 @@ export class World3D {
     } else if (enemy) {
       glint = this.glintPoint.set(enemy.x + enemy.facingX * 20, 16, enemy.y + enemy.facingY * 20);
     }
-    this.bossFx.update(this.intro !== null && this.intro < 0.3 ? null : enemy, duelist ? 'duelist' : 'guardian',
+    this.bossFx.update(this.intro !== null && this.intro < 0.3 ? null : enemy, this.bossKind,
       weapon, glint, now, dt);
     this.wave.visible = enemy?.waveRadius !== undefined;
     if (enemy?.waveRadius !== undefined) {
@@ -1069,6 +1091,10 @@ export class World3D {
     this.togas.ama.visible = hero === 'ama';
     // Pagne, bandoulière, brassards et sandales de Kwadwo (1701).
     if (this.player.body) this.player.body.outfit.visible = hero === 'kwadwo';
+    if (this.heroBodies) {
+      showBody(this.heroBodies.man, hero !== 'ama');
+      showBody(this.heroBodies.woman, hero === 'ama');
+    }
   }
 
   setEquipment(weapon: WeaponId, arrows: readonly { x: number; y: number; dirX: number; dirY: number; grounded: boolean }[],

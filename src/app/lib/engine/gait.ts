@@ -35,7 +35,7 @@ export interface BipedGaitOptions {
 }
 
 export const PLAYER_GAIT: BipedGaitOptions = {
-  leg: 13.45, runSpeed: 340, minAmp: 0.34, maxAmp: 0.78, slip: 1.55, walkDuty: 0.6, runDuty: 0.42,
+  leg: 13.45, runSpeed: 255, minAmp: 0.34, maxAmp: 0.78, slip: 1.55, walkDuty: 0.6, runDuty: 0.42,
 };
 /** Le capitaine : pas plus longs, plus lents, plus lourds. */
 export const DUELIST_GAIT: BipedGaitOptions = {

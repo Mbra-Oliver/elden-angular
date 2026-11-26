@@ -299,9 +299,8 @@ export class Slice3D {
     const barBack = this.mat(new T.SpriteMaterial({ color: '#1b1210', transparent: true, opacity: 0.75, depthWrite: false }));
     const barFill = this.mat(new T.SpriteMaterial({ color: '#c9473a', depthWrite: false }));
     const cloth: Record<EnemyKind, string> = {
-      pilleur: '#6b3b2a', fusilier: '#2f3f5c', noye: '#3e4a44',
-      // Soldats du Denkyira (1701) : pagnes rouille et brun sombre.
-      eclaireur: '#7a4a2a', lancier: '#6a3020', tireur: '#5a3a24', garde: '#3c2418',
+      pilleur: '#3c2c27', fusilier: '#273447', noye: '#263b39',
+      eclaireur: '#423126', lancier: '#452720', tireur: '#352820', garde: '#241b17',
     };
     // Peau du noyé : ondulation d'eau (vertex) et reflet turquoise (shader élémentaire).
     const time = this.time;
@@ -371,11 +370,8 @@ export class Slice3D {
         skin, outfit: soldierOutfit(outfitMaterial, kind, dress),
         eyes: kind === 'noye' ? undefined : { white: eyeWhite, dark: eyeDark },
       });
-      if (kind === 'pilleur') {
-        // Pillard : foulard rouge noué sur la tête.
-        const tie = add(human.bones.head, geos.wrap, shared.red, 0, 1.9, -0.3);
-        tie.scale.set(0.5, 0.55, 0.6);
-      }
+      const tie = add(human.bones.head, geos.wrap, kind === 'noye' ? outfitMaterial('#2f6b62') : shared.red, 0, 1.9, -0.3);
+      tie.scale.set(0.5, 0.55, 0.6);
       if (kind === 'tireur' || kind === 'fusilier') {
         // Ceinture de poudre : petites gourdes de poudre et poire en corne.
         for (const [x, z] of [[-1.6, 1.75], [-0.4, 1.95], [0.8, 1.9], [2.6, 0.9]] as const) {

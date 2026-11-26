@@ -42,6 +42,17 @@
       <button type="button" class="duel-entry" (click)="openDuel()">Duel d’honneur</button>
       <button type="button" data-panel="settings" (click)="openPanel('settings')">Paramètres</button>
     </nav>
+    @if (dev) {
+      <section class="dev-rush" aria-label="Mode dev Boss Rush" [attr.inert]="panel() ? '' : null">
+        <strong>Mode dev · Ruée des boss</strong>
+        <button type="button" class="dev-all" (click)="devBossRush()">Enchaîner les {{ devBosses.length }} boss</button>
+        <div class="dev-bosses">
+          @for (boss of devBosses; track boss.id) {
+            <button type="button" (click)="devBoss(boss.id)">{{ boss.name }}</button>
+          }
+        </div>
+      </section>
+    }
   </div>
 
   @switch (panel()) {
@@ -112,9 +123,9 @@
           Verrouiller la cible au premier coup reçu
         </label>
         <label class="toggle">
-          <input type="checkbox" [checked]="s.cameraMode === 'shoulder'"
-            (change)="settings.update({ cameraMode: $any($event.target).checked ? 'shoulder' : 'wide' })">
-          Caméra épaule (TPS mobile)
+          <input type="checkbox" [checked]="s.cameraMode === 'wide'"
+            (change)="settings.update($any({ cameraMode: $any($event.target).checked ? 'wide' : 'shoulder', cameraChosen: true }))">
+          Caméra éloignée (vue d’ensemble au lieu de l’épaule)
         </label>
         <details>
           <summary>Commandes</summary>

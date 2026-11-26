@@ -29,7 +29,7 @@ export const DUEL_RULES = {
   maxHp: 100,
   maxStamina: 100,
   staminaRegen: 24,
-  speed: 260,
+  speed: 205,
   dodgeCost: 28,
   dodgeMs: 520,
   iFramesMs: 260,

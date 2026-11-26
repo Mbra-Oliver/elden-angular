@@ -8,8 +8,11 @@
  * sont écrits de mémoire et doivent être relus par une personne akan.
  */
 
-export type BossId = 'duelist' | 'guardian' | 'champion';
+export type BossId = 'duelist' | 'guardian' | 'champion'
+  | 'sentinel' | 'hunter' | 'harvester' | 'oracle' | 'berserker'
+  | 'tideholder' | 'ashafo' | 'ironmouth' | 'nightblade';
 export type BossPhase = 1 | 2 | 3;
+export type BossForm = 'human' | 'guardian';
 
 export interface BossPhaseLore {
   /** Titre court affiché dans la bannière de transition. */
@@ -121,4 +124,154 @@ export const BOSS_LORE: Record<BossId, BossLore> = {
     },
     thresholds: [0.66, 0.33],
   },
+
+  sentinel: {
+    name: 'La Sentinelle de la digue',
+    epithet: 'Gardienne du dernier seuil',
+    chapter: 'Épreuve · Le seuil noyé',
+    lore: [
+      'Avant la retenue, une sentinelle veillait sur le passage où l’eau change de nom. On lui parlait sans la regarder.',
+      'Elle frappe le sol pour annoncer sa colère, puis laisse l’eau monter d’un cran à chaque blessure.',
+    ],
+    phases: {
+      1: { title: 'Le seuil fermé', line: '« Le passage est compté. »', design: 'Pinces, ruée, vague courte.' },
+      2: { title: 'L’eau répond', line: 'La digue gémit sous une seconde vague.', design: 'Double vague et combo de pinces.' },
+      3: { title: 'Le nom retrouvé', line: '« Je me souviens maintenant. »', design: 'Tourbillon, vague enchaînée sur la ruée.' },
+    },
+    thresholds: [0.66, 0.33],
+  },
+
+  hunter: {
+    name: 'Osei Kwantwi',
+    epithet: 'Chasseur du Pra',
+    chapter: 'Épreuve · La piste du gué',
+    lore: [
+      'Osei connaît chaque sentier du fleuve et ne court jamais deux fois de la même manière.',
+      'Il teste la garde du joueur par charges courtes, puis punit les esquives trop tôt.',
+    ],
+    phases: {
+      1: { title: 'Le premier pas', line: '« Je t’ai suivi depuis l’autre rive. »', design: 'Sabre, crosse, charge.' },
+      2: { title: 'La piste se referme', line: '« Tu cours déjà moins vite. »', design: 'Combo de trois coups et charge enchaînée.' },
+      3: { title: 'La dernière piste', line: '« Il n’y a plus de sortie. »', design: 'Moulinet circulaire et charges répétées.' },
+    },
+    thresholds: [0.66, 0.33],
+  },
+
+  harvester: {
+    name: 'Kwame Adjei',
+    epithet: 'Faucheur des rizières',
+    chapter: 'Épreuve · Les champs coupés',
+    lore: [
+      'Kwame tient une faux courbe dont le tranchant suit le mouvement du poignet plus que de l’épaule.',
+      'Il fauche les jambes, puis relève la lame pour tracer des sillons de lumière.',
+    ],
+    phases: {
+      1: { title: 'La lame basse', line: '« Les herbes ne demandent pas pardon. »', design: 'Fauche, jugement retardé, faux coups.' },
+      2: { title: 'Le sillon', line: 'Le sol s’illumine sous la faux.', design: 'Sillon d’étincelles et faux bond.' },
+      3: { title: 'La moisson', line: '« Rien ne repousse ici. »', design: 'Moulinet de quatre coups et estocade.' },
+    },
+    thresholds: [0.66, 0.33],
+  },
+
+  oracle: {
+    name: 'Abena Nyame',
+    epithet: 'Voix du tabouret',
+    chapter: 'Épreuve · La chambre des nœuds',
+    lore: [
+      'Abena parle au nom d’un tabouret vide et tire ses réponses d’un mousquet à canon long.',
+      'Ses tirs sont lents, mais chaque détonation désigne la place où elle veut vous voir.',
+    ],
+    phases: {
+      1: { title: 'La question', line: '« Reste où tu es. Je décide. »', design: 'Tir long, jugement retardé, feinte.' },
+      2: { title: 'La réponse', line: 'La poudre éclaire son visage.', design: 'Tirs croisés, estocade, faux départs.' },
+      3: { title: 'Le verdict', line: '« Le tabouret a parlé. »', design: 'Tir, bond, moulinet court.' },
+    },
+    thresholds: [0.7, 0.35],
+  },
+
+  berserker: {
+    name: 'Yaw Ataa',
+    epithet: 'Fureur du tambour',
+    chapter: 'Épreuve · Le tambour sans peau',
+    lore: [
+      'Yaw frappe en cadence, comme si un tambour invisible lui dictait ses pas.',
+      'Il encaisse pour frapper plus fort ; le rythme s’accélère quand sa garde cède.',
+    ],
+    phases: {
+      1: { title: 'Le battement', line: '« Un. Deux. Frappe. »', design: 'Slam, charge, combo court.' },
+      2: { title: 'Le déchaînement', line: 'Le tambour oublie la mesure.', design: 'Balayage, moulinet, charge.' },
+      3: { title: 'La dernière mesure', line: '« Encore ! Encore ! »', design: 'Toutes les armes, récupérations courtes.' },
+    },
+    thresholds: [0.6, 0.28],
+  },
+
+  tideholder: {
+    name: 'Le Porteur de crue',
+    epithet: 'Esprit du débordement',
+    chapter: 'Épreuve · Le fleuve à revers',
+    lore: [
+      'Le Porteur marche dans l’eau jusqu’aux épaules et soulève la rivière d’un geste du coude.',
+      'Il ne poursuit pas : il attend que la crue vienne à vous.',
+    ],
+    phases: {
+      1: { title: 'La montée', line: 'L’eau entoure vos chevilles.', design: 'Vague simple, pince, ruée.' },
+      2: { title: 'Le débord', line: 'La crue entre dans la poitrine.', design: 'Double vague, combo, charge.' },
+      3: { title: 'Le retour au fleuve', line: '« Rends-moi mon nom. »', design: 'Tourbillon et vague enchaînée.' },
+    },
+    thresholds: [0.66, 0.33],
+  },
+
+  ashafo: {
+    name: 'Nana Kweku Asafo',
+    epithet: 'Tambour de la compagnie',
+    chapter: 'Épreuve · Le drapeau trempé',
+    lore: [
+      'Kweku porte le drapeau de sa compagnie trempé dans la crue du Pra.',
+      'Chaque chant appelle un pas différent : le sien reste toujours une demi-mesure en avance.',
+    ],
+    phases: {
+      1: { title: 'Le chant court', line: '« Suivez le drapeau. »', design: 'Sabre, combo, charge.' },
+      2: { title: 'Le refrain', line: 'Les tambours répondent du gué.', design: 'Balayage, charge enchaînée.' },
+      3: { title: 'Le chant de guerre', line: '« Le fleuve entendra notre nom. »', design: 'Moulinet et combo sans répit.' },
+    },
+    thresholds: [0.66, 0.33],
+  },
+
+  ironmouth: {
+    name: 'Le Bouche-de-fer',
+    epithet: 'Masque de la retenue',
+    chapter: 'Épreuve · La chambre basse',
+    lore: [
+      'Un masque de fer scelle la bouche de ce gardien ; on ne l’entend qu’avant le coup.',
+      'Il charge en aveugle, puis laisse le masque résonner pour annoncer la vague.',
+    ],
+    phases: {
+      1: { title: 'Le masque', line: 'Un seul bruit : le fer.', design: 'Pince, charge, slam.' },
+      2: { title: 'La résonance', line: 'Le masque hurle sous la voûte.', design: 'Double vague et combo.' },
+      3: { title: 'La fente', line: 'Le fer se brise enfin.', design: 'Balayage, vague, ruée.' },
+    },
+    thresholds: [0.64, 0.3],
+  },
+
+  nightblade: {
+    name: 'Kofi Nsunu',
+    epithet: 'Lame de la nuit',
+    chapter: 'Épreuve · Le sentier sans lune',
+    lore: [
+      'Nsunu frappe les yeux fermés, guidé par le bruit du pagne et le souffle de sa cible.',
+      'Il change de main entre chaque feinte et punit quiconque anticipe trop tôt.',
+    ],
+    phases: {
+      1: { title: 'Le pas muet', line: '« Je t’entends respirer. »', design: 'Sabre, feinte, revers.' },
+      2: { title: 'L’ombre courte', line: 'La lame change de main.', design: 'Estocade, bond, faux coup.' },
+      3: { title: 'La nuit fermée', line: '« Ne regarde pas. Écoute. »', design: 'Moulinet, jugement, combo.' },
+    },
+    thresholds: [0.68, 0.34],
+  },
+};
+
+export const BOSS_FORM: Record<BossId, BossForm> = {
+  duelist: 'human', champion: 'human',
+  guardian: 'guardian', sentinel: 'guardian', tideholder: 'guardian', ironmouth: 'guardian',
+  hunter: 'human', harvester: 'human', oracle: 'human', berserker: 'human', ashafo: 'human', nightblade: 'human',
 };

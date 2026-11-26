@@ -18,7 +18,11 @@ export type HitWeight = keyof typeof HIT_WEIGHT;
 
 export const POISE = {
   /** Réserve d'équilibre de chaque boss (en « dégâts bruts » encaissés). */
-  max: { duelist: 70, guardian: 110, champion: 120 } satisfies Record<BossId, number>,
+  max: {
+    duelist: 70, guardian: 110, champion: 120,
+    sentinel: 115, hunter: 75, harvester: 90, oracle: 80, berserker: 100,
+    tideholder: 125, ashafo: 95, ironmouth: 130, nightblade: 85,
+  } satisfies Record<BossId, number>,
   /** Délai sans coup avant que l'équilibre se recharge (ms), puis vitesse (points/s). */
   regenDelay: 2200,
   regenRate: 28,
@@ -58,6 +62,15 @@ export const PERILOUS_ATTACKS: Record<BossId, readonly BossAttackType[]> = {
   duelist: ['charge', 'sweep'],
   champion: ['shot', 'judgment', 'thrust', 'leap'],
   guardian: ['tide', 'surge'],
+  sentinel: ['tide', 'surge'],
+  hunter: ['charge', 'sweep'],
+  harvester: ['judgment', 'leap', 'thrust'],
+  oracle: ['shot', 'judgment', 'thrust', 'leap'],
+  berserker: ['charge', 'sweep', 'mill'],
+  tideholder: ['tide', 'surge'],
+  ashafo: ['charge', 'sweep', 'mill'],
+  ironmouth: ['tide', 'surge', 'charge'],
+  nightblade: ['feint', 'thrust', 'leap', 'judgment'],
 };
 
 export function isPerilous(boss: BossId, attack: BossAttackType | string) {

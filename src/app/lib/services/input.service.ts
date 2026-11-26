@@ -58,11 +58,6 @@ export class InputService {
     };
   }
 
-  /** Vrai quand le déplacement vient du stick tactile analogique. */
-  analogActive(): boolean {
-    return this.analog !== null;
-  }
-
   //===============
   // MAPPING DES TOUCHES (Utilisant uniquement les codes physiques)
   //===============

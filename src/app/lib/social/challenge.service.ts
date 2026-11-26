@@ -4,15 +4,14 @@ import { EquipmentStore } from '../entities/player/equipment.store';
 import { PlayerStore } from '../entities/player/player.store';
 import { GameLoopService } from '../services/game-loop.service';
 import { GameStateService } from '../services/game-state.service';
+import { ENCOUNTERS, type EncounterId } from '../constants/boss-encounters';
 
-export type ChallengeBossId = 'ford' | 'sluice';
-export type BossId = ChallengeBossId | 'champion';
+export type ChallengeBossId = EncounterId;
+export type BossId = EncounterId;
 
-export const BOSS_NAMES: Record<BossId, string> = {
-  ford: 'Kofi Brempong',
-  sluice: 'le Gardien de la retenue',
-  champion: 'Badu Ofosu',
-};
+export const BOSS_NAMES = Object.fromEntries(
+  Object.entries(ENCOUNTERS).map(([id, encounter]) => [id, encounter.name]),
+) as Record<BossId, string>;
 
 /** Résultat d'un combat de boss gagné, partageable par URL. */
 export interface BossResult {
@@ -45,7 +44,7 @@ export function decodeChallenge(code: string): Challenge | null {
   try {
     const padded = code.replace(/-/g, '+').replace(/_/g, '/');
     const raw = JSON.parse(atob(padded + '='.repeat((4 - padded.length % 4) % 4)));
-    const boss: ChallengeBossId | null = raw.b === 'ford' || raw.b === 'sluice' ? raw.b : null;
+    const boss: ChallengeBossId | null = typeof raw.b === 'string' && raw.b in ENCOUNTERS ? raw.b as ChallengeBossId : null;
     const valid = (n: unknown, max: number) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= max;
     if (raw.v !== 1 || !boss || !valid(raw.t, 3_600_000) || !valid(raw.h, 999) || !valid(raw.f, 99)) return null;
     return { v: 1, boss, time: raw.t, hits: Math.round(raw.h), flasks: Math.round(raw.f) };
