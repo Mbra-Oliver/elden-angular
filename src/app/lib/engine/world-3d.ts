@@ -59,6 +59,9 @@ const CAMERA_PROFILES: Record<CameraMode, CameraProfile> = {
     height: 42, heightDistance: 0.16, vistaHeight: 58, lookHeight: 25,
     lead: 30, leadDistance: 0.2, pitchMin: -18, pitchMax: 32, floorClearance: 12,
   },
+  // TPS épaule façon Call of Duty Mobile : caméra basse, à hauteur de la tête,
+  // décalée à droite ; le regard reste à l'horizon juste devant le héros, qui
+  // occupe le bas-centre de l'image avec son arme visible. Plus de vue d'en haut.
   shoulder: {
     boom: 64, boomDistance: 0.04, vistaBoom: 12, shoulder: 13,
     height: 30, heightDistance: 0.02, vistaHeight: 8, lookHeight: 29,
